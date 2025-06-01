@@ -1,6 +1,6 @@
 #include <ul/smi/smi_Protocol.hpp>
 #include <ul/menu/am/am_LibnxLibappletWrap.hpp>
-#include <ul/menu/smi/smi_MenuMessageHandler.hpp>
+#include <ul/menu/smi/smi_PrivateService.hpp>
 #include <ul/util/util_Scope.hpp>
 #include <atomic>
 
@@ -27,7 +27,7 @@ namespace ul::menu::am {
 
 extern "C" {
 
-    // Wrap libappletStart and libappletLaunch to use our custom waiting system (mostly so that they respond to HOME Menu presses)
+    // Wrap libappletStart and libappletLaunch to use our custom waiting system (so that they respond to HOME Menu presses)
 
     Result __wrap_libappletStart(AppletHolder *h) {
         UL_RC_TRY(appletHolderStart(h));

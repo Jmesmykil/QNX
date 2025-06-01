@@ -75,6 +75,14 @@ namespace ul {
             inline bool TryLock() {
                 return mutexTryLock(&this->mutex);
             }
+
+            inline bool IsLocked() {
+                if(this->TryLock()) {
+                    this->Unlock();
+                    return false;
+                }
+                return true;
+            }
     };
 
     class RecursiveMutex {

@@ -1,5 +1,6 @@
 #include <ul/system/sf/sf_IPrivateService.hpp>
 #include <ul/system/la/la_LibraryApplet.hpp>
+#include <ul/system/app/app_Cache.hpp>
 #include <queue>
 
 extern ul::RecursiveMutex g_MenuMessageQueueLock;
@@ -27,7 +28,7 @@ namespace ul::system::sf {
         return ResultSuccess;
     }
 
-    ::ams::Result PrivateService::TryPopMessageContext(::ams::sf::Out<MenuMessageContext> out_msg_ctx) {
+    ::ams::Result PrivateService::TryPopMessageContext(::ams::sf::Out<MenuMessageContext> &out_msg_ctx) {
         if(!this->initialized) {
             return ResultInvalidProcess;
         }
@@ -42,6 +43,40 @@ namespace ul::system::sf {
             out_msg_ctx.SetValue({ .actual_ctx = last_msg_ctx });
             return ResultSuccess;
         }
+    }
+
+    ::ams::Result PrivateService::QueryApplicationNacp(::ams::sf::Out<Nacp> &out_nacp, const u64 app_id) {
+        if(!this->initialized) {
+            return ResultInvalidProcess;
+        }
+
+        if(app::IsQueryLocked()) {
+            return ResultApplicationCacheBusy;
+        }
+
+        if(!app::QueryApplicationNacp(app_id, reinterpret_cast<NacpStruct*>(out_nacp.GetPointer()))) {
+            return ResultApplicationNotCached;
+        }
+
+        return ResultSuccess;
+    }
+
+    ::ams::Result PrivateService::QueryApplicationIcon(::ams::sf::OutBuffer &out_icon, ::ams::sf::Out<size_t> &out_icon_size, const u64 app_id) {
+        if(!this->initialized) {
+            return ResultInvalidProcess;
+        }
+
+        if(app::IsQueryLocked()) {
+            return ResultApplicationCacheBusy;
+        }
+
+        size_t icon_size;
+        if(!app::QueryApplicationIcon(app_id, out_icon.GetPointer(), out_icon.GetSize(), icon_size)) {
+            return ResultApplicationNotCached;
+        }
+
+        out_icon_size.SetValue(icon_size);
+        return ResultSuccess;
     }
 
 }

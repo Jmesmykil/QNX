@@ -4,7 +4,7 @@
 #include <ul/menu/ui/ui_MenuApplication.hpp>
 #include <ul/util/util_Size.hpp>
 #include <ul/net/net_Service.hpp>
-#include <ul/menu/smi/smi_MenuMessageHandler.hpp>
+#include <ul/menu/smi/smi_PrivateService.hpp>
 #include <ul/menu/am/am_LibraryAppletUtils.hpp>
 #include <ul/menu/am/am_LibnxLibappletWrap.hpp>
 
@@ -19,6 +19,8 @@ extern "C" {
     u32 __nx_fs_num_sessions = 1;
     size_t __nx_heap_size = 296_MB;
 
+    SetSysFirmwareVersion g_FirmwareVersion;
+
     void __libnx_init_time();
 
     void __nx_win_init();
@@ -32,37 +34,15 @@ extern "C" {
 
         UL_RC_ASSERT(timeInitialize());
         __libnx_init_time();
-        UL_RC_ASSERT(timeGetDeviceLocationName(&g_GlobalSettings.timezone));
 
         ul::InitializeLogging("uMenu");
         UL_LOG_INFO("Alive!");
 
-        ul::os::GetAmsConfig(g_GlobalSettings.ams_version, g_GlobalSettings.ams_is_emummc);
-
         UL_RC_ASSERT(setsysInitialize());
         UL_RC_ASSERT(setInitialize());
 
-        UL_RC_ASSERT(setsysGetFirmwareVersion(&g_GlobalSettings.fw_version));
-        hosversionSet(MAKEHOSVERSION(g_GlobalSettings.fw_version.major, g_GlobalSettings.fw_version.minor, g_GlobalSettings.fw_version.micro) | BIT(31));
-
-        UL_RC_ASSERT(setsysGetSerialNumber(&g_GlobalSettings.serial_no));
-        UL_RC_ASSERT(setsysGetSleepSettings(&g_GlobalSettings.sleep_settings));
-        UL_RC_ASSERT(setGetRegionCode(&g_GlobalSettings.region));
-        UL_RC_ASSERT(setsysGetPrimaryAlbumStorage(&g_GlobalSettings.album_storage));
-        UL_RC_ASSERT(setsysGetNfcEnableFlag(&g_GlobalSettings.nfc_enabled));
-        UL_RC_ASSERT(setsysGetUsb30EnableFlag(&g_GlobalSettings.usb30_enabled));
-        UL_RC_ASSERT(setsysGetBluetoothEnableFlag(&g_GlobalSettings.bluetooth_enabled));
-        UL_RC_ASSERT(setsysGetWirelessLanEnableFlag(&g_GlobalSettings.wireless_lan_enabled));
-        UL_RC_ASSERT(setsysGetAutoUpdateEnableFlag(&g_GlobalSettings.auto_update_enabled));
-        UL_RC_ASSERT(setsysGetAutomaticApplicationDownloadFlag(&g_GlobalSettings.auto_app_download_enabled));
-        UL_RC_ASSERT(setsysGetConsoleInformationUploadFlag(&g_GlobalSettings.console_info_upload_enabled));
-        u64 lang_code;
-        UL_RC_ASSERT(setGetSystemLanguage(&lang_code));
-        UL_RC_ASSERT(setMakeLanguage(lang_code, &g_GlobalSettings.language));
-        s32 tmp;
-        UL_RC_ASSERT(setGetAvailableLanguageCodes(&tmp, g_GlobalSettings.available_language_codes, ul::os::LanguageNameCount));
-        UL_RC_ASSERT(setsysGetDeviceNickname(&g_GlobalSettings.nickname));
-        UL_RC_ASSERT(setsysGetBatteryLot(&g_GlobalSettings.battery_lot));
+        UL_RC_ASSERT(setsysGetFirmwareVersion(&g_FirmwareVersion));
+        hosversionSet(MAKEHOSVERSION(g_FirmwareVersion.major, g_FirmwareVersion.minor, g_FirmwareVersion.micro) | BIT(31));
 
         UL_RC_ASSERT(appletInitialize());
         UL_RC_ASSERT(hidInitialize());
@@ -74,13 +54,14 @@ extern "C" {
         UL_RC_ASSERT(ul::net::Initialize());
         UL_RC_ASSERT(psmInitialize());
 
+        ul::menu::SetNacpLoadFunction(ul::menu::smi::QueryApplicationNacp);
         ul::menu::bt::InitializeBluetoothManager();
 
         __nx_win_init();
     }
 
     void __appExit() {
-        ul::menu::smi::FinalizeMenuMessageHandler();
+        ul::menu::smi::FinalizePrivateService();
 
         // Exit RomFs manually, since we also initialized it manually
         romfsExit();
@@ -118,6 +99,38 @@ ul::menu::ui::MenuApplication::Ref g_MenuApplication;
 namespace {
 
     ul::smi::MenuStartMode g_StartMode;
+
+    void InitializeSettings() {
+        UL_LOG_INFO("Initializing settings...");
+        g_GlobalSettings = {};
+
+        UL_RC_ASSERT(timeGetDeviceLocationName(&g_GlobalSettings.timezone));
+
+        ul::os::GetAmsConfig(g_GlobalSettings.ams_version, g_GlobalSettings.ams_is_emummc);
+        g_GlobalSettings.fw_version = g_FirmwareVersion;
+
+        UL_RC_ASSERT(setsysGetSerialNumber(&g_GlobalSettings.serial_no));
+        UL_RC_ASSERT(setsysGetSleepSettings(&g_GlobalSettings.sleep_settings));
+        UL_RC_ASSERT(setGetRegionCode(&g_GlobalSettings.region));
+        UL_RC_ASSERT(setsysGetPrimaryAlbumStorage(&g_GlobalSettings.album_storage));
+        UL_RC_ASSERT(setsysGetNfcEnableFlag(&g_GlobalSettings.nfc_enabled));
+        UL_RC_ASSERT(setsysGetUsb30EnableFlag(&g_GlobalSettings.usb30_enabled));
+        UL_RC_ASSERT(setsysGetBluetoothEnableFlag(&g_GlobalSettings.bluetooth_enabled));
+        UL_RC_ASSERT(setsysGetWirelessLanEnableFlag(&g_GlobalSettings.wireless_lan_enabled));
+        UL_RC_ASSERT(setsysGetAutoUpdateEnableFlag(&g_GlobalSettings.auto_update_enabled));
+        UL_RC_ASSERT(setsysGetAutomaticApplicationDownloadFlag(&g_GlobalSettings.auto_app_download_enabled));
+        UL_RC_ASSERT(setsysGetConsoleInformationUploadFlag(&g_GlobalSettings.console_info_upload_enabled));
+
+        u64 lang_code;
+        UL_RC_ASSERT(setGetSystemLanguage(&lang_code));
+        UL_RC_ASSERT(setMakeLanguage(lang_code, &g_GlobalSettings.language));
+
+        s32 tmp;
+        UL_RC_ASSERT(setGetAvailableLanguageCodes(&tmp, g_GlobalSettings.available_language_codes, ul::os::LanguageNameCount));
+
+        UL_RC_ASSERT(setsysGetDeviceNickname(&g_GlobalSettings.nickname));
+        UL_RC_ASSERT(setsysGetBatteryLot(&g_GlobalSettings.battery_lot));
+    }
 
     void MainLoop() {
         // Load menu config
@@ -231,15 +244,15 @@ namespace {
         g_MenuApplication->Initialize(g_StartMode);
         UL_RC_ASSERT(g_MenuApplication->Load());
 
+        // Initialize uSystem message handling (need to do it after Load so that the message handlers are registered)
+        UL_RC_ASSERT(ul::menu::smi::InitializePrivateService());
+
         if(R_FAILED(active_theme_load_rc)) {
             g_MenuApplication->NotifyActiveThemeLoadFailure(active_theme_load_rc);
         }
         if(g_GlobalSettings.active_theme.IsValid() && g_GlobalSettings.active_theme.IsOutdated()) {
             g_MenuApplication->NotifyActiveThemeOutdated();
         }
-
-        // With the handlers ready, initialize uSystem message handling
-        UL_RC_ASSERT(ul::menu::smi::InitializeMenuMessageHandler());
 
         if(g_StartMode == ul::smi::MenuStartMode::StartupMenuPostBoot) {
             g_MenuApplication->ShowWithFadeIn();
@@ -254,6 +267,8 @@ namespace {
 // uMenu procedure: read sent storages, initialize RomFs (externally), load config and other stuff, finally create the renderer and start the UI
 
 int main() {
+    InitializeSettings();
+
     UL_RC_ASSERT(ul::menu::am::ReadStartMode(g_StartMode));
     UL_ASSERT_TRUE(g_StartMode != ul::smi::MenuStartMode::Invalid);
 

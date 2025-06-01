@@ -113,9 +113,9 @@ namespace ul::loader {
             u64 size = 0;
 
             u64 available_mem = 0;
-            svcGetInfo(&available_mem, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
+            UL_RC_ASSERT(svcGetInfo(&available_mem, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0));
             u64 used_mem = 0;
-            svcGetInfo(&used_mem, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
+            UL_RC_ASSERT(svcGetInfo(&used_mem, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0));
 
             if(available_mem > (used_mem + 2_MB)) {
                 size = (available_mem - used_mem - 2_MB) & ~(2_MB - 1);
@@ -435,14 +435,14 @@ extern "C" {
 
 namespace ul::loader {
 
-    void Target(const TargetInput &target_ipt, const bool is_auto_gameplay_recording, const u64 applet_heap_size, const u64 applet_heap_reservation_size) {
+    void Target(const TargetInput &target_ipt, const u64 applet_heap_size, const u64 applet_heap_reservation_size) {
         util::CopyToStringBuffer(g_NoticeText, target_ipt.menu_caption);
         BackupTls();
 
         UL_RC_ASSERT(GetSelfProcessHandle(g_SelfProcessHandle));
 
         g_TargetInput = target_ipt;
-        UL_RC_ASSERT(SetupTargetHeap(is_auto_gameplay_recording, applet_heap_size, applet_heap_reservation_size, g_TargetHeapAddress, g_TargetHeapSize));
+        UL_RC_ASSERT(SetupTargetHeap(target_ipt.is_auto_game_recording, applet_heap_size, applet_heap_reservation_size, g_TargetHeapAddress, g_TargetHeapSize));
 
         LoadTargetImpl();
     }

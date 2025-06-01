@@ -4,6 +4,7 @@
 #include <ul/system/smi/smi_SystemProtocol.hpp>
 #include <ul/system/sys/sys_SystemApplet.hpp>
 #include <ul/system/system_Message.hpp>
+#include <ul/system/app/app_Cache.hpp>
 #include <ul/cfg/cfg_Config.hpp>
 #include <ul/menu/menu_Entries.hpp>
 #include <ul/menu/menu_Cache.hpp>
@@ -130,6 +131,8 @@ namespace {
 
     ul::smi::SystemStatus g_CurrentStatus = {};
 
+    NacpStruct g_LaunchHomebrewApplicationNacp;
+
     char g_CurrentMenuFsPath[FS_MAX_PATH] = {};
     char g_CurrentMenuPath[FS_MAX_PATH] = {};
     u32 g_CurrentMenuIndex = 0;
@@ -179,11 +182,103 @@ namespace {
 
     // Heap definitions
 
-    constexpr size_t LibstratosphereHeapSize = 4_MB;
+    // libstratosphere heap: used for malloc/free/new/delete and everything using them
+    // We specially need to take into account app icon/NACP caching (it's around 0.14MB per app) plus thread stack buffers, vectors and so on
+    constexpr size_t LibstratosphereHeapSize = 40_MB;
     alignas(ams::os::MemoryPageSize) constinit u8 g_LibstratosphereHeap[LibstratosphereHeapSize];
 
-    constexpr size_t LibnxHeapSize = 8_MB;
+    // libnx heap: used for internal malloc_r/etc called by stdlib stuff, thus a modest size is enough
+    constexpr size_t LibnxHeapSize = 128_KB;
     alignas(ams::os::MemoryPageSize) constinit u8 g_LibnxHeap[LibnxHeapSize];
+
+    void DebugLogApplicationParameters() {
+        std::vector<u64> app_ids;
+        for(auto &rec: g_CurrentRecords) {
+            app_ids.push_back(rec.id);
+        }
+
+        auto app_views = new NsApplicationView[app_ids.size()];
+        UL_ON_SCOPE_EXIT({ delete[] app_views; });
+        UL_RC_ASSERT(nsGetApplicationView(app_views, app_ids.data(), app_ids.size()));
+
+        for(u32 i = 0; i < app_ids.size(); i++) {
+            auto &view = app_views[i];
+            auto &rec = g_CurrentRecords[i];
+
+            // Test: qlaunch checks these flags on apps
+            uintptr_t a1 = (uintptr_t)std::addressof(view);
+            u8 flags1[12] = {};
+            flags1[0] = *(u32*)(a1 + 12) & 1;
+            flags1[1] = (*(u8 *)(a1 + 12) >> 1) & 1;
+            flags1[2] = (*(u8 *)(a1 + 12) >> 4) & 1;
+            flags1[3] = (*(u8 *)(a1 + 12) >> 5) & 1;
+            flags1[4] = (*(u8 *)(a1 + 12) >> 6) & 1;
+            flags1[5] = *(u8 *)(a1 + 12) >> 7;
+            flags1[6] = *(u8 *)(a1 + 13) & 1;
+            flags1[7] = (*(u8 *)(a1 + 13) >> 1) & 1;
+            flags1[8] = (*(u8 *)(a1 + 13) >> 2) & 1;
+            flags1[9] = (*(u8 *)(a1 + 13) >> 5) & 1;
+            flags1[10] = (*(u32 *)(a1 + 12) & 0x4C000) != 0;
+            flags1[11] = *(u8 *)(a1 + 13) >> 7;
+            u8 flags2[6] = {};
+            flags2[0] = *(u8 *)(a1 + 14) >> 7;
+            flags2[1] = *(u8 *)(a1 + 14) & 1;
+            flags2[2] = (*(u8 *)(a1 + 14) >> 1) & 1;
+            flags2[3] = ((*(u32 *)(a1 + 12) & 0x4C000) != 0) && (*(u8 *)(a1 + 36) == 5); // is waiting commit + other fn
+            flags2[4] = (*(u8 *)(a1 + 14) >> 5) & 1;
+            flags2[5] = (*(u8 *)(a1 + 14) >> 6) & 1;
+            u8 flags3[5] = {};
+            flags3[0] = (u8)(*(NsApplicationView*)a1).unk_x24;
+            flags3[1] = (u8)((*(NsApplicationView*)a1).unk_x24 >> 8);
+            flags3[2] = (*(NsApplicationView*)a1).unk_x26[0];
+            flags3[3] = (*(NsApplicationView*)a1).unk_x45[0];
+            flags3[4] = (*(NsApplicationView*)a1).unk_x44;
+
+            std::string flagbits;
+            for(u32 i = 0; i < 12; i++) {
+                if(flags1[i] != 0) {
+                    flagbits += "1";
+                }
+                else {
+                    flagbits += "0";
+                }
+            }
+
+            flagbits += "-";
+            for(u32 i = 0; i < 6; i++) {
+                if(flags2[i] != 0) {
+                    flagbits += "1";
+                }
+                else {
+                    flagbits += "0";
+                }
+            }
+
+            flagbits += "-";
+            for(u32 i = 0; i < 5; i++) {
+                flagbits += std::to_string((int)flags3[i]);
+                if(i < 4) {
+                    flagbits += ":";
+                }
+            }
+
+            bool is_update_requested = false;
+            u32 tmp = 0;
+            auto rc = nsIsApplicationUpdateRequested(rec.id, &is_update_requested, &tmp);
+            if(R_FAILED(rc)) {
+                flagbits += "-" + ul::util::FormatResultDisplay(rc);
+            }
+            else {
+                flagbits += "-";
+                flagbits += is_update_requested ? "1" : "0";
+            }
+
+            rc = nsCheckApplicationLaunchVersion(rec.id);
+            flagbits += "-" + ul::util::FormatResultDisplay(rc);
+
+            UL_LOG_INFO("[!Flags] %s -> %s", ul::util::FormatProgramId(rec.id).c_str(), flagbits.c_str());
+        }
+    }
 
 }
 
@@ -936,6 +1031,11 @@ namespace {
             case ActionType::LaunchHomebrewApplication: {
                 if(!la::IsActive()) {
                     UL_LOG_INFO("Launching homebrew '%s' over application 0x%016lX (target once: %s)...", action.launch_homebrew_application.app_target_input.nro_path, action.launch_homebrew_application.app_id, action.launch_homebrew_application.app_target_input.target_once ? "true" : "false");
+
+                    // Query the NACP of the underlying application (we need to determine if it uses auto game recording)
+                    app::LoopQueryApplicationNacp(action.launch_homebrew_application.app_id, &g_LaunchHomebrewApplicationNacp);
+                    action.launch_homebrew_application.app_target_input.is_auto_game_recording = g_LaunchHomebrewApplicationNacp.video_capture == 2;
+
                     UL_RC_ASSERT(ecs::RegisterLaunchAsApplication(action.launch_homebrew_application.app_id, "/ulaunch/bin/uLoader/application", &action.launch_homebrew_application.app_target_input, sizeof(action.launch_homebrew_application.app_target_input), g_SelectedUser));
 
                     // Store target input of the launched application
@@ -1205,28 +1305,18 @@ namespace {
                     UL_LOG_INFO("[EventManager] Application records changed!");
 
                     std::vector<AccountUid> uids;
+                    UL_RC_ASSERT(accountInitialize(AccountServiceType_System));
                     UL_RC_ASSERT(ul::acc::ListAccounts(uids));
+                    accountExit();
 
                     const auto old_records = std::move(g_CurrentRecords);
                     g_CurrentRecords = ul::os::ListApplicationRecords();
 
                     const auto added_records = ListAddedRecords(old_records, g_CurrentRecords);
                     for(const auto &record: added_records) {
-                        UL_LOG_INFO("[EventManager] > Added application 0x%016lX, caching...", record.id);
+                        UL_LOG_INFO("[EventManager] > Added application 0x%016lX, caching it...", record.id);
                         g_LastAddedApplications.push_back(record.id);
-
-                        u32 i = 0;
-                        while(!ul::menu::CacheSingleApplication(record.id)) {
-                            if(i >= 50) {
-                                UL_LOG_WARN("[EventManager] > Failed to cache application 0x%016lX 50 times, giving up...", record.id);
-                                break;
-                            }
-
-                            UL_LOG_INFO("[EventManager] > Failed to cache, retrying...");
-                            svcSleepThread(100'000ul);
-
-                            i++;
-                        }
+                        ul::system::app::RequestCacheApplication(record.id);
 
                         for(const auto &uid: uids) {
                             const auto menu_path = ul::menu::MakeMenuPath(g_AmsIsEmuMMC, uid);
@@ -1237,8 +1327,9 @@ namespace {
 
                     const auto removed_records = ListRemovedRecords(old_records, g_CurrentRecords);
                     for(const auto &record: removed_records) {
-                        UL_LOG_INFO("[EventManager] > Deleted application 0x%016lX", record.id);
+                        UL_LOG_INFO("[EventManager] > Deleted application 0x%016lX, removing cache...", record.id);
                         NotifyApplicationDeleted(record.id);
+                        ul::system::app::RequestRemoveApplicationCache(record.id);
 
                         for(const auto &uid: uids) {
                             const auto menu_path = ul::menu::MakeMenuPath(g_AmsIsEmuMMC, uid);
@@ -1337,18 +1428,22 @@ namespace {
 
         g_AmsIsEmuMMC = ul::os::IsEmuMMC();
 
-        // Remove old cache
+        // Clean old cache
         ul::fs::DeleteDirectory(ul::PreV100ApplicationCachePath);
         ul::fs::DeleteDirectory(ul::PreV100HomebrewCachePath);
         ul::fs::DeleteDirectory(ul::PreV100AccountCachePath);
 
-        ul::fs::CleanDirectory(ul::RootCachePath);
+        // Clean cache, everything except for theme cache
+        ul::fs::CleanDirectory(ul::HomebrewCachePath);
+        ul::fs::CleanDirectory(ul::ThemePreviewCachePath);
 
-        ul::menu::SetLoadApplicationEntryVersions(false);
         g_CurrentRecords = ul::os::ListApplicationRecords();
-        ul::menu::CacheApplications(g_CurrentRecords);
+        ul::system::app::InitializeCache(g_CurrentRecords);
         ul::menu::CacheHomebrew();
         CheckHomebrewTakeoverApplicationId();
+
+        // Test, until we figure out how to check if apps need updates
+        DebugLogApplicationParameters();
 
         LoadConfig();
 
@@ -1408,12 +1503,11 @@ namespace ams {
             UL_RC_ASSERT(fsInitialize());
             
             UL_RC_ASSERT(appletInitialize());
-            
+
             UL_RC_ASSERT(nsInitialize());
             UL_RC_ASSERT(ldrShellInitialize());
             UL_RC_ASSERT(pmshellInitialize());
             UL_RC_ASSERT(setsysInitialize());
-            UL_RC_ASSERT(accountInitialize(AccountServiceType_System));
 
             // FS and log init is intentionally done at the end, otherwise the SD doesn't seem to be always ready...?
             UL_RC_ASSERT(fsdevMountSdmc());
@@ -1421,7 +1515,6 @@ namespace ams {
         }
 
         void FinalizeSystemModule() {
-            accountExit();
             setsysExit();
             capsscExit();
             pmshellExit();
@@ -1433,9 +1526,10 @@ namespace ams {
         }
 
         void Startup() {
-            // Initialize the global malloc-free/new-delete allocator
+            // libstratosphere heap: used for malloc/free/new/delete and everything using them
             init::InitializeAllocator(g_LibstratosphereHeap, LibstratosphereHeapSize);
 
+            // libnx heap: used for internal malloc_r/etc called by stdlib stuff
             fake_heap_start = g_LibnxHeap;
             fake_heap_end = fake_heap_start + LibnxHeapSize;
 

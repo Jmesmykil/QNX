@@ -1,7 +1,7 @@
 
 #pragma once
 #include <pu/Plutonium>
-#include <ul/menu/smi/smi_MenuMessageHandler.hpp>
+#include <ul/menu/smi/smi_PrivateService.hpp>
 
 namespace ul::menu::ui {
 

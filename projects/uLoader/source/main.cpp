@@ -24,22 +24,6 @@ namespace {
         return ul::ResultSuccess;
     }
 
-    NsApplicationControlData g_SelfControlData = {};
-
-    Result ReadSelfControlData(const u64 self_program_id) {
-        if(hosversionAtLeast(5,0,0)) {
-            UL_RC_TRY(nsInitialize());
-            ul::util::OnScopeExit exit_ns([]() {
-                nsExit();
-            });
-
-            size_t tmp_size;
-            UL_RC_TRY(nsGetApplicationControlData(NsApplicationControlSource_Storage, self_program_id, &g_SelfControlData, sizeof(g_SelfControlData), &tmp_size));
-        }
-        
-        return ul::ResultSuccess;
-    }
-
     constexpr size_t HeapSize = 64_KB;
     u8 g_Heap[HeapSize] = {};
 
@@ -95,17 +79,11 @@ int main() {
     ul::loader::TargetInput target_ipt;
     UL_RC_ASSERT(ul::loader::ReadTargetInput(target_ipt));
 
-    if(ul::loader::SelfIsApplication()) {
-        // We really don't care about the result
-        ReadSelfControlData(self_program_id);
-    }
-    const auto is_auto_game_recording = g_SelfControlData.nacp.video_capture == 2;
-
     UL_LOG_INFO("Targetting '%s' with argv '%s' (once: %d)", target_ipt.nro_path, target_ipt.nro_argv, target_ipt.target_once);
 
     fsdevUnmountAll();
     fsExit();
     smExit();
 
-    ul::loader::Target(target_ipt, is_auto_game_recording, applet_heap_size, applet_heap_reservation_size);
+    ul::loader::Target(target_ipt, applet_heap_size, applet_heap_reservation_size);
 }

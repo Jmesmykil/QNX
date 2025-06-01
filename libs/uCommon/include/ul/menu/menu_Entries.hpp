@@ -28,12 +28,13 @@ namespace ul::menu {
         SpecialEntryAmiibo
     };
 
+    using NacpLoadFunction = Result(*)(const u64 app_id, NacpStruct *out_nacp);
+
     struct EntryApplicationInfo {
         u64 app_id;
         NsExtApplicationRecord record;
         NsExtApplicationView view;
-        u32 version;
-        u32 launch_required_version;
+        bool needs_update;
 
         inline bool HasContents() const {
             return os::ApplicationViewHasFlag<NsExtApplicationViewFlag_HasMainContents>(this->view);
@@ -56,8 +57,7 @@ namespace ul::menu {
         }
 
         inline bool IsNotUpdated() const {
-            // TODO: is this the right check?
-            return R_FAILED(nsCheckApplicationLaunchVersion(this->app_id));
+            return this->needs_update;
         }
     };
 
@@ -121,7 +121,7 @@ namespace ul::menu {
             return fs::JoinPath(fs::GetBaseDirectory(this->entry_path), this->folder_info.fs_name);
         }
 
-        void TryLoadControlData();
+        void TryLoadNacp();
         void ReloadApplicationInfo(const bool force_reload_records_views = true);
 
         void MoveTo(const std::string &new_folder_path);
@@ -141,11 +141,11 @@ namespace ul::menu {
         std::vector<Entry> Remove();
     };
 
-    void SetLoadApplicationEntryVersions(const bool load);
-
     void InitializeEntries(const bool is_emummc, const AccountUid &uid);
     std::vector<Entry> LoadEntries(const std::string &path);
     const std::string &GetActiveMenuPath();
+
+    void SetNacpLoadFunction(NacpLoadFunction func);
     
     void EnsureApplicationEntry(const NsExtApplicationRecord &app_record, const std::string &menu_path = "");
     Entry CreateFolderEntry(const std::string &base_path, const std::string &folder_name, const s32 index = -1);

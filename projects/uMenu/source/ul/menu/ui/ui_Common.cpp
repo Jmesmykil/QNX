@@ -49,13 +49,15 @@ namespace ul::menu::ui {
 
         pu::sdl2::TextureHandle::Ref g_UserIconTexture;
 
+        pu::sdl2::TextureHandle::Ref g_DefaultApplicationIconTexture;
+
         util::JSON g_ActiveThemeUiJson;
         util::JSON g_DefaultThemeUiJson;
 
         util::JSON g_ActiveThemeBgmJson;
         util::JSON g_DefaultThemeBgmJson;
 
-        NsApplicationControlData g_ControlDataTempBuffer = {};
+        u8 g_TempIconBuffer[sizeof(NsApplicationControlData::icon)] = {};
 
     }
 
@@ -123,6 +125,8 @@ namespace ul::menu::ui {
             g_NonEditableSettingIconTexture = TryFindLoadImageHandle("ui/Settings/SettingNonEditableIcon");
             g_EditableSettingIconTexture = TryFindLoadImageHandle("ui/Settings/SettingEditableIcon");
 
+            g_DefaultApplicationIconTexture = TryFindLoadImageHandle("ui/Main/EntryIcon/DefaultApplication");
+
             ul::util::LoadJSONFromFile(g_DefaultThemeUiJson, GetDefaultThemeResource("ui/UI.json"));
             ul::util::LoadJSONFromFile(g_ActiveThemeUiJson, TryGetActiveThemeResource("ui/UI.json"));
 
@@ -167,6 +171,10 @@ namespace ul::menu::ui {
 
     pu::sdl2::TextureHandle::Ref GetSelectedUserIconTexture() {
         return g_UserIconTexture;
+    }
+
+    pu::sdl2::TextureHandle::Ref GetDefaultApplicationIconTexture() {
+        return g_DefaultApplicationIconTexture;
     }
 
     bool TryGetUiElement(const std::string &menu, const std::string &elem, util::JSON &out_json) {
@@ -260,16 +268,17 @@ namespace ul::menu::ui {
     }
 
     pu::sdl2::TextureHandle::Ref LoadApplicationIconTexture(const u64 app_id) {
-        // No need to make our own cache system for app icons, NS has its own system for that already
-        u64 control_data_size;
-        const auto rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, app_id, &g_ControlDataTempBuffer, sizeof(g_ControlDataTempBuffer), &control_data_size);
+        size_t icon_size;
+        const auto start_tick = armGetSystemTick();
+        const auto rc = smi::QueryApplicationIcon(app_id, g_TempIconBuffer, sizeof(g_TempIconBuffer), icon_size);
+        const auto end_tick = armGetSystemTick();
+        const auto elapsed_time_ms = armTicksToNs(end_tick - start_tick) / 1'000'000;
+        UL_LOG_INFO("Query application ID %016lX icon (elapsed time: %ld ms)", app_id, elapsed_time_ms);
         if(R_SUCCEEDED(rc)) {
-            // Icon = remaining control data ignoring the NACP
-            const auto icon_size = control_data_size - sizeof(g_ControlDataTempBuffer.nacp);
-            return pu::sdl2::TextureHandle::New(pu::ui::render::LoadImageFromBuffer(g_ControlDataTempBuffer.icon, icon_size));
+            return pu::sdl2::TextureHandle::New(pu::ui::render::LoadImageFromBuffer(g_TempIconBuffer, icon_size));
         }
         else {
-            UL_LOG_WARN("Failed to get control data for application ID %016lX: %s", app_id, util::FormatResultDisplay(rc).c_str());
+            UL_LOG_WARN("Failed to get icon for application ID %016lX: %s", app_id, util::FormatResultDisplay(rc).c_str());
             return nullptr;
         }
     }

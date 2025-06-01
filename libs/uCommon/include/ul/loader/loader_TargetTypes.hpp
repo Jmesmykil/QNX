@@ -16,16 +16,19 @@ namespace ul::loader {
         static constexpr u32 Magic = 0x49444C55; // "ULDI"
 
         u32 magic;
+        bool target_once;
+        bool is_auto_game_recording;
+        u8 unused[2];
         char nro_path[NroPathSize];
         char nro_argv[NroArgvSize];
         char menu_caption[MenuCaptionSize];
-        bool target_once;
 
         template<typename S1, typename S2, typename S3>
         static inline TargetInput Create(const S1 &nro_path, const S2 &nro_argv, const bool target_once, const S3 &menu_caption) {
             TargetInput target_ipt = {
                 .magic = Magic,
-                .target_once = target_once
+                .target_once = target_once,
+                .is_auto_game_recording = false
             };
 
             util::CopyToStringBuffer(target_ipt.nro_path, nro_path);

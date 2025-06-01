@@ -1,4 +1,4 @@
-#include <ul/menu/smi/smi_MenuMessageHandler.hpp>
+#include <ul/menu/smi/smi_PrivateService.hpp>
 #include <ul/sf/sf_Base.hpp>
 #include <ul/util/util_Scope.hpp>
 #include <atomic>
@@ -7,39 +7,56 @@ namespace ul::menu::smi {
 
     namespace {
 
-        inline Result privateServiceInitialize(Service *srv) {
+        inline Result psrvInitialize(Service *srv) {
             u64 pid_placeholder = 0;
             return serviceDispatchIn(srv, 0, pid_placeholder,
                 .in_send_pid = true
             );
         }
 
-        inline Result privateServiceTryPopMessageContext(Service *srv, MenuMessageContext *out_msg_ctx) {
+        inline Result psrvTryPopMessageContext(Service *srv, MenuMessageContext *out_msg_ctx) {
             return serviceDispatch(srv, 1,
                 .buffer_attrs = { SfBufferAttr_HipcMapAlias | SfBufferAttr_Out },
                 .buffers = { { out_msg_ctx, sizeof(MenuMessageContext) } },
             );
         }
 
+        inline Result psrvQueryApplicationNacp(Service *srv, NacpStruct *out_nacp_buf, const u64 app_id) {
+            return serviceDispatchIn(srv, 2, app_id,
+                .buffer_attrs = { SfBufferAttr_HipcMapAlias | SfBufferAttr_Out },
+                .buffers = { { out_nacp_buf, sizeof(NacpStruct) } },
+            );
+        }
+
+        inline Result psrvQueryApplicationIcon(Service *srv, u8 *out_icon_buf, const size_t icon_size, size_t &out_icon_size, const u64 app_id) {
+            size_t got_icon_size;
+            UL_RC_TRY(serviceDispatchInOut(srv, 3, app_id, got_icon_size,
+                .buffer_attrs = { SfBufferAttr_HipcMapAlias | SfBufferAttr_Out },
+                .buffers = { { out_icon_buf, icon_size } }
+            ));
+            out_icon_size = got_icon_size;
+            return ResultSuccess;
+        }
+
         Service g_PrivateService;
 
-        Result InitializePrivateService() {
+        Result InitializePrivateServiceImpl() {
             if(serviceIsActive(&g_PrivateService)) {
                 return ResultSuccess;
             }
 
             UL_RC_TRY(smGetService(&g_PrivateService, sf::PrivateServiceName));
-            UL_RC_TRY(privateServiceInitialize(&g_PrivateService));
+            UL_RC_TRY(psrvInitialize(&g_PrivateService));
 
             return ResultSuccess;
         }
 
-        void FinalizePrivateService() {
+        void FinalizePrivateServiceImpl() {
             serviceClose(&g_PrivateService);
         }
 
-        Result TryPopPrivateServiceMessageContext(MenuMessageContext *out_msg_ctx) {
-            return privateServiceTryPopMessageContext(&g_PrivateService, out_msg_ctx);
+        inline Result TryPopMessageContext(MenuMessageContext *out_msg_ctx) {
+            return psrvTryPopMessageContext(&g_PrivateService, out_msg_ctx);
         }
 
     }
@@ -60,7 +77,7 @@ namespace ul::menu::smi {
 
                 {
                     MenuMessageContext last_msg_ctx;
-                    if(R_SUCCEEDED(TryPopPrivateServiceMessageContext(&last_msg_ctx))) {
+                    if(R_SUCCEEDED(TryPopMessageContext(&last_msg_ctx))) {
                         ScopedLock lk(g_CallbackTableLock);
 
                         for(const auto &[cb, msg] : g_MessageCallbackTable) {
@@ -77,12 +94,12 @@ namespace ul::menu::smi {
 
     }
 
-    Result InitializeMenuMessageHandler() {
+    Result InitializePrivateService() {
         if(g_Initialized) {
             return ResultSuccess;
         }
 
-        UL_RC_TRY(InitializePrivateService());
+        UL_RC_TRY(InitializePrivateServiceImpl());
 
         g_ReceiverThreadShouldStop = false;
         UL_RC_TRY(threadCreate(&g_ReceiverThread, &MenuMessageReceiverThread, nullptr, nullptr, 0x1000, 49, -2));
@@ -92,7 +109,7 @@ namespace ul::menu::smi {
         return ResultSuccess;
     }
 
-    void FinalizeMenuMessageHandler() {
+    void FinalizePrivateService() {
         if(!g_Initialized) {
             return;
         }
@@ -101,8 +118,16 @@ namespace ul::menu::smi {
         threadWaitForExit(&g_ReceiverThread);
         threadClose(&g_ReceiverThread);
 
-        FinalizePrivateService();
+        FinalizePrivateServiceImpl();
         g_Initialized = false;
+    }
+
+    Result QueryApplicationNacp(const u64 app_id, NacpStruct *out_nacp_buf) {
+        return psrvQueryApplicationNacp(&g_PrivateService, out_nacp_buf, app_id);
+    }
+
+    Result QueryApplicationIcon(const u64 app_id, u8 *out_icon_buf, const size_t icon_size, size_t &out_icon_size) {
+        return psrvQueryApplicationIcon(&g_PrivateService, out_icon_buf, icon_size, out_icon_size, app_id);
     }
 
     void RegisterOnMessageDetect(OnMessageCallback callback, const MenuMessage desired_msg) {

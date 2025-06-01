@@ -203,11 +203,13 @@ namespace ul::cfg {
         const auto manifest_path = fs::JoinPath(ActiveThemeCachePath, ThemeManifestPath);
         // This should be enough to check whether the extracted active theme was removed
         if(!fs::ExistsFile(manifest_path)) {
+            UL_LOG_WARN("Active theme cache (%s) is missing, re-caching...", ActiveThemeCachePath);
             CacheActiveTheme(cfg);
         }
     }
 
     void RemoveActiveThemeCache() {
+        UL_LOG_WARN("Removing active theme cache...");
         fs::CleanDirectory(ActiveThemeCachePath);
     }
 

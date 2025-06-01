@@ -153,93 +153,6 @@ namespace ul::menu::ui {
                         this->cur_path_text->SetText(this->cur_folder_path);
                     }
                     else if(cur_entry.Is<EntryType::Application>() || cur_entry.Is<EntryType::Homebrew>()) {
-                        if(cur_entry.Is<EntryType::Application>()) {
-                            for(auto &cur_entry: this->entry_menu->GetEntries()) {
-                                if(cur_entry.Is<EntryType::Application>()) {
-                                    // Test: qlaunch checks these flags on apps
-                                    uintptr_t a1 = (uintptr_t)&cur_entry.app_info.view;
-                                    u8 flags1[12] = {};
-                                    flags1[0] = *(u32*)(a1 + 12) & 1;
-                                    flags1[1] = (*(u8 *)(a1 + 12) >> 1) & 1;
-                                    flags1[2] = (*(u8 *)(a1 + 12) >> 4) & 1;
-                                    flags1[3] = (*(u8 *)(a1 + 12) >> 5) & 1;
-                                    flags1[4] = (*(u8 *)(a1 + 12) >> 6) & 1;
-                                    flags1[5] = *(u8 *)(a1 + 12) >> 7;
-                                    flags1[6] = *(u8 *)(a1 + 13) & 1;
-                                    flags1[7] = (*(u8 *)(a1 + 13) >> 1) & 1;
-                                    flags1[8] = (*(u8 *)(a1 + 13) >> 2) & 1;
-                                    flags1[9] = (*(u8 *)(a1 + 13) >> 5) & 1;
-                                    flags1[10] = (*(u32 *)(a1 + 12) & 0x4C000) != 0;
-                                    flags1[11] = *(u8 *)(a1 + 13) >> 7;
-                                    u8 flags2[6] = {};
-                                    flags2[0] = *(u8 *)(a1 + 14) >> 7;
-                                    flags2[1] = *(u8 *)(a1 + 14) & 1;
-                                    flags2[2] = (*(u8 *)(a1 + 14) >> 1) & 1;
-                                    flags2[3] = ((*(u32 *)(a1 + 12) & 0x4C000) != 0) && (*(u8 *)(a1 + 36) == 5); // is waiting commit + other fn
-                                    flags2[4] = (*(u8 *)(a1 + 14) >> 5) & 1;
-                                    flags2[5] = (*(u8 *)(a1 + 14) >> 6) & 1;
-                                    u8 flags3[5] = {};
-                                    flags3[0] = (u8)(*(NsApplicationView*)&cur_entry.app_info.view).unk_x24;
-                                    flags3[1] = (u8)((*(NsApplicationView*)&cur_entry.app_info.view).unk_x24 >> 8);
-                                    flags3[2] = (*(NsApplicationView*)&cur_entry.app_info.view).unk_x26[0];
-                                    flags3[3] = (*(NsApplicationView*)&cur_entry.app_info.view).unk_x45[0];
-                                    flags3[4] = (*(NsApplicationView*)&cur_entry.app_info.view).unk_x44;
-                
-                                    std::string flagbits;
-                                    for(u32 i = 0; i < 12; i++) {
-                                        if(flags1[i] != 0) {
-                                            flagbits += "1";
-                                        }
-                                        else {
-                                            flagbits += "0";
-                                        }
-                                    }
-                
-                                    flagbits += "-";
-                                    for(u32 i = 0; i < 6; i++) {
-                                        if(flags2[i] != 0) {
-                                            flagbits += "1";
-                                        }
-                                        else {
-                                            flagbits += "0";
-                                        }
-                                    }
-                
-                                    flagbits += "-";
-                                    for(u32 i = 0; i < 5; i++) {
-                                        flagbits += std::to_string((int)flags3[i]);
-                                        flagbits += ":";
-                                    }
-                
-                                    cur_entry.TryLoadControlData();
-                
-                                    bool is_update_requested = false;
-                                    u32 tmp = 0;
-                                    auto rc = nsIsApplicationUpdateRequested(cur_entry.app_info.app_id, &is_update_requested, &tmp);
-                                    if(R_FAILED(rc)) {
-                                        flagbits += "-E";
-                                    }
-                                    else {
-                                        flagbits += "-";
-                                        flagbits += is_update_requested ? "1" : "0";
-                                    }
-                
-                                    rc = nsCheckApplicationLaunchVersion(cur_entry.app_info.app_id);
-                                    if(R_FAILED(rc)) {
-                                        flagbits += "-E";
-                                    }
-                                    else {
-                                        flagbits += "-K";
-                                    }
-
-                                    flagbits += "-reqver:" + std::to_string(cur_entry.app_info.launch_required_version);
-                                    flagbits += "-ver:" + std::to_string(cur_entry.app_info.version);
-                
-                                    UL_LOG_INFO("[DEV-APP-Q-FLAGS] %s --> %s", cur_entry.control.name.c_str(), flagbits.c_str());
-                                }
-                            }
-                        }
-
                         auto do_launch_entry = true;
 
                         if(g_GlobalSettings.IsSuspended()) {
@@ -653,7 +566,7 @@ namespace ul::menu::ui {
                     this->SetTopMenuHomebrew();
                 }
 
-                cur_entry.TryLoadControlData();
+                cur_entry.TryLoadNacp();
 
                 if(!cur_entry.control.name.empty()) {
                     this->cur_entry_main_text->SetText(cur_entry.control.name);

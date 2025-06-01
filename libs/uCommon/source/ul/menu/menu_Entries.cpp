@@ -7,12 +7,14 @@
 #include <ul/ul_Result.hpp>
 #include <ul/menu/menu_Cache.hpp>
 #include <ul/acc/acc_Accounts.hpp>
+#include <ul/util/util_Scope.hpp>
 
 namespace ul::menu {
 
     namespace {
 
-        bool g_LoadApplicationEntryVersions = true;
+        NacpLoadFunction g_NacpLoadFunction = nullptr;
+        NacpStruct g_TempNacp;
 
         std::string g_ActiveMenuPath;
 
@@ -23,12 +25,12 @@ namespace ul::menu {
         std::vector<NsExtApplicationRecord> g_ApplicationRecords = {};
         std::vector<NsExtApplicationView> g_ApplicationViews = {};
 
-        void LoadControlDataStrings(EntryControlData &out_control, NacpStruct *nacp) {
+        void ParseNacpFields(EntryControlData &out_control) {
             NacpLanguageEntry *lang_entry = nullptr;
-            const auto rc = nsGetApplicationDesiredLanguage(nacp, &lang_entry);
+            const auto rc = nsGetApplicationDesiredLanguage(&g_TempNacp, &lang_entry);
             if(R_FAILED(rc) || (lang_entry == nullptr)) {
                 for(u32 i = 0; i < 16; i++) {
-                    lang_entry = &nacp->lang[i];
+                    lang_entry = &g_TempNacp.lang[i];
                     if((lang_entry->name[0] > 0) && (lang_entry->author[0] > 0)) {
                         break;
                     }
@@ -44,23 +46,23 @@ namespace ul::menu {
                 out_control.author = lang_entry->author;
             }
             if(!out_control.custom_version) {
-                out_control.version = nacp->display_version;
+                out_control.version = g_TempNacp.display_version;
             }
         }
 
-        void LoadHomebrewControlData(const std::string &nro_path, EntryControlData &out_control) {
+        void LoadHomebrewNacp(const std::string &nro_path, EntryControlData &out_control, loader::TargetInput &target_input) {
             const auto cache_nacp_path = GetHomebrewCacheNacpPath(nro_path);
             if(fs::ExistsFile(cache_nacp_path)) {
-                NacpStruct nacp = {};
-                UL_ASSERT_TRUE(fs::ReadFile(cache_nacp_path, &nacp, sizeof(nacp)));
-                LoadControlDataStrings(out_control, &nacp);
+                UL_ASSERT_TRUE(fs::ReadFile(cache_nacp_path, &g_TempNacp, sizeof(NacpStruct)));
+                ParseNacpFields(out_control);
             }
         }
 
-        void LoadApplicationControlData(const u64 app_id, EntryControlData &out_control) {
-            auto tmp_control_data = new NsApplicationControlData();
-            if(R_SUCCEEDED(nsGetApplicationControlData(NsApplicationControlSource_Storage, app_id, tmp_control_data, sizeof(NsApplicationControlData), nullptr))) {
-                LoadControlDataStrings(out_control, &tmp_control_data->nacp);        
+        void LoadApplicationNacp(const u64 app_id, EntryControlData &out_control) {
+            UL_ASSERT_TRUE(g_NacpLoadFunction != nullptr);
+
+            if(R_SUCCEEDED(g_NacpLoadFunction(app_id, &g_TempNacp))) {
+                ParseNacpFields(out_control);        
             }
         }
 
@@ -69,6 +71,11 @@ namespace ul::menu {
                 g_ApplicationRecords = os::ListApplicationRecords();
                 g_ApplicationViews = os::ListApplicationViews(g_ApplicationRecords);
             }
+        }
+
+        inline bool ApplicationNeedsUpdate(const u64 app_id) {
+            // TODO: this is not entirely correct, find out the proper way to check this!
+            return R_FAILED(nsCheckApplicationLaunchVersion(app_id));
         }
 
         inline std::string MakeEntryPath(const std::string &base_path, const u32 idx) {
@@ -260,22 +267,7 @@ namespace ul::menu {
                                     UL_LOG_WARN("Found old pre-v1.0.0 menu application that could not be matched to an existing application view...");
                                 }
 
-                                if(g_LoadApplicationEntryVersions) {
-                                    auto rc = avmGetHighestAvailableVersion(application_id, GetUpdateApplicationId(application_id), &entry.app_info.version);
-                                    if(R_FAILED(rc)) {
-                                        entry.app_info.version = 0;
-                                        UL_LOG_WARN("Found old pre-v1.0.0 menu application whose version could not be retrieved...");
-                                    }
-                                    rc = avmGetLaunchRequiredVersion(application_id, &entry.app_info.launch_required_version);
-                                    if(R_FAILED(rc)) {
-                                        entry.app_info.launch_required_version = 0;
-                                        UL_LOG_WARN("Found old pre-v1.0.0 menu application whose launch required version could not be retrieved...");
-                                    }
-                                }
-                                else {
-                                    entry.app_info.version = 0;
-                                    entry.app_info.launch_required_version = 0;
-                                }
+                                entry.app_info.needs_update = ApplicationNeedsUpdate(application_id);
                                 
                                 break;
                             }
@@ -328,15 +320,15 @@ namespace ul::menu {
 
     }
 
-    void Entry::TryLoadControlData() {
+    void Entry::TryLoadNacp() {
         if(!this->control.IsLoaded()) {
             switch(this->type) {
                 case EntryType::Application: {
-                    LoadApplicationControlData(this->app_info.app_id, this->control);
+                    LoadApplicationNacp(this->app_info.app_id, this->control);
                     break;
                 }
                 case EntryType::Homebrew: {
-                    LoadHomebrewControlData(this->hb_info.nro_target.nro_path, this->control);
+                    LoadHomebrewNacp(this->hb_info.nro_target.nro_path, this->control, this->hb_info.nro_target);
                     break;
                 }
                 default:
@@ -478,10 +470,6 @@ namespace ul::menu {
         return {};
     }
 
-    void SetLoadApplicationEntryVersions(const bool load) {
-        g_LoadApplicationEntryVersions = load;
-    }
-
     void InitializeEntries(const bool is_emummc, const AccountUid &uid) {
         u32 entry_idx = 0;
         g_ActiveMenuPath = MakeMenuPath(is_emummc, uid);
@@ -559,22 +547,7 @@ namespace ul::menu {
                                 UL_LOG_WARN("Potentially invalid application entry: unable to match to application view");
                             }
 
-                            if(g_LoadApplicationEntryVersions) {
-                                auto rc = avmGetHighestAvailableVersion(application_id, GetUpdateApplicationId(application_id), &entry.app_info.version);
-                                if(R_FAILED(rc)) {
-                                    entry.app_info.version = 0;
-                                    UL_LOG_WARN("Potentially invalid application entry: unable to retrieve version");
-                                }
-                                rc = avmGetLaunchRequiredVersion(application_id, &entry.app_info.launch_required_version);
-                                if(R_FAILED(rc)) {
-                                    entry.app_info.launch_required_version = 0;
-                                    UL_LOG_WARN("Potentially invalid application entry: unable to retrieve launch required version");
-                                }
-                            }
-                            else {
-                                entry.app_info.version = 0;
-                                entry.app_info.launch_required_version = 0;
-                            }
+                            entry.app_info.needs_update = ApplicationNeedsUpdate(application_id);
 
                             entries.push_back(entry);
                             break;
@@ -647,6 +620,10 @@ namespace ul::menu {
 
     const std::string &GetActiveMenuPath() {
         return g_ActiveMenuPath;
+    }
+
+    void SetNacpLoadFunction(NacpLoadFunction func) {
+        g_NacpLoadFunction = func;
     }
 
     void EnsureApplicationEntry(const NsExtApplicationRecord &app_record, const std::string &menu_path) {
@@ -729,7 +706,7 @@ namespace ul::menu {
             }
         };
 
-        hb_entry.TryLoadControlData();
+        hb_entry.TryLoadNacp();
 
         // Only set the icon if it's valid
         const auto cache_icon_path = GetHomebrewCacheIconPath(nro_path);

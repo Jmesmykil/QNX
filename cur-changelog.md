@@ -1,3 +1,19 @@
+# Changelog for `v1.2.1`
+
+- Introduced a new game icon/NACP caching system to circumvent issues with 20.x icon/NACP loading slowdowns:
+
+  - Icon/NACP data is stored in-memory in uSystem, which is why uSystem's memory footprint increases from `12MB` to around `30MB`: this should, in theory, allow cache for up to `200` installed games. If anyone happens to have more than this amount installed, then (even though this is already an absurd amount) feel free to open an issue to request more cache memory (we could theoretically use up to around `50MB`)
+
+  - Don't worry, since this shouldn't impact anything: we are already using less memory than the base HOME menu (which is around `50MB`) even considering the resulting size of the uSystem binary, we have been for years and still are, so (as always) things will be the same as with regular HOME menu, maybe even smoother
+
+- Fixed a bug causing major slowdowns for users with many games (even with around `10` it was noticeable), also related to 20.x changes, where a given command was called every frame (for every app) and made uMenu slow down whenever too many games were in view in the main menu (the value is now read just once when the apps are loaded)
+
+- Fixed a dumb bug where uMenu would only try to cache the active theme if it was not cached yet... while uSystem was wiping ALL cache every reboot, thus the theme was being cached every boot
+
+- Fixed a weird bug where (sometimes?) the default theme would be considered outdated
+
+- Recompiled with Atmosphère v1.9.1 support (20.1.0)
+
 # Changelog for `v1.2.0`
 
 ## General

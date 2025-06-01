@@ -112,13 +112,7 @@ namespace ul::menu::ui {
         auto icon_path = entry.control.icon_path;
         if(icon_path.empty()) {
             if(entry.Is<EntryType::Application>()) {
-                auto tex = LoadApplicationIconTexture(entry.app_info.app_id);
-                if(tex != nullptr) {
-                    return tex;
-                }
-                else {
-                    icon_path = "ui/Main/EntryIcon/DefaultApplication";
-                }
+                return LoadApplicationIconTexture(entry.app_info.app_id);
             }
             else if(entry.Is<EntryType::Homebrew>()) {
                 icon_path = "ui/Main/EntryIcon/DefaultHomebrew";
@@ -285,6 +279,8 @@ namespace ul::menu::ui {
     }
 
     void EntryMenu::OnRender(pu::ui::render::Renderer::Ref &drawer, const s32 x, const s32 y) {
+        const auto time_start = std::chrono::steady_clock::now();
+
         const auto loaded_pending_load_img_entry_ext_idx = this->pending_load_img_entry_ext_idx;
         if(!this->pending_load_img_done) {
             const auto has_left = this->pending_load_img_entry_start_idx >= this->pending_load_img_entry_ext_idx;
@@ -345,6 +341,7 @@ namespace ul::menu::ui {
 
         // For the swipe animations, additional items are rendered (some will be outside the visible range)
         const auto entry_render_count = this->entry_page_count + this->extra_entry_swipe_show_h_count * g_EntryHeightCount;
+        bool retried_load_app_icon = false;
         for(u32 i = 0; i < entry_render_count; i++) {
             const auto entry_i = base_idx + i;
 
@@ -363,7 +360,23 @@ namespace ul::menu::ui {
             drawer->RenderTexture(this->empty_entry_icon->Get(), (s32)entry_x - (s32)this->entries_base_swipe_neg_offset, entry_y, pu::ui::render::TextureRenderOptions({}, this->entry_size, this->entry_size, {}, {}, {}));
 
             if(!is_empty) {
-                const auto &entry = this->cur_entries.at(entry_i);
+                auto &entry = this->cur_entries.at(entry_i);
+
+                // Special check for applications with the icon not yet loaded
+                if(this->pending_load_img_done && entry.Is<EntryType::Application>() && (entry_icon == nullptr) && !retried_load_app_icon) {
+                    // Try loading the icon again
+                    entry_icon = LoadApplicationIconTexture(entry.app_info.app_id);
+                    if(entry_icon != nullptr) {
+                        entry.TryLoadNacp();
+                        this->entry_icons.at(entry_i) = entry_icon;
+                    }
+                    else {
+                        entry_icon = GetDefaultApplicationIconTexture();
+                    }
+
+                    retried_load_app_icon = true;
+                }
+
                 auto &entry_alpha = this->load_img_entry_alphas.at(entry_i);
                 auto &entry_alpha_incr = this->load_img_entry_incrs.at(entry_i);
                 entry_alpha_incr.Increment(entry_alpha);
@@ -470,6 +483,10 @@ namespace ul::menu::ui {
                 this->after_transition_entry_idx = -1;
             }
         }
+
+        const auto time_end = std::chrono::steady_clock::now();
+        const auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start).count();
+        UL_LOG_INFO("EntryMenu::OnRender took %d ms", time_diff);
     }
 
     void EntryMenu::OnInput(const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {

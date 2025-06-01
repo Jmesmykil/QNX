@@ -87,6 +87,7 @@ namespace ul::menu::ui {
         this->verify_rc = ResultSuccess;
         this->verify_detail_rc = ResultSuccess;
         this->active_theme_load_rc = ResultSuccess;
+        this->active_theme_outdated = false;
 
         this->startup_menu_lyt = nullptr;
         this->main_menu_lyt = nullptr;
@@ -209,6 +210,7 @@ namespace ul::menu::ui {
 
         // This might look very ugly, but it is a simple and quick way to exit fast: let uSystem terminate us directly (the OS itself deals with the cleanup)
         // Most importantly, this allows us to exit without cleaning the screen to black when exiting SDL2 stuff (as regular homebrew apps do) so we can do cool transitions with applets/games
+        accountExit();
         ul::menu::smi::TerminateMenu();
     }
 

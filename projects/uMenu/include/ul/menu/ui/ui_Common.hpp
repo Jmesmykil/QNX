@@ -41,6 +41,8 @@ namespace ul::menu::ui {
     void LoadSelectedUserIconTexture();
     pu::sdl2::TextureHandle::Ref GetSelectedUserIconTexture();
 
+    pu::sdl2::TextureHandle::Ref GetDefaultApplicationIconTexture();
+
     bool TryGetUiElement(const std::string &menu, const std::string &elem, util::JSON &out_json);
 
     inline bool ParseHorizontalAlign(const std::string &align, pu::ui::elm::HorizontalAlign &out_align) {

@@ -210,7 +210,6 @@ namespace ul::menu::ui {
 
         // This might look very ugly, but it is a simple and quick way to exit fast: let uSystem terminate us directly (the OS itself deals with the cleanup)
         // Most importantly, this allows us to exit without cleaning the screen to black when exiting SDL2 stuff (as regular homebrew apps do) so we can do cool transitions with applets/games
-        accountExit();
         ul::menu::smi::TerminateMenu();
     }
 

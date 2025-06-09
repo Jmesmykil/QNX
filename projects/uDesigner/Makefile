@@ -15,7 +15,7 @@ CXX_FLAGS		:=	-O1 -fexceptions
 SOURCES			+=	$(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgui_demo.cpp $(IMGUI_DIR)/imgui_widgets.cpp $(IMGUI_DIR)/imgui_tables.cpp $(IMGUI_DIR)/backends/imgui_impl_glfw.cpp $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
 
 LIBS			:=	-lGL
-CXX_EMS_FLAGS	:=	-s USE_WEBGL2=1 -s USE_GLFW=3 -s FULL_ES3=1 -s WASM=1 -s RETAIN_COMPILER_SETTINGS -s ALLOW_MEMORY_GROWTH -s ASSERTIONS -s EXPORTED_FUNCTIONS="[_main, _malloc]" -s EXPORTED_RUNTIME_METHODS=[ccall]
+CXX_EMS_FLAGS	:=	-s USE_WEBGL2=1 -s USE_GLFW=3 -s FULL_ES3=1 -s WASM=1 -s RETAIN_COMPILER_SETTINGS -s ALLOW_MEMORY_GROWTH -s ASSERTIONS -s EXPORTED_FUNCTIONS="[_main, _malloc]" -s EXPORTED_RUNTIME_METHODS='["ccall", "HEAPU8"]' -s ERROR_ON_UNDEFINED_SYMBOLS=1
 
 .PHONY: all clean
 

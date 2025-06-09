@@ -31,7 +31,7 @@ if (ENVIRONMENT_IS_NODE) {
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /tmp/tmpdl2f4lcx.js
+// include: /tmp/tmp4uhijw9k.js
 
   Module['expectedDataFileDownloads'] ??= 0;
   Module['expectedDataFileDownloads']++;
@@ -212,21 +212,21 @@ Module['FS_createPath']("/", "assets", true, true);
 
   })();
 
-// end include: /tmp/tmpdl2f4lcx.js
-// include: /tmp/tmp180a_krx.js
+// end include: /tmp/tmp4uhijw9k.js
+// include: /tmp/tmpkt4ctgah.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if (Module['$ww'] || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /tmp/tmp180a_krx.js
-// include: /tmp/tmpv2tfitfh.js
+  // end include: /tmp/tmpkt4ctgah.js
+// include: /tmp/tmpt3j6_dpw.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /tmp/tmpv2tfitfh.js
+  // end include: /tmp/tmpt3j6_dpw.js
 
 
 var arguments_ = [];
@@ -656,7 +656,7 @@ function updateMemoryViews() {
   var b = wasmMemory.buffer;
   HEAP8 = new Int8Array(b);
   HEAP16 = new Int16Array(b);
-  HEAPU8 = new Uint8Array(b);
+  Module['HEAPU8'] = HEAPU8 = new Uint8Array(b);
   HEAPU16 = new Uint16Array(b);
   HEAP32 = new Int32Array(b);
   HEAPU32 = new Uint32Array(b);
@@ -9238,7 +9238,6 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'HEAPF32',
   'HEAPF64',
   'HEAP8',
-  'HEAPU8',
   'HEAP16',
   'HEAPU16',
   'HEAP32',

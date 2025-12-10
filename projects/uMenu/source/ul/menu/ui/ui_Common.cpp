@@ -270,7 +270,7 @@ namespace ul::menu::ui {
     pu::sdl2::TextureHandle::Ref LoadApplicationIconTexture(const u64 app_id) {
         size_t icon_size;
         const auto start_tick = armGetSystemTick();
-        const auto rc = smi::QueryApplicationIcon(app_id, g_TempIconBuffer, sizeof(g_TempIconBuffer), icon_size);
+        const auto rc = smi::sf::QueryApplicationIcon(app_id, g_TempIconBuffer, sizeof(g_TempIconBuffer), icon_size);
         const auto end_tick = armGetSystemTick();
         const auto elapsed_time_ms = armTicksToNs(end_tick - start_tick) / 1'000'000;
         UL_LOG_INFO("Query application ID %016lX icon (elapsed time: %ld ms)", app_id, elapsed_time_ms);

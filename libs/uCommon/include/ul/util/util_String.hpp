@@ -2,6 +2,8 @@
 #pragma once
 #include <switch.h>
 #include <string>
+#include <string_view>
+#include <algorithm>
 #include <cstring>
 #include <sstream>
 #include <iomanip>
@@ -31,18 +33,15 @@ namespace ul::util {
         return strtoull(val.c_str(), nullptr, 16);
     }
 
-    template<size_t S>
-    inline void CopyToStringBuffer(char (&dst)[S], const std::string &src) {
-        const auto copy_size = std::min(S - 1, src.length());
-        memcpy(dst, src.c_str(), copy_size);
-        dst[copy_size] = '\0';
-    }
+    template <size_t N>
+    constexpr bool CopyToStringBuffer(char (&dst)[N], std::string_view src) noexcept {
+        static_assert(N > 0, "Destination buffer must have size > 0");
 
-    template<size_t S1, size_t S2>
-    inline void CopyToStringBuffer(char (&dst)[S1], const char (&src)[S2]) {
-        constexpr auto copy_size = std::min(S1 - 1, S2 - 1);
-        memcpy(dst, src, copy_size);
-        dst[copy_size] = '\0';
+        const size_t copy_len = std::min(N - 1, src.size());
+        std::memcpy(dst, src.data(), copy_len);
+        dst[copy_len] = '\0';
+
+        return copy_len < src.size();  // true if truncated
     }
 
     std::string FormatAccount(const AccountUid value);

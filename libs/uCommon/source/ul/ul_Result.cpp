@@ -17,7 +17,7 @@ namespace ul {
     namespace {
 
         char g_LogPath[FS_MAX_PATH] = {};
-        RecursiveMutex g_LogLock;
+        Mutex g_LogLock;
 
         inline const char *FormatLogKind(const LogKind kind) {
             switch(kind) {

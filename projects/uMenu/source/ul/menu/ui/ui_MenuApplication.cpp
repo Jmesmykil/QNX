@@ -6,12 +6,26 @@ extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
 
 namespace ul::menu::ui {
 
+    namespace {
+
+        std::queue<smi::MenuMessageContext> g_PendingInitialMessageQueue;
+        
+    }
+
     std::string GetLanguageString(const std::string &name) {
         return cfg::GetLanguageString(g_GlobalSettings.main_lang, g_GlobalSettings.default_lang, name);
     }
 
     void OnMessage(const smi::MenuMessageContext &msg_ctx) {
-        g_MenuApplication->GetLayout<IMenuLayout>()->NotifyMessageContext(msg_ctx);
+        auto ptr = g_MenuApplication->GetLayout<IMenuLayout>();
+        if(ptr == nullptr) {
+            UL_LOG_WARN("[MenuApplication] Layout not ready, queuing message of type %d for later processing...", (u32)msg_ctx.msg);
+            g_PendingInitialMessageQueue.push(msg_ctx);
+        }
+        else {
+            UL_LOG_INFO("[MenuApplication] Forwarding message of type %d to layout...", (u32)msg_ctx.msg);
+            ptr->NotifyMessageContext(msg_ctx);    
+        }        
     }
 
     MenuBgmEntry &MenuApplication::GetCurrentMenuBgm() {
@@ -188,6 +202,13 @@ namespace ul::menu::ui {
             }
         }
         this->StartPlayBgm();
+
+        for(; !g_PendingInitialMessageQueue.empty(); ) {
+            const auto pending_msg_ctx = g_PendingInitialMessageQueue.front();
+            UL_LOG_INFO("[MenuApplication] Forwarding initial queued message of type %d to layout...", (u32)pending_msg_ctx.msg);
+            this->GetLayout<IMenuLayout>()->NotifyMessageContext(pending_msg_ctx);
+            g_PendingInitialMessageQueue.pop();
+        }
 
         _LOG_SOFAR("done everything");
     }

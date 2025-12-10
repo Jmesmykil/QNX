@@ -63,9 +63,9 @@ namespace ul::fs {
     inline bool WriteFile(const S &path, const void *data, const size_t size, const bool overwrite) {
         auto f = fopen(util::GetCString(path), overwrite ? "wb" : "ab+");
         if(f) {
-            fwrite(data, size, 1, f);
+            const auto written = fwrite(data, size, 1, f);
             fclose(f);
-            return true;
+            return written == 1;
         }
         else {
             return false;
@@ -77,6 +77,27 @@ namespace ul::fs {
         auto f = fopen(util::GetCString(path), "rb");
         if(f) {
             const auto ok = fread(data, size, 1, f) == 1;
+            fclose(f);
+            return ok;
+        }
+        else {
+            return false;
+        }
+    }
+
+    template<typename S>
+    inline bool ReadAllFile(const S &path, void *data, const size_t size, size_t &out_actual_size) {
+        auto f = fopen(util::GetCString(path), "rb");
+        if(f) {
+            fseek(f, 0, SEEK_END);
+            const size_t file_size = ftell(f);
+            rewind(f);
+            if(file_size > size) {
+                fclose(f);
+                return false;
+            } 
+            out_actual_size = file_size;
+            const auto ok = fread(data, file_size, 1, f) == 1;
             fclose(f);
             return ok;
         }

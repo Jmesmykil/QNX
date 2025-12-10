@@ -4,13 +4,31 @@
 #include <ul/menu/ui/ui_MenuApplication.hpp>
 #include <ul/util/util_Size.hpp>
 #include <ul/net/net_Service.hpp>
-#include <ul/menu/smi/smi_PrivateService.hpp>
+#include <ul/menu/smi/sf/sf_PrivateService.hpp>
 #include <ul/menu/am/am_LibraryAppletUtils.hpp>
 #include <ul/menu/am/am_LibnxLibappletWrap.hpp>
 
 using namespace ul::util::size;
 
 ul::menu::ui::GlobalSettings g_GlobalSettings;
+
+namespace {
+
+    bool MenuControlEntryLoadFunction(const u64 app_id, std::string &out_name, std::string &out_author, std::string &out_version) {
+        ul::smi::sf::NacpMetadata nacp_metadata;
+        const auto rc = ul::menu::smi::sf::QueryApplicationNacpMetadata(app_id, &nacp_metadata);
+        if(R_FAILED(rc)) {
+            UL_LOG_WARN("Failed to query NACP for application %016lX: %s", app_id, ul::util::FormatResultDisplay(rc).c_str());
+            return false;
+        }
+
+        out_name = nacp_metadata.name;
+        out_author = nacp_metadata.author;
+        out_version = nacp_metadata.display_version;
+        return true;
+    }
+
+}
 
 extern "C" {
 
@@ -54,14 +72,14 @@ extern "C" {
         UL_RC_ASSERT(ul::net::Initialize());
         UL_RC_ASSERT(psmInitialize());
 
-        ul::menu::SetNacpLoadFunction(ul::menu::smi::QueryApplicationNacp);
+        ul::menu::SetControlEntryLoadFunction(MenuControlEntryLoadFunction);
         ul::menu::bt::InitializeBluetoothManager();
 
         __nx_win_init();
     }
 
     void __appExit() {
-        ul::menu::smi::FinalizePrivateService();
+        ul::menu::smi::sf::FinalizePrivateService();
 
         // Exit RomFs manually, since we also initialized it manually
         romfsExit();
@@ -242,10 +260,12 @@ namespace {
         UL_ASSERT_TRUE(pu::audio::Initialize(MIX_INIT_MP3));
 
         g_MenuApplication->Initialize(g_StartMode);
+        ul::menu::ui::RegisterMenuOnMessageDetect();
+        UL_RC_ASSERT(ul::menu::smi::sf::InitializePrivateService());
         UL_RC_ASSERT(g_MenuApplication->Load());
 
         // Initialize uSystem message handling (need to do it after Load so that the message handlers are registered)
-        UL_RC_ASSERT(ul::menu::smi::InitializePrivateService());
+        // UL_RC_ASSERT(ul::menu::smi::sf::InitializePrivateService()); 
 
         if(R_FAILED(active_theme_load_rc)) {
             g_MenuApplication->NotifyActiveThemeLoadFailure(active_theme_load_rc);
@@ -288,7 +308,6 @@ int main() {
 
     // Register handlers for HOME button press detection
     ul::menu::am::RegisterLibnxLibappletHomeButtonDetection();
-    ul::menu::ui::RegisterMenuOnMessageDetect();
     ul::menu::ui::QuickMenu::RegisterHomeButtonDetection();
 
     MainLoop();

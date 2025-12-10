@@ -67,7 +67,7 @@ namespace ul::menu {
         }
 
         auto f = fopen(nro_path.c_str(), "rb");
-        if(f) {
+        if(f != nullptr) {
             if(fseek(f, sizeof(NroStart), SEEK_SET) == 0) {
                 NroHeader header = {};
                 if(fread(&header, sizeof(header), 1, f) == 1) {

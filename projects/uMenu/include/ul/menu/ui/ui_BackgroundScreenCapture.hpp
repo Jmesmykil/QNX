@@ -5,7 +5,7 @@
 
 namespace ul::menu::ui {
 
-    void InitializeScreenCaptures(const smi::MenuStartMode start_mode);
+    void InitializeScreenCaptures(const ul::smi::MenuStartMode start_mode);
 
     ul::menu::ui::RawRgbaImage::Ref GetScreenCaptureBackground();
     bool HasScreenCaptureBackground();

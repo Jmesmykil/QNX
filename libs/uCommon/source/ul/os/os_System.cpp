@@ -1,6 +1,7 @@
 #include <ul/os/os_System.hpp>
 #include <ul/ul_Result.hpp>
 #include <ctime>
+#include <atomic>
 
 namespace ul::os {
 
@@ -9,8 +10,8 @@ namespace ul::os {
         constexpr u32 ExosphereApiVersionConfigItem = 65000;
         constexpr u32 ExosphereEmuMMCType = 65007;
 
-        bool g_GotIsEmuMMC = false;
-        bool g_IsEmuMMC = false;
+        std::atomic_bool g_GotIsEmuMMC = false;
+        std::atomic_bool g_IsEmuMMC = false;
     
     }
 

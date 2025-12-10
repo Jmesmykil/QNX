@@ -1,6 +1,5 @@
 #include <ul/system/ecs/ecs_ExternalContent.hpp>
 #include <ul/system/sf/sf_IpcManager.hpp>
-#include <stratosphere/fssrv/fssrv_interface_adapters.hpp>
 
 namespace ul::system::ecs {
 
@@ -28,7 +27,7 @@ namespace ul::system::ecs {
         UL_RC_TRY(exefs_fs_path.Normalize(::ams::fs::PathFlags{}));
         UL_RC_TRY(subdir_fs->Initialize(exefs_fs_path));
 
-        auto sd_ifs_ipc = sf::MakeShared<::ams::fssrv::sf::IFileSystem, ::ams::fssrv::impl::FileSystemInterfaceAdapter>(std::move(subdir_fs), false);
+        auto sd_ifs_ipc = sf::MakeSharedFileSystem(std::move(subdir_fs));
         UL_RC_TRY(sf::RegisterSession(move_h, ::ams::sf::cmif::ServiceObjectHolder(std::move(sd_ifs_ipc))));
         return ResultSuccess;
     }

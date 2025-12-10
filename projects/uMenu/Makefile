@@ -19,7 +19,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	source source/ul source/ul/menu source/ul/menu/am source/ul/menu/smi source/ul/menu/bt source/ul/menu/ui source/ul/menu/ui/menu
+SOURCES		:=	source source/ul source/ul/menu source/ul/menu/am source/ul/menu/smi source/ul/menu/smi/sf source/ul/menu/bt source/ul/menu/ui source/ul/menu/ui/menu
 DATA		:=	data
 INCLUDES	:=	include
 EXEFS_SRC	:=	exefs_src
@@ -33,24 +33,25 @@ CFLAGS	:=	-g -O2 -ffunction-sections -Wall -Werror $(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__ $(UL_DEFS)
 
-CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++20
+CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++23
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBUCOMMON		:=	$(CURDIR)/../../libs/uCommon
+LIBNXTC			:=	$(CURDIR)/../../libs/libnxtc
 LIBPU			:=	$(CURDIR)/../../libs/Plutonium/Plutonium
 LIBNX_EXT		:=	$(CURDIR)/../../libs/libnx-ext/libnx-ext
 LIBNX_IPCEXT	:=	$(CURDIR)/../../libs/libnx-ext/libnx-ipcext
-INCLUDES 	+=	/../../libs/json/single_include/nlohmann /../../libs/zip/src
+INCLUDES 		+=	/../../libs/json/single_include/nlohmann /../../libs/zip/src
 
-LIBS	:= -lpu -lfreetype -lSDL2_mixer -lopusfile -lopus -lmodplug -lmpg123 -lvorbisidec -logg -lSDL2_ttf -lSDL2_gfx -lSDL2_image -lSDL2 -lEGL -lGLESv2 -lglapi -ldrm_nouveau -lwebp -lpng -ljpeg `sdl2-config --libs` `freetype-config --libs` -luCommon -lnx-ipcext -lnx-ext -lnx
+LIBS	:= -lpu -lfreetype -lSDL2_mixer -lopusfile -lopus -lmodplug -lmpg123 -lvorbisidec -logg -lSDL2_ttf -lSDL2_gfx -lSDL2_image -lSDL2 -lEGL -lGLESv2 -lglapi -ldrm_nouveau -lwebp -lpng -ljpeg `sdl2-config --libs` `freetype-config --libs` -luCommon -lnx-ipcext -lnx-ext -lbz2 -lharfbuzz -lz -lnx
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:= $(PORTLIBS) $(LIBNX) $(LIBUCOMMON) $(LIBPU) $(LIBNX_EXT) $(LIBNX_IPCEXT)
+LIBDIRS	:= $(PORTLIBS) $(LIBNX) $(LIBUCOMMON) $(LIBNXTC) $(LIBPU) $(LIBNX_EXT) $(LIBNX_IPCEXT)
 
 
 #---------------------------------------------------------------------------------
@@ -140,6 +141,7 @@ all: $(BUILD)
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) -C $(LIBUCOMMON)
+	@$(MAKE) -C $(LIBNXTC)
 	@$(MAKE) -C $(LIBPU)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
@@ -147,6 +149,7 @@ $(BUILD):
 clean:
 	@echo clean ...
 	@$(MAKE) clean -C $(LIBUCOMMON)
+	@$(MAKE) clean -C $(LIBNXTC)
 	@$(MAKE) clean -C $(LIBPU)
 	@rm -fr $(BUILD) $(TARGET).nsp $(TARGET).npdm $(TARGET).nso $(TARGET).elf
 

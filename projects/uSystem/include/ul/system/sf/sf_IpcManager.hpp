@@ -1,9 +1,14 @@
 
 #pragma once
 #include <stratosphere.hpp>
-#include <ul/sf/sf_Base.hpp>
+#include <stratosphere/fssrv/fssrv_interface_adapters.hpp>
+#include <ul/sf/sf_Public.hpp>
+#include <ul/smi/sf/sf_Private.hpp>
 
 namespace ul::system::sf {
+
+    using namespace ul::sf;
+    using namespace ul::smi::sf;
 
     // Note: domains and pointer buffer are required since ECS sessions will make use of them (like normal fs interfaces)
 
@@ -26,10 +31,10 @@ namespace ul::system::sf {
     };
 
     constexpr size_t MaxPrivateSessions = 1;
-    constexpr ::ams::sm::ServiceName PrivateServiceName = ::ams::sm::ServiceName::Encode(ul::sf::PrivateServiceName);
+    constexpr ::ams::sm::ServiceName PrivateName = ::ams::sm::ServiceName::Encode(PrivateServiceName);
 
-    constexpr size_t MaxPublicSessions = 0x20;
-    constexpr ::ams::sm::ServiceName PublicServiceName = ::ams::sm::ServiceName::Encode(ul::sf::PublicServiceName);
+    constexpr size_t MaxPublicSessions = 32;
+    constexpr ::ams::sm::ServiceName PublicName = ::ams::sm::ServiceName::Encode(PublicServiceName);
 
     constexpr size_t MaxEcsExtraSessions = 5;
     constexpr size_t MaxSessions = MaxPrivateSessions + MaxEcsExtraSessions;
@@ -40,13 +45,7 @@ namespace ul::system::sf {
     };
 
     Result Initialize();
-    Allocator &GetManagerAllocator();
-
+    ams::sf::EmplacedRef<::ams::fssrv::sf::IFileSystem, ::ams::fssrv::impl::FileSystemInterfaceAdapter> MakeSharedFileSystem(std::shared_ptr<::ams::fs::fsa::IFileSystem> &&fs);
     ::ams::Result RegisterSession(const ::ams::os::NativeHandle session_handle, ::ams::sf::cmif::ServiceObjectHolder &&obj);
-
-    template<typename Impl, typename T, typename ...Args>
-    inline auto MakeShared(Args ...args) {
-        return ObjectFactory::CreateSharedEmplaced<Impl, T>(std::addressof(GetManagerAllocator()), args...);
-    }
 
 }

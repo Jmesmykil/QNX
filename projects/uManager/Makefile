@@ -58,7 +58,7 @@ CFLAGS	:=	-g -O2 -ffunction-sections -Wall -Werror $(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__ $(UL_DEFS) `sdl2-config --cflags`
 
-CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++20
+CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++23
 
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
@@ -69,7 +69,7 @@ LIBNX_EXT		:=	$(CURDIR)/../../libs/libnx-ext/libnx-ext
 LIBNX_IPCEXT	:=	$(CURDIR)/../../libs/libnx-ext/libnx-ipcext
 INCLUDES 	+=	/../../libs/json/single_include/nlohmann /../../libs/zip/src
 
-LIBS	:= -lpu -lcurl -lfreetype -lSDL2_mixer -lopusfile -lopus -lmodplug -lmpg123 -lvorbisidec -lc -logg -lSDL2_ttf -lSDL2_gfx -lSDL2_image -lwebp -lpng -ljpeg `sdl2-config --libs` `freetype-config --libs` -luCommon -lnx-ext -lnx-ipcext -lnx
+LIBS	:= -lpu -lcurl -lfreetype -lSDL2_mixer -lopusfile -lopus -lmodplug -lmpg123 -lvorbisidec -lc -logg -lSDL2_ttf -lSDL2_gfx -lSDL2_image -lwebp -lpng -ljpeg `sdl2-config --libs` `freetype-config --libs` -luCommon -lnx-ext -lnx-ipcext -lbz2 -lharfbuzz -lz -lnx
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing

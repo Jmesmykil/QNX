@@ -13,7 +13,7 @@ namespace ul::menu {
 
     namespace {
 
-        NacpLoadFunction g_NacpLoadFunction = nullptr;
+        ControlEntryLoadFunction g_ControlEntryLoadFunction = nullptr;
         NacpStruct g_TempNacp;
 
         std::string g_ActiveMenuPath;
@@ -50,7 +50,7 @@ namespace ul::menu {
             }
         }
 
-        void LoadHomebrewNacp(const std::string &nro_path, EntryControlData &out_control, loader::TargetInput &target_input) {
+        void LoadHomebrewControlData(const std::string &nro_path, EntryControlData &out_control, loader::TargetInput &target_input) {
             const auto cache_nacp_path = GetHomebrewCacheNacpPath(nro_path);
             if(fs::ExistsFile(cache_nacp_path)) {
                 UL_ASSERT_TRUE(fs::ReadFile(cache_nacp_path, &g_TempNacp, sizeof(NacpStruct)));
@@ -58,11 +58,22 @@ namespace ul::menu {
             }
         }
 
-        void LoadApplicationNacp(const u64 app_id, EntryControlData &out_control) {
-            UL_ASSERT_TRUE(g_NacpLoadFunction != nullptr);
+        void LoadApplicationControlData(const u64 app_id, EntryControlData &out_control) {
+            UL_ASSERT_TRUE(g_ControlEntryLoadFunction != nullptr);
 
-            if(R_SUCCEEDED(g_NacpLoadFunction(app_id, &g_TempNacp))) {
-                ParseNacpFields(out_control);        
+            std::string name;
+            std::string author;
+            std::string version;
+            if(g_ControlEntryLoadFunction(app_id, name, author, version)) {
+                if(!out_control.custom_name) {
+                    out_control.name = name;
+                }
+                if(!out_control.custom_author) {
+                    out_control.author = author;
+                }
+                if(!out_control.custom_version) {
+                    out_control.version = version;
+                }
             }
         }
 
@@ -324,11 +335,11 @@ namespace ul::menu {
         if(!this->control.IsLoaded()) {
             switch(this->type) {
                 case EntryType::Application: {
-                    LoadApplicationNacp(this->app_info.app_id, this->control);
+                    LoadApplicationControlData(this->app_info.app_id, this->control);
                     break;
                 }
                 case EntryType::Homebrew: {
-                    LoadHomebrewNacp(this->hb_info.nro_target.nro_path, this->control, this->hb_info.nro_target);
+                    LoadHomebrewControlData(this->hb_info.nro_target.nro_path, this->control, this->hb_info.nro_target);
                     break;
                 }
                 default:
@@ -622,8 +633,8 @@ namespace ul::menu {
         return g_ActiveMenuPath;
     }
 
-    void SetNacpLoadFunction(NacpLoadFunction func) {
-        g_NacpLoadFunction = func;
+    void SetControlEntryLoadFunction(ControlEntryLoadFunction func) {
+        g_ControlEntryLoadFunction = func;
     }
 
     void EnsureApplicationEntry(const NsExtApplicationRecord &app_record, const std::string &menu_path) {

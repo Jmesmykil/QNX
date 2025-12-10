@@ -86,12 +86,18 @@ namespace ul::cfg {
         if(icon_fmt.empty()) {
             return ResultThemeIconNotFound;
         }
+        UL_ON_SCOPE_EXIT(
+            zip_entry_close(theme_zip);
+        );
 
         void *icon_ptr;
         size_t icon_ptr_size;
         if(zip_entry_read(theme_zip, &icon_ptr, &icon_ptr_size) <= 0) {
             return ResultInvalidThemeZipFileRead;
         }
+        UL_ON_SCOPE_EXIT(
+            free(icon_ptr);
+        );
 
         u8 hash[SHA256_HASH_SIZE] = {};
         sha256CalculateHash(hash, icon_ptr, icon_ptr_size);
@@ -102,8 +108,6 @@ namespace ul::cfg {
             return ResultThemeIconCacheFail;
         }
 
-        free(icon_ptr);
-        zip_entry_close(theme_zip);
         out_icon_path = icon_cache_path;
         return ResultSuccess;
     }
@@ -263,7 +267,12 @@ namespace ul::cfg {
         Config cfg = {};
         const auto config_path = os::IsEmuMMC() ? EmuMMCConfigPath : SysMMCConfigPath;
         const auto cfg_file_size = fs::GetFileSize(config_path);
+
         auto cfg_file_buf = new u8[cfg_file_size]();
+        UL_ON_SCOPE_EXIT(
+            delete[] cfg_file_buf;
+        );
+
         if(fs::ReadFile(config_path, cfg_file_buf, cfg_file_size)) {
             size_t cur_offset = 0;
             const auto cfg_header = *reinterpret_cast<ConfigHeader*>(cfg_file_buf);
@@ -315,6 +324,7 @@ namespace ul::cfg {
                 }
             }
         }
+
         return CreateNewAndLoadConfig();
     }
 

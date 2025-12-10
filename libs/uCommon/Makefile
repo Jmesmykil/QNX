@@ -29,7 +29,7 @@ ARCH	:=	-march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIC -ftls-model=local-exec
 
 CFLAGS	:=	-g -Wall -Werror -O2 -ffunction-sections -fdata-sections $(ARCH) $(INCLUDE) -D__SWITCH__ $(UL_DEFS)
 
-CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++20
+CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++23
 
 ASFLAGS	:=	-g $(ARCH)
 

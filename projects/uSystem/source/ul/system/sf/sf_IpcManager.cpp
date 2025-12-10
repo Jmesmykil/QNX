@@ -1,5 +1,5 @@
 #include <ul/system/sf/sf_IpcManager.hpp>
-#include <ul/system/sf/sf_IPrivateService.hpp>
+#include <ul/system/smi/sf/sf_IPrivateService.hpp>
 #include <ul/system/sf/sf_IPublicService.hpp>
 #include <ul/util/util_Size.hpp>
 
@@ -25,8 +25,8 @@ namespace ul::system::sf {
         void IpcManagerThread(void*) {
             ::ams::os::SetThreadNamePointer(::ams::os::GetCurrentThread(), "ul.system.sf.IpcManager");
 
-            UL_RC_ASSERT(g_Manager.RegisterServer(Port_PrivateService, PrivateServiceName, MaxPrivateSessions));
-            UL_RC_ASSERT(g_Manager.RegisterServer(Port_PublicService, PublicServiceName, MaxPublicSessions));
+            UL_RC_ASSERT(g_Manager.RegisterServer(Port_PrivateService, PrivateName, MaxPrivateSessions));
+            UL_RC_ASSERT(g_Manager.RegisterServer(Port_PublicService, PublicName, MaxPublicSessions));
 
             g_Manager.LoopProcess();
         }
@@ -36,15 +36,21 @@ namespace ul::system::sf {
             g_ManagerAllocator.Attach(g_ManagerAllocatorHeapHandle);
         }
 
+        template<typename Impl, typename T, typename ...Args>
+        auto MakeShared(Args &&...args) {
+            ScopedLock lk(g_ManagerAllocatorLock);
+            return ObjectFactory::CreateSharedEmplaced<Impl, T>(std::addressof(g_ManagerAllocator), std::forward<Args>(args)...);
+        }
+
     }
 
     ::ams::Result ServerManager::OnNeedsToAccept(int port_index, Server *server) {
         switch(port_index) {
             case Port_PrivateService: {
-                return this->AcceptImpl(server, MakeShared<::ams::ul::system::sf::IPrivateService, PrivateService>());
+                return this->AcceptImpl(server, MakeShared<::ams::ul::system::smi::sf::IPrivateService, smi::sf::PrivateService>());
             }
             case Port_PublicService: {
-                return this->AcceptImpl(server, MakeShared<::ams::ul::system::sf::IPublicService, PublicService>());
+                return this->AcceptImpl(server, MakeShared<::ams::ul::system::sf::IPublicService, sf::PublicService>());
             }
             AMS_UNREACHABLE_DEFAULT_CASE();
         }
@@ -58,9 +64,8 @@ namespace ul::system::sf {
         return ResultSuccess;
     }
 
-    Allocator &GetManagerAllocator() {
-        ScopedLock lk(g_ManagerAllocatorLock);
-        return g_ManagerAllocator;
+    ams::sf::EmplacedRef<::ams::fssrv::sf::IFileSystem, ::ams::fssrv::impl::FileSystemInterfaceAdapter> MakeSharedFileSystem(std::shared_ptr<::ams::fs::fsa::IFileSystem> &&fs) {
+        return MakeShared<::ams::fssrv::sf::IFileSystem, ::ams::fssrv::impl::FileSystemInterfaceAdapter>(std::move(fs), false);
     }
 
     ::ams::Result RegisterSession(const ::ams::os::NativeHandle session_handle, ::ams::sf::cmif::ServiceObjectHolder &&obj) {

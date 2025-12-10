@@ -1,9 +1,8 @@
-#include <ul/menu/smi/smi_PrivateService.hpp>
-#include <ul/sf/sf_Base.hpp>
+#include <ul/menu/smi/sf/sf_PrivateService.hpp>
 #include <ul/util/util_Scope.hpp>
 #include <atomic>
 
-namespace ul::menu::smi {
+namespace ul::menu::smi::sf {
 
     namespace {
 
@@ -21,10 +20,10 @@ namespace ul::menu::smi {
             );
         }
 
-        inline Result psrvQueryApplicationNacp(Service *srv, NacpStruct *out_nacp_buf, const u64 app_id) {
+        inline Result psrvQueryApplicationNacp(Service *srv, NacpMetadata *out_nacp_metadata, const u64 app_id) {
             return serviceDispatchIn(srv, 2, app_id,
                 .buffer_attrs = { SfBufferAttr_HipcMapAlias | SfBufferAttr_Out },
-                .buffers = { { out_nacp_buf, sizeof(NacpStruct) } },
+                .buffers = { { out_nacp_metadata, sizeof(NacpMetadata) } },
             );
         }
 
@@ -78,7 +77,9 @@ namespace ul::menu::smi {
                 {
                     MenuMessageContext last_msg_ctx;
                     if(R_SUCCEEDED(TryPopMessageContext(&last_msg_ctx))) {
+                        UL_LOG_INFO("[PrivateService] Received message of type %d", (u32)last_msg_ctx.msg);
                         ScopedLock lk(g_CallbackTableLock);
+                        UL_LOG_INFO("[PrivateService] Dispatching to %zu callbacks...", g_MessageCallbackTable.size());
 
                         for(const auto &[cb, msg] : g_MessageCallbackTable) {
                             if((msg == MenuMessage::Invalid) || (msg == last_msg_ctx.msg)) {
@@ -122,8 +123,8 @@ namespace ul::menu::smi {
         g_Initialized = false;
     }
 
-    Result QueryApplicationNacp(const u64 app_id, NacpStruct *out_nacp_buf) {
-        return psrvQueryApplicationNacp(&g_PrivateService, out_nacp_buf, app_id);
+    Result QueryApplicationNacpMetadata(const u64 app_id, NacpMetadata *out_nacp_metadata) {
+        return psrvQueryApplicationNacp(&g_PrivateService, out_nacp_metadata, app_id);
     }
 
     Result QueryApplicationIcon(const u64 app_id, u8 *out_icon_buf, const size_t icon_size, size_t &out_icon_size) {

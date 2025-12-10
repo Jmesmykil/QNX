@@ -1,5 +1,5 @@
 #include <ul/system/app/app_Application.hpp>
-#include <ul/system/app/app_Cache.hpp>
+#include <ul/system/app/app_ControlCache.hpp>
 #include <ul/ul_Result.hpp>
 #include <ul/util/util_Scope.hpp>
 #include <ul/util/util_String.hpp>
@@ -11,7 +11,7 @@ namespace ul::system::app {
         AppletApplication g_ApplicationHolder;
         u64 g_LastApplicationId;
 
-        NacpStruct g_StartApplicationNacp;
+        ApplicationNacpMisc g_StartApplicationNacpMisc;
 
         inline void EnsureSaveData(const u64 app_id, const u64 owner_id, const AccountUid user_id, const FsSaveDataType type, const FsSaveDataSpaceId space_id, const u64 savedata_size, const u64 savedata_journal_size) {
             if(savedata_size > 0) {
@@ -90,27 +90,27 @@ namespace ul::system::app {
             UL_RC_TRY(appletCreateSystemApplication(&g_ApplicationHolder, app_id));
         }
         else {
-            app::LoopQueryApplicationNacp(app_id, &g_StartApplicationNacp);
-
-            // Ensure it's launchable
+            if(app::LoopQueryApplicationNacpMisc(app_id, g_StartApplicationNacpMisc)) {
+                // Ensure it's launchable
             
-            // TODO: does this do anything at all? qlaunch does not seem to use this...
-            UL_RC_TRY(nsTouchApplication(app_id));
+                // TODO: does this do anything at all? qlaunch does not seem to use this...
+                UL_RC_TRY(nsTouchApplication(app_id));
 
-            // Ensure Account savedata
-            EnsureSaveData(app_id, g_StartApplicationNacp.save_data_owner_id, user_id, FsSaveDataType_Account, FsSaveDataSpaceId_User, g_StartApplicationNacp.user_account_save_data_size, g_StartApplicationNacp.user_account_save_data_journal_size);
+                // Ensure Account savedata
+                EnsureSaveData(app_id, g_StartApplicationNacpMisc.save_data_owner_id, user_id, FsSaveDataType_Account, FsSaveDataSpaceId_User, g_StartApplicationNacpMisc.user_account_save_data_size, g_StartApplicationNacpMisc.user_account_save_data_journal_size);
 
-            // Ensure Device savedata
-            EnsureSaveData(app_id, g_StartApplicationNacp.save_data_owner_id, {}, FsSaveDataType_Device, FsSaveDataSpaceId_User, g_StartApplicationNacp.device_save_data_size, g_StartApplicationNacp.device_save_data_journal_size);
-            
-            // Ensure Temporary savedata
-            EnsureSaveData(app_id, g_StartApplicationNacp.save_data_owner_id, {}, FsSaveDataType_Temporary, FsSaveDataSpaceId_Temporary, g_StartApplicationNacp.temporary_storage_size, 0);
+                // Ensure Device savedata
+                EnsureSaveData(app_id, g_StartApplicationNacpMisc.save_data_owner_id, {}, FsSaveDataType_Device, FsSaveDataSpaceId_User, g_StartApplicationNacpMisc.device_save_data_size, g_StartApplicationNacpMisc.device_save_data_journal_size);
+                
+                // Ensure Temporary savedata
+                EnsureSaveData(app_id, g_StartApplicationNacpMisc.save_data_owner_id, {}, FsSaveDataType_Temporary, FsSaveDataSpaceId_Temporary, g_StartApplicationNacpMisc.temporary_storage_size, 0);
 
-            // Ensure Cache savedata
-            EnsureSaveData(app_id, g_StartApplicationNacp.save_data_owner_id, {}, FsSaveDataType_Cache, FsSaveDataSpaceId_User, g_StartApplicationNacp.cache_storage_size, g_StartApplicationNacp.cache_storage_journal_size);
+                // Ensure Cache savedata
+                EnsureSaveData(app_id, g_StartApplicationNacpMisc.save_data_owner_id, {}, FsSaveDataType_Cache, FsSaveDataSpaceId_User, g_StartApplicationNacpMisc.cache_storage_size, g_StartApplicationNacpMisc.cache_storage_journal_size);
 
-            // Ensure Bcat savedata
-            EnsureSaveData(app_id, 0x010000000000000C, {}, FsSaveDataType_Bcat, FsSaveDataSpaceId_User, g_StartApplicationNacp.bcat_delivery_cache_storage_size, 0x200000);
+                // Ensure Bcat savedata
+                EnsureSaveData(app_id, 0x010000000000000C, {}, FsSaveDataType_Bcat, FsSaveDataSpaceId_User, g_StartApplicationNacpMisc.bcat_delivery_cache_storage_size, 0x200000);
+            }
 
             UL_RC_TRY(appletCreateApplication(&g_ApplicationHolder, app_id));
         }

@@ -1,7 +1,7 @@
 
 #pragma once
 #include <pu/Plutonium>
-#include <ul/menu/smi/smi_PrivateService.hpp>
+#include <ul/menu/smi/sf/sf_PrivateService.hpp>
 
 namespace ul::menu::ui {
 
@@ -35,7 +35,7 @@ namespace ul::menu::ui {
             pu::ui::elm::MenuItem::Ref mii_menu_item;
             pu::ui::elm::MenuItem::Ref amiibo_menu_item;
 
-            static void OnHomeButtonDetection(const smi::MenuMessageContext &_);
+            static void OnHomeButtonDetection(const ul::smi::MenuMessageContext &_);
 
         public:
             QuickMenu();
@@ -71,7 +71,7 @@ namespace ul::menu::ui {
             void OnInput(const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) override;
 
             static inline void RegisterHomeButtonDetection() {
-                smi::RegisterOnMessageDetect(&OnHomeButtonDetection, smi::MenuMessage::HomeRequest);
+                smi::sf::RegisterOnMessageDetect(&OnHomeButtonDetection, ul::smi::MenuMessage::HomeRequest);
             }
     };
 

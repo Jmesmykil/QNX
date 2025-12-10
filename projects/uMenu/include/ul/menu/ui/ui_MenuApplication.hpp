@@ -244,7 +244,7 @@ namespace ul::menu::ui {
     };
 
     inline void RegisterMenuOnMessageDetect() {
-        smi::RegisterOnMessageDetect(&OnMessage);
+        smi::sf::RegisterOnMessageDetect(OnMessage);
     }
 
 }

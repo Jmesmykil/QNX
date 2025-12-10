@@ -28,7 +28,7 @@ namespace ul::menu {
         SpecialEntryAmiibo
     };
 
-    using NacpLoadFunction = Result(*)(const u64 app_id, NacpStruct *out_nacp);
+    using ControlEntryLoadFunction = bool(*)(const u64 app_id, std::string &out_name, std::string &out_author, std::string &out_version);
 
     struct EntryApplicationInfo {
         u64 app_id;
@@ -145,7 +145,7 @@ namespace ul::menu {
     std::vector<Entry> LoadEntries(const std::string &path);
     const std::string &GetActiveMenuPath();
 
-    void SetNacpLoadFunction(NacpLoadFunction func);
+    void SetControlEntryLoadFunction(ControlEntryLoadFunction func);
     
     void EnsureApplicationEntry(const NsExtApplicationRecord &app_record, const std::string &menu_path = "");
     Entry CreateFolderEntry(const std::string &base_path, const std::string &folder_name, const s32 index = -1);

@@ -4,7 +4,7 @@
 #include <ul/system/smi/smi_SystemProtocol.hpp>
 #include <ul/system/sys/sys_SystemApplet.hpp>
 #include <ul/system/system_Message.hpp>
-#include <ul/system/app/app_Cache.hpp>
+#include <ul/system/app/app_ControlCache.hpp>
 #include <ul/cfg/cfg_Config.hpp>
 #include <ul/menu/menu_Entries.hpp>
 #include <ul/menu/menu_Cache.hpp>
@@ -20,6 +20,7 @@
 extern "C" {
 
     extern u32 __nx_applet_type;
+    extern u32 __nx_fs_num_sessions;
 
     // So that libstratosphere doesn't redefine them as invalid
 
@@ -62,7 +63,7 @@ namespace {
 
     enum class ActionType : u32 {
         LaunchApplication,
-        LaunchLoader,
+        LaunchHomebrewLibraryApplet,
         LaunchHomebrewApplication,
         OpenWebPage,
         OpenAlbum,
@@ -125,13 +126,16 @@ namespace {
     }
 
     AccountUid g_SelectedUser = {};
+
+    ul::RecursiveMutex g_ConfigLock;
     ul::cfg::Config g_Config;
-    bool g_AmsIsEmuMMC = false;
+
+    std::atomic_bool g_AmsIsEmuMMC = false;
     bool g_WarnedAboutOutdatedTheme = false;
 
     ul::smi::SystemStatus g_CurrentStatus = {};
 
-    NacpStruct g_LaunchHomebrewApplicationNacp;
+    ul::system::app::ApplicationNacpMisc g_LaunchHomebrewApplicationNacpMisc;
 
     char g_CurrentMenuFsPath[FS_MAX_PATH] = {};
     char g_CurrentMenuPath[FS_MAX_PATH] = {};
@@ -142,12 +146,17 @@ namespace {
 
     std::vector<ApplicationVerifyContext> *g_ApplicationVerifyContexts;
 
+    ul::RecursiveMutex g_CurrentRecordsLock;
     std::vector<NsExtApplicationRecord> g_CurrentRecords;
+
+    ul::RecursiveMutex g_LastDeletedApplicationsLock;
     std::vector<u64> g_LastDeletedApplications;
+
+    ul::RecursiveMutex g_LastAddedApplicationsLock;
     std::vector<u64> g_LastAddedApplications;
 
-    alignas(ams::os::ThreadStackAlignment) constinit u8 g_EventManagerThreadStack[16_KB];
     Thread g_EventManagerThread;
+    constexpr size_t EventManagerThreadStackSize = 64_KB;
 
     // USB types and globals
 
@@ -184,14 +193,16 @@ namespace {
 
     // libstratosphere heap: used for malloc/free/new/delete and everything using them
     // We specially need to take into account app icon/NACP caching (it's around 0.14MB per app) plus thread stack buffers, vectors and so on
-    constexpr size_t LibstratosphereHeapSize = 40_MB;
+    constexpr size_t LibstratosphereHeapSize = 20_MB;
     alignas(ams::os::MemoryPageSize) constinit u8 g_LibstratosphereHeap[LibstratosphereHeapSize];
 
     // libnx heap: used for internal malloc_r/etc called by stdlib stuff, thus a modest size is enough
-    constexpr size_t LibnxHeapSize = 128_KB;
+    constexpr size_t LibnxHeapSize = 1_MB;
     alignas(ams::os::MemoryPageSize) constinit u8 g_LibnxHeap[LibnxHeapSize];
 
     void DebugLogApplicationParameters() {
+        ul::ScopedLock lock(g_CurrentRecordsLock);
+
         std::vector<u64> app_ids;
         for(auto &rec: g_CurrentRecords) {
             app_ids.push_back(rec.id);
@@ -285,6 +296,7 @@ namespace {
 namespace {
 
     void LoadConfig() {
+        ul::ScopedLock lk(g_ConfigLock);
         g_Config = ul::cfg::LoadConfig();
 
         u64 menu_program_id;
@@ -306,6 +318,8 @@ namespace {
     }
 
     void NotifyApplicationDeleted(const u64 app_id) {
+        ul::ScopedLock lk(g_ConfigLock);
+        ul::ScopedLock lk2(g_LastDeletedApplicationsLock);
         u64 takeover_app_id;
         if(g_Config.GetEntry(ul::cfg::ConfigEntryId::HomebrewApplicationTakeoverApplicationId, takeover_app_id)) {
             if(takeover_app_id == app_id) {
@@ -317,6 +331,8 @@ namespace {
     }
 
     void UpdateStatus() {
+        ul::ScopedLock lock(g_LastAddedApplicationsLock);
+        ul::ScopedLock lock2(g_LastDeletedApplicationsLock);
         g_CurrentStatus = {
             .selected_user = g_SelectedUser,
             .last_menu_index = g_CurrentMenuIndex,
@@ -367,6 +383,10 @@ namespace {
     }
 
     void CheckApplicationRecordChanges() {
+        ul::ScopedLock lock(g_CurrentRecordsLock);
+        ul::ScopedLock lock2(g_LastDeletedApplicationsLock);
+        ul::ScopedLock lock3(g_LastAddedApplicationsLock);
+
         g_LastDeletedApplications.clear();
         g_LastAddedApplications.clear();
 
@@ -764,7 +784,7 @@ namespace {
                             UL_RC_TRY(reader.Pop(temp_ipt));
 
                             g_ActionQueue.push_back({
-                                .type = ActionType::LaunchLoader,
+                                .type = ActionType::LaunchHomebrewLibraryApplet,
                                 .launch_loader = {
                                     .target_input = temp_ipt,
                                     .choose_mode = false
@@ -784,9 +804,12 @@ namespace {
                             }
 
                             u64 hb_application_takeover_program_id;
-                            UL_ASSERT_TRUE(g_Config.GetEntry(ul::cfg::ConfigEntryId::HomebrewApplicationTakeoverApplicationId, hb_application_takeover_program_id));
-                            if(hb_application_takeover_program_id == ul::os::InvalidApplicationId) {
-                                return ul::ResultNoHomebrewTakeoverApplication;
+                            {
+                                ul::ScopedLock lk(g_ConfigLock);
+                                UL_ASSERT_TRUE(g_Config.GetEntry(ul::cfg::ConfigEntryId::HomebrewApplicationTakeoverApplicationId, hb_application_takeover_program_id));
+                                if(hb_application_takeover_program_id == ul::os::InvalidApplicationId) {
+                                    return ul::ResultNoHomebrewTakeoverApplication;
+                                }
                             }
 
                             g_ActionQueue.push_back({
@@ -800,7 +823,7 @@ namespace {
                         }
                         case ul::smi::SystemMessage::ChooseHomebrew: {
                             g_ActionQueue.push_back({
-                                .type = ActionType::LaunchLoader,
+                                .type = ActionType::LaunchHomebrewLibraryApplet,
                                 .launch_loader = {
                                     .target_input = ul::loader::TargetInput::Create(ul::HbmenuPath, ul::HbmenuPath, true, ChooseHomebrewCaption),
                                     .choose_mode = true
@@ -955,6 +978,7 @@ namespace {
                     AMS_UNUSED(writer);
                     switch(msg) {
                         case ul::smi::SystemMessage::ListAddedApplications: {
+                            ul::ScopedLock lock(g_LastAddedApplicationsLock);
                             if(app_list_count > g_LastAddedApplications.size()) {
                                 return ul::ResultInvalidApplicationListCount;
                             }
@@ -967,6 +991,7 @@ namespace {
                             break;
                         }
                         case ul::smi::SystemMessage::ListDeletedApplications: {
+                            ul::ScopedLock lock2(g_LastDeletedApplicationsLock);
                             if(app_list_count > g_LastDeletedApplications.size()) {
                                 return ul::ResultInvalidApplicationListCount;
                             }
@@ -1011,11 +1036,19 @@ namespace {
                 }
                 break;
             }
-            case ActionType::LaunchLoader: {
+            case ActionType::LaunchHomebrewLibraryApplet: {
                 if(!la::IsActive()) {
-                    UL_LOG_INFO("Launching homebrew '%s' as library applet (target once: %s)...", action.launch_loader.target_input.nro_path, action.launch_loader.target_input.target_once ? "true" : "false");
+                    if(action.launch_loader.choose_mode) {
+                        UL_LOG_INFO("Launching homebrew chooser '%s' as library applet...", action.launch_loader.target_input.nro_path);
+                    }
+                    else {
+                        UL_LOG_INFO("Launching homebrew '%s' as library applet (target once: %s)...", action.launch_loader.target_input.nro_path, action.launch_loader.target_input.target_once ? "true" : "false");
+                    }
                     u64 hb_applet_takeover_program_id;
-                    UL_ASSERT_TRUE(g_Config.GetEntry(ul::cfg::ConfigEntryId::HomebrewAppletTakeoverProgramId, hb_applet_takeover_program_id));
+                    {
+                        ul::ScopedLock lk(g_ConfigLock);
+                        UL_ASSERT_TRUE(g_Config.GetEntry(ul::cfg::ConfigEntryId::HomebrewAppletTakeoverProgramId, hb_applet_takeover_program_id));
+                    }
     
                     // TODO (new): consider not asserting and sending the error result to uMenu instead? same for various other asserts in this code...
                     UL_RC_ASSERT(ecs::RegisterLaunchAsApplet(hb_applet_takeover_program_id, 0, "/ulaunch/bin/uLoader/applet", &action.launch_loader.target_input, sizeof(action.launch_loader.target_input)));
@@ -1033,8 +1066,13 @@ namespace {
                     UL_LOG_INFO("Launching homebrew '%s' over application 0x%016lX (target once: %s)...", action.launch_homebrew_application.app_target_input.nro_path, action.launch_homebrew_application.app_id, action.launch_homebrew_application.app_target_input.target_once ? "true" : "false");
 
                     // Query the NACP of the underlying application (we need to determine if it uses auto game recording)
-                    app::LoopQueryApplicationNacp(action.launch_homebrew_application.app_id, &g_LaunchHomebrewApplicationNacp);
-                    action.launch_homebrew_application.app_target_input.is_auto_game_recording = g_LaunchHomebrewApplicationNacp.video_capture == 2;
+                    if(!app::LoopQueryApplicationNacpMisc(action.launch_homebrew_application.app_id, g_LaunchHomebrewApplicationNacpMisc)) {
+                        action.launch_homebrew_application.app_target_input.is_auto_game_recording = g_LaunchHomebrewApplicationNacpMisc.video_capture == 2;
+                    }
+                    else {
+                        // Unable to query NACP, assume it uses auto game recording (safer to allocate less memory)
+                        action.launch_homebrew_application.app_target_input.is_auto_game_recording = true;
+                    }
 
                     UL_RC_ASSERT(ecs::RegisterLaunchAsApplication(action.launch_homebrew_application.app_id, "/ulaunch/bin/uLoader/application", &action.launch_homebrew_application.app_target_input, sizeof(action.launch_homebrew_application.app_target_input), g_SelectedUser));
 
@@ -1300,6 +1338,9 @@ namespace {
 
             if(R_SUCCEEDED(wait_rc)) {
                 if(ev_idx == 0) {
+                    ul::ScopedLock lock(g_CurrentRecordsLock);
+                    ul::ScopedLock lock2(g_LastDeletedApplicationsLock);
+                    ul::ScopedLock lock3(g_LastAddedApplicationsLock);
                     g_LastAddedApplications.clear();
                     g_LastDeletedApplications.clear();
                     UL_LOG_INFO("[EventManager] Application records changed!");
@@ -1409,6 +1450,7 @@ namespace {
     }
 
     void CheckHomebrewTakeoverApplicationId() {
+        ul::ScopedLock lk(g_ConfigLock);
         u64 hb_application_takeover_program_id;
         UL_ASSERT_TRUE(g_Config.GetEntry(ul::cfg::ConfigEntryId::HomebrewApplicationTakeoverApplicationId, hb_application_takeover_program_id));
         if(hb_application_takeover_program_id != ul::os::InvalidApplicationId) {
@@ -1433,12 +1475,15 @@ namespace {
         ul::fs::DeleteDirectory(ul::PreV100HomebrewCachePath);
         ul::fs::DeleteDirectory(ul::PreV100AccountCachePath);
 
+        // Ensure root cache directory exists
+        ul::fs::CreateDirectory(ul::RootCachePath);
+
         // Clean cache, everything except for theme cache
         ul::fs::CleanDirectory(ul::HomebrewCachePath);
         ul::fs::CleanDirectory(ul::ThemePreviewCachePath);
 
         g_CurrentRecords = ul::os::ListApplicationRecords();
-        ul::system::app::InitializeCache(g_CurrentRecords);
+        ul::system::app::InitializeControlCache(g_CurrentRecords);
         ul::menu::CacheHomebrew();
         CheckHomebrewTakeoverApplicationId();
 
@@ -1449,11 +1494,14 @@ namespace {
 
         UL_RC_ASSERT(sf::Initialize());
 
-        UL_RC_ASSERT(threadCreate(&g_EventManagerThread, EventManagerMain, nullptr, g_EventManagerThreadStack, sizeof(g_EventManagerThreadStack), 34, -2));
+        UL_RC_ASSERT(threadCreate(&g_EventManagerThread, EventManagerMain, nullptr, nullptr, EventManagerThreadStackSize, 34, -2));
         UL_RC_ASSERT(threadStart(&g_EventManagerThread));
 
         bool viewer_usb_enabled;
-        UL_ASSERT_TRUE(g_Config.GetEntry(ul::cfg::ConfigEntryId::UsbScreenCaptureEnabled, viewer_usb_enabled));
+        {
+            ul::ScopedLock lk(g_ConfigLock);
+            UL_ASSERT_TRUE(g_Config.GetEntry(ul::cfg::ConfigEntryId::UsbScreenCaptureEnabled, viewer_usb_enabled));
+        }
         if(viewer_usb_enabled) {
             UL_RC_ASSERT(usbCommsInitialize());
             UL_RC_ASSERT(capsscInitialize());
@@ -1498,6 +1546,7 @@ namespace ams {
 
         void InitializeSystemModule() {
             __nx_applet_type = AppletType_SystemApplet;
+            __nx_fs_num_sessions = 3;
 
             UL_RC_ASSERT(sm::Initialize());
             UL_RC_ASSERT(fsInitialize());

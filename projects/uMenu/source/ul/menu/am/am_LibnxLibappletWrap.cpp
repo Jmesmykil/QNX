@@ -1,6 +1,6 @@
 #include <ul/smi/smi_Protocol.hpp>
 #include <ul/menu/am/am_LibnxLibappletWrap.hpp>
-#include <ul/menu/smi/smi_PrivateService.hpp>
+#include <ul/menu/smi/sf/sf_PrivateService.hpp>
 #include <ul/util/util_Scope.hpp>
 #include <atomic>
 
@@ -13,14 +13,14 @@ namespace {
 
 namespace ul::menu::am {
 
-    void OnHomeButtonDetection(const smi::MenuMessageContext &_) {
+    void OnHomeButtonDetection(const ul::smi::MenuMessageContext &_) {
         if(g_IsAppletRunning) {
             g_DetectionHomePressed = true;
         }
     }
 
     void RegisterLibnxLibappletHomeButtonDetection() {
-        smi::RegisterOnMessageDetect(&OnHomeButtonDetection, smi::MenuMessage::HomeRequest);
+        smi::sf::RegisterOnMessageDetect(&OnHomeButtonDetection, ul::smi::MenuMessage::HomeRequest);
     }
 
 }

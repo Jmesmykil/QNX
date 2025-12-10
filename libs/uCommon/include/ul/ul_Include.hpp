@@ -25,6 +25,7 @@ namespace ul {
 
     constexpr const char RootCachePath[] = "sdmc:/ulaunch/cache";
     constexpr const char HomebrewCachePath[] = "sdmc:/ulaunch/cache/hb";
+    constexpr const char ApplicationCachePath[] = "sdmc:/ulaunch/cache/app";
     constexpr const char ThemePreviewCachePath[] = "sdmc:/ulaunch/cache/preview";
     constexpr const char ActiveThemeCachePath[] = "sdmc:/ulaunch/cache/active";
 
@@ -77,11 +78,7 @@ namespace ul {
             }
 
             inline bool IsLocked() {
-                if(this->TryLock()) {
-                    this->Unlock();
-                    return false;
-                }
-                return true;
+                return mutexIsLockedByCurrentThread(&this->mutex);
             }
     };
 

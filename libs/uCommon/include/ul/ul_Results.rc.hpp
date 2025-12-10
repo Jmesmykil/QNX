@@ -18,6 +18,7 @@ namespace ulaunch {
     R_DEFINE_ERROR_RESULT(NoMessagesAvailable, 202);
     R_DEFINE_ERROR_RESULT(ApplicationCacheBusy, 203);
     R_DEFINE_ERROR_RESULT(ApplicationNotCached, 204);
+    R_DEFINE_ERROR_RESULT(InsufficientIconSize, 205);
 
     R_DEFINE_ERROR_RANGE(Loader, 301, 399);
     R_DEFINE_ERROR_RESULT(InvalidProcessType, 301);

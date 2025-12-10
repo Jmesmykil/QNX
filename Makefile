@@ -1,6 +1,6 @@
 VERSION_MAJOR	:=	1
 VERSION_MINOR	:=	2
-VERSION_MICRO	:=	1
+VERSION_MICRO	:=	2
 export VERSION	:=	$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)
 
 export UL_DEFS	:=	-DUL_MAJOR=$(VERSION_MAJOR) -DUL_MINOR=$(VERSION_MINOR) -DUL_MICRO=$(VERSION_MICRO) -DUL_VERSION=\"$(VERSION)\"
@@ -25,6 +25,7 @@ clean:
 	@$(MAKE) clean -C projects/uDesigner
 	@cd projects/uScreen && mvn clean
 	@rm -rf $(OUT_DIR)
+	@rm -rf $(OUT_DIR_ZIP).7z $(OUT_DIR_ZIP).zip
 
 libs:
 	@$(MAKE) -C libs/Plutonium/
@@ -91,7 +92,7 @@ default-theme-music:
 	@rm -rf $(THEME_MUSIC_TEMP)
 	@echo "Created default-theme-music: $(OUT_THEME_MUSIC)!"
 
-package: arc usystem uloader umenu umanager uscreen udesigner default-theme-music
+package: arc usystem uloader umenu umanager uscreen default-theme-music
 	@rm -rf $(OUT_DIR_ZIP).7z $(OUT_DIR_ZIP).zip
 	@cd $(OUT_DIR) && 7z a ../$(OUT_DIR_ZIP).7z atmosphere ulaunch switch
 	@cd $(OUT_DIR) && zip -r ../$(OUT_DIR_ZIP).zip atmosphere ulaunch switch

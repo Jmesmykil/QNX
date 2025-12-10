@@ -22,3 +22,6 @@
 [submodule "libs/libnx-ext"]
 	path = libs/libnx-ext
 	url = https://github.com/XorTroll/libnx-ext
+[submodule "libs/libnxtc"]
+	path = libs/libnxtc
+	url = https://github.com/DarkMatterCore/libnxtc

@@ -20,23 +20,6 @@ namespace ul::menu::smi::sf {
             );
         }
 
-        inline Result psrvQueryApplicationNacp(Service *srv, NacpMetadata *out_nacp_metadata, const u64 app_id) {
-            return serviceDispatchIn(srv, 2, app_id,
-                .buffer_attrs = { SfBufferAttr_HipcMapAlias | SfBufferAttr_Out },
-                .buffers = { { out_nacp_metadata, sizeof(NacpMetadata) } },
-            );
-        }
-
-        inline Result psrvQueryApplicationIcon(Service *srv, u8 *out_icon_buf, const size_t icon_size, size_t &out_icon_size, const u64 app_id) {
-            size_t got_icon_size;
-            UL_RC_TRY(serviceDispatchInOut(srv, 3, app_id, got_icon_size,
-                .buffer_attrs = { SfBufferAttr_HipcMapAlias | SfBufferAttr_Out },
-                .buffers = { { out_icon_buf, icon_size } }
-            ));
-            out_icon_size = got_icon_size;
-            return ResultSuccess;
-        }
-
         Service g_PrivateService;
 
         Result InitializePrivateServiceImpl() {
@@ -121,14 +104,6 @@ namespace ul::menu::smi::sf {
 
         FinalizePrivateServiceImpl();
         g_Initialized = false;
-    }
-
-    Result QueryApplicationNacpMetadata(const u64 app_id, NacpMetadata *out_nacp_metadata) {
-        return psrvQueryApplicationNacp(&g_PrivateService, out_nacp_metadata, app_id);
-    }
-
-    Result QueryApplicationIcon(const u64 app_id, u8 *out_icon_buf, const size_t icon_size, size_t &out_icon_size) {
-        return psrvQueryApplicationIcon(&g_PrivateService, out_icon_buf, icon_size, out_icon_size, app_id);
     }
 
     void RegisterOnMessageDetect(OnMessageCallback callback, const MenuMessage desired_msg) {

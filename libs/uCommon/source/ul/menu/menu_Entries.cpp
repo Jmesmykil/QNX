@@ -315,10 +315,10 @@ namespace ul::menu {
                 return;
             }
 
-            std::vector<AccountUid> uids;
-            UL_RC_ASSERT(acc::ListAccounts(uids));
+            std::vector<AccountUid> user_ids;
+            UL_RC_ASSERT(acc::ListAccounts(user_ids));
 
-            for(const auto &uid : uids) {
+            for(const auto &uid : user_ids) {
                 const auto menu_path = MakeMenuPath(is_emummc, uid);
                 fs::DeleteDirectory(menu_path);
 

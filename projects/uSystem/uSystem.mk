@@ -10,15 +10,14 @@ include $(dir $(abspath $(lastword $(MAKEFILE_LIST))))/$(ATMOSPHERE_LIBS_REL)/co
 ATMOSPHERE_SYSTEM_MODULE_TARGETS := nsp
 
 LIBUCOMMON		:=	$(CURDIR)/../../libs/uCommon
-LIBNXTC 		:=	$(CURDIR)/../../libs/libnxtc
 LIBNX_EXT		:=	$(CURDIR)/../../libs/libnx-ext/libnx-ext
 LIBNX_IPCEXT	:=	$(CURDIR)/../../libs/libnx-ext/libnx-ipcext
 
 CXXFLAGS	+=	$(UL_DEFS)
 
 INCLUDES 	+=	/../../libs/json/single_include/nlohmann
-LIBDIRS		+=	$(LIBUCOMMON) $(LIBNXTC) $(LIBNX_EXT) $(LIBNX_IPCEXT)
-LIBS		+=	-luCommon -lnxtc -lnx-ext -lnx-ipcext
+LIBDIRS		+=	$(LIBUCOMMON) $(LIBNX_EXT) $(LIBNX_IPCEXT)
+LIBS		+=	-luCommon -lnx-ext -lnx-ipcext
 
 #---------------------------------------------------------------------------------
 # no real need to edit anything past this point unless you need to add additional
@@ -84,7 +83,6 @@ all: $(ATMOSPHERE_OUT_DIR) $(ATMOSPHERE_BUILD_DIR) $(ATMOSPHERE_LIBRARIES_DIR)/l
 	@$(MAKE) -C $(LIBUCOMMON)
 	@$(MAKE) -C $(LIBNX_EXT)
 	@$(MAKE) -C $(LIBNX_IPCEXT)
-	@$(MAKE) -C $(LIBNXTC)
 	@$(MAKE) __RECURSIVE__=1 OUTPUT=$(CURDIR)/$(ATMOSPHERE_OUT_DIR)/$(TARGET) \
 	DEPSDIR=$(CURDIR)/$(ATMOSPHERE_BUILD_DIR) \
 	--no-print-directory -C $(ATMOSPHERE_BUILD_DIR) \
@@ -109,7 +107,6 @@ clean:
 	@$(MAKE) clean -C $(LIBUCOMMON)
 	@$(MAKE) clean -C $(LIBNX_EXT)
 	@$(MAKE) clean -C $(LIBNX_IPCEXT)
-	@$(MAKE) clean -C $(LIBNXTC)
 	@rm -fr $(ATMOSPHERE_OUT_DIR) $(ATMOSPHERE_BUILD_DIR)
 
 

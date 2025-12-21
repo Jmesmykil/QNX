@@ -5,7 +5,7 @@
 
 namespace ul::system::app {
 
-    // NACP fields that nxtc does not cache but we still use (and thus cache ourselves independently)
+    // NACP fields that we care about
 
     struct ApplicationNacpMisc {
         char display_version[0x10];
@@ -28,10 +28,7 @@ namespace ul::system::app {
     void RequestCacheApplication(const u64 app_id);
     void RequestRemoveApplicationCache(const u64 app_id);
 
-    bool QueryApplicationNacp(const u64 app_id, smi::sf::NacpMetadata &out_nacp);
-    bool QueryApplicationIcon(const u64 app_id, u8 *out_icon_buf, const size_t icon_buf_size, size_t &out_actual_icon_size);
     bool QueryApplicationNacpMisc(const u64 app_id, ApplicationNacpMisc &out_nacp_misc);
-
     bool LoopQueryApplicationNacpMisc(const u64 app_id, ApplicationNacpMisc &out_nacp_misc);
 
 }

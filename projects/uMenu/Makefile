@@ -39,7 +39,6 @@ ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
 LIBUCOMMON		:=	$(CURDIR)/../../libs/uCommon
-LIBNXTC			:=	$(CURDIR)/../../libs/libnxtc
 LIBPU			:=	$(CURDIR)/../../libs/Plutonium/Plutonium
 LIBNX_EXT		:=	$(CURDIR)/../../libs/libnx-ext/libnx-ext
 LIBNX_IPCEXT	:=	$(CURDIR)/../../libs/libnx-ext/libnx-ipcext
@@ -51,7 +50,7 @@ LIBS	:= -lpu -lfreetype -lSDL2_mixer -lopusfile -lopus -lmodplug -lmpg123 -lvorb
 # list of directories containing libraries, this must be the top level containing
 # include and lib
 #---------------------------------------------------------------------------------
-LIBDIRS	:= $(PORTLIBS) $(LIBNX) $(LIBUCOMMON) $(LIBNXTC) $(LIBPU) $(LIBNX_EXT) $(LIBNX_IPCEXT)
+LIBDIRS	:= $(PORTLIBS) $(LIBNX) $(LIBUCOMMON) $(LIBPU) $(LIBNX_EXT) $(LIBNX_IPCEXT)
 
 
 #---------------------------------------------------------------------------------
@@ -141,7 +140,6 @@ all: $(BUILD)
 $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) -C $(LIBUCOMMON)
-	@$(MAKE) -C $(LIBNXTC)
 	@$(MAKE) -C $(LIBPU)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
@@ -149,7 +147,6 @@ $(BUILD):
 clean:
 	@echo clean ...
 	@$(MAKE) clean -C $(LIBUCOMMON)
-	@$(MAKE) clean -C $(LIBNXTC)
 	@$(MAKE) clean -C $(LIBPU)
 	@rm -fr $(BUILD) $(TARGET).nsp $(TARGET).npdm $(TARGET).nso $(TARGET).elf
 

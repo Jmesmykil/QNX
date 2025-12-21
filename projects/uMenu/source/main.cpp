@@ -14,17 +14,23 @@ ul::menu::ui::GlobalSettings g_GlobalSettings;
 
 namespace {
 
+    NsApplicationControlData g_TemporaryControlData;
+
     bool MenuControlEntryLoadFunction(const u64 app_id, std::string &out_name, std::string &out_author, std::string &out_version) {
-        ul::smi::sf::NacpMetadata nacp_metadata;
-        const auto rc = ul::menu::smi::sf::QueryApplicationNacpMetadata(app_id, &nacp_metadata);
-        if(R_FAILED(rc)) {
-            UL_LOG_WARN("Failed to query NACP for application %016lX: %s", app_id, ul::util::FormatResultDisplay(rc).c_str());
+        if(R_FAILED(nsextGetApplicationControlData(NsApplicationControlSource_Storage, app_id, &g_TemporaryControlData, sizeof(NsApplicationControlData), nullptr))) {
+            UL_LOG_WARN("Failed to get application control data for application %016lX", app_id);
             return false;
         }
 
-        out_name = nacp_metadata.name;
-        out_author = nacp_metadata.author;
-        out_version = nacp_metadata.display_version;
+        NacpLanguageEntry *lang_entry = nullptr;
+        if(R_FAILED(nacpGetLanguageEntry(&g_TemporaryControlData.nacp, &lang_entry))) {
+            UL_LOG_WARN("Failed to get NACP language entry for application %016lX", app_id);
+            return false;
+        }
+
+        out_name = lang_entry->name;
+        out_author = lang_entry->author;
+        out_version = g_TemporaryControlData.nacp.display_version;
         return true;
     }
 

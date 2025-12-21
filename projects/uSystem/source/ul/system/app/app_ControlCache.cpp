@@ -61,23 +61,11 @@ namespace ul::system::app {
             }
         }
 
-        inline Result GetApplicationControlData(const u64 app_id, const bool force_ns, NsApplicationControlData *out_data, size_t &out_icon_size) {
+        inline Result GetApplicationControlData(const u64 app_id, NsApplicationControlData *out_data, size_t &out_icon_size) {
             size_t got_size;
-            Result rc;
-            if(!force_ns && hosversionAtLeast(20,0,0)) {
-                SetLanguage lang;
-                rc = ncmextReadApplicationControlDataManual(g_SystemLanguage, app_id, out_data, sizeof(*out_data), &got_size, &lang);
-                if(R_SUCCEEDED(rc)) {
-                    UL_LOG_INFO("[ApplicationControlCache] Read manually application control data for application ID 0x%016lX with language %d", app_id, lang);
-                }
-            }
-            else {
-                rc = nsGetApplicationControlData(NsApplicationControlSource_Storage, app_id, out_data, sizeof(*out_data), &got_size);
-                if(R_SUCCEEDED(rc)) {
-                    UL_LOG_INFO("[ApplicationControlCache] Got from NS application control data for application ID 0x%016lX", app_id);
-                }
-            }
+            const auto rc = nsextGetApplicationControlData(NsApplicationControlSource_Storage, app_id, out_data, sizeof(*out_data), &got_size);
             if(R_SUCCEEDED(rc)) {
+                UL_LOG_INFO("[ApplicationControlCache] Got from legacy NS application control data for application ID 0x%016lX", app_id);
                 UL_ASSERT_TRUE(got_size <= sizeof(*out_data));
                 out_icon_size = got_size - sizeof(NacpStruct);
             }
@@ -89,23 +77,9 @@ namespace ul::system::app {
             return fs::WriteFile(path, icon_buf, icon_buf_size, true);
         }
 
-        bool LoadApplicationIconCache(const u64 app_id, u8 *out_icon_buf, const size_t icon_buf_size, size_t &out_actual_icon_size) {
-            const auto path = fs::JoinPath(ApplicationCachePath, util::FormatProgramId(app_id) + ".jpg");
-            return fs::ReadAllFile(path, out_icon_buf, icon_buf_size, out_actual_icon_size);
-        }
-
         bool CacheApplicationNacpMetadata(const u64 app_id, const smi::sf::NacpMetadata &nacp_metadata) {
             const auto path = fs::JoinPath(ApplicationCachePath, util::FormatProgramId(app_id) + ".nacp.meta");
             return fs::WriteFile(path, &nacp_metadata, sizeof(nacp_metadata), true);
-        }
-
-        bool LoadApplicationNacpMetadataCache(const u64 app_id, smi::sf::NacpMetadata &out_nacp_metadata) {
-            const auto path = fs::JoinPath(ApplicationCachePath, util::FormatProgramId(app_id) + ".nacp.meta");
-            size_t dummy;
-            if(!fs::ReadAllFile(path, &out_nacp_metadata, sizeof(out_nacp_metadata), dummy)) {
-                return false;
-            }
-            return dummy == sizeof(out_nacp_metadata);
         }
 
         void AddNextApplicationCache() {
@@ -128,7 +102,7 @@ namespace ul::system::app {
                             delete control_data;
                         });
 
-                        const auto rc = GetApplicationControlData(app_id, tries >= 5, control_data, icon_size);
+                        const auto rc = GetApplicationControlData(app_id, control_data, icon_size);
                         const auto end_tick = armGetSystemTick();
                         const auto elapsed_time_ms = armTicksToNs(end_tick - start_tick) / 1'000'000;
                         if(R_FAILED(rc)) {
@@ -154,15 +128,15 @@ namespace ul::system::app {
                             memcpy(meta.author, langentry->author, sizeof(meta.author));
                             memcpy(meta.display_version, control_data->nacp.display_version, sizeof(meta.display_version));
 
-                            // Populate nxtc cache
+                            // Cache icon + NACP
                             if(!CacheApplicationNacpMetadata(app_id, meta)) {
-                                UL_LOG_WARN("[ApplicationControlCache] Failed to add entry to nxtc cache for application ID 0x%016lX", app_id);
+                                UL_LOG_WARN("[ApplicationControlCache] Failed to cache NACP for application ID 0x%016lX", app_id);
                             }
                             else if(!CacheApplicationIcon(app_id, control_data->icon, icon_size)) {
-                                UL_LOG_WARN("[ApplicationControlCache] Failed to cache application icon for application ID 0x%016lX", app_id);
+                                UL_LOG_WARN("[ApplicationControlCache] Failed to cache icon for application ID 0x%016lX", app_id);
                             }
                             else {
-                                UL_LOG_INFO("[ApplicationControlCache] Added entry to nxtc cache for application ID 0x%016lX (icon size: %zu bytes)", app_id, icon_size);
+                                UL_LOG_INFO("[ApplicationControlCache] Made NACP + icon cache for application ID 0x%016lX (icon size: %zu bytes)", app_id, icon_size);
                             }
 
                             // Populate our misc cache
@@ -240,24 +214,6 @@ namespace ul::system::app {
     void RequestRemoveApplicationCache(const u64 app_id) {
         ScopedLock lock(g_PendingApplicationRemovalCacheQueueLock);
         g_PendingApplicationRemovalCacheQueue->push(app_id);
-    }
-
-    // Blazingly fast compared to 20.x NS commands
-
-    bool QueryApplicationNacp(const u64 app_id, smi::sf::NacpMetadata &out_nacp) {
-        if(!LoadApplicationNacpMetadataCache(app_id, out_nacp)) {
-            UL_LOG_WARN("Failed to load NACP metadata cache for application ID 0x%016lX!", app_id);
-            return false;
-        }
-        return true;
-    }
-
-    bool QueryApplicationIcon(const u64 app_id, u8 *out_icon_buf, const size_t icon_buf_size, size_t &out_actual_icon_size) {
-        if(!LoadApplicationIconCache(app_id, out_icon_buf, icon_buf_size, out_actual_icon_size)) {
-            UL_LOG_WARN("Failed to load application icon cache for application ID 0x%016lX!", app_id);
-            return false;
-        }
-        return true;
     }
 
     bool QueryApplicationNacpMisc(const u64 app_id, ApplicationNacpMisc &out_nacp_misc) {

@@ -1,3 +1,9 @@
+# Changelog for `v1.2.2`
+
+- Recompiled with Atmosphère v1.10.1 support (21.1.0)
+
+- Moved to new NS commands for proper icon/NACP support
+
 # Changelog for `v1.2.1`
 
 - Recompiled with Atmosphère v1.9.1 support (20.1.0)

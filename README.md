@@ -223,6 +223,10 @@ List of not implemented official HOME Menu features:
 
   - In more extreme cases, uLaunch's blackscreens might also be caused due bad handling of invalid theme/entry JSON files. The JSONs might have been corrupted (due to ExFAT, other homebrews...) so try deleting them.
 
+- uLaunch is crashing. How can I fix it?
+
+  - Check `log_uSystem.log` inside `/ulaunch` for any information on the crash, as well as recent Atmosphère crash reports containing title ID `0100000000001000` or `010000000000100d` in their name. The particular error code `2128-0100` means that `uSystem` crashed, so on those the problematic title ID is `0100000000001000`.
+
 - Why can't I access the usual system settings, while I can access other normal system menus like the album, mii editor, user page, etc.?
 
   - This is an unfortunate technical issue. While the web browser, user page, album... are separate applets (separate programs, independent from the HOME Menu itself) system settings are *actually* part of HOME Menu itself. Therefore, we have to implement manually all of them... which requires its effort, so only a bunch of the available settings (plus a few extras) are currently available here, while the remaining settings are being reversed and implemented.

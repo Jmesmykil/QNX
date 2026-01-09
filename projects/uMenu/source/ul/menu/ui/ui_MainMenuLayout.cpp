@@ -321,6 +321,7 @@ namespace ul::menu::ui {
                         SwkbdConfig swkbd;
                         UL_RC_ASSERT(swkbdCreate(&swkbd, 0));
                         swkbdConfigMakePresetDefault(&swkbd);
+                        swkbdConfigSetType(&swkbd, SwkbdType_All);
                         swkbdConfigSetGuideText(&swkbd, GetLanguageString("swkbd_folder_name_guide").c_str());
                         char new_folder_name_buf[500] = {};
                         const auto rc = ShowSwkbd(&swkbd, new_folder_name_buf, sizeof(new_folder_name_buf));
@@ -378,6 +379,7 @@ namespace ul::menu::ui {
                             SwkbdConfig swkbd;
                             UL_RC_ASSERT(swkbdCreate(&swkbd, 0));
                             swkbdConfigMakePresetDefault(&swkbd);
+                            swkbdConfigSetType(&swkbd, SwkbdType_All);
                             swkbdConfigSetInitialText(&swkbd, cur_entry.folder_info.name);
                             swkbdConfigSetGuideText(&swkbd, GetLanguageString("swkbd_folder_name_guide").c_str());
                             char new_folder_name[500] = {};

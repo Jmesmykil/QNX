@@ -1,3 +1,7 @@
+# Current changes
+
+- All keyboards are now properly supported when creating a new folder or changing the console nickname
+
 # Changelog for `v1.2.2`
 
 - Recompiled with Atmosphère v1.10.1 support (21.1.0)

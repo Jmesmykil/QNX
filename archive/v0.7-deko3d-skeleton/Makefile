@@ -15,10 +15,12 @@ DEVKITPRO ?= /opt/devkitpro
 DEVKITA64 ?= $(DEVKITPRO)/devkitA64
 
 OUT_DIR    := SdOut
+FORK_ROOT  := $(abspath $(CURDIR)/../..)
+UPSTREAM_LIBS := $(FORK_ROOT)/archive/v0.2.1-prep/upstream/libs
 
-LIBUCOMMON    := $(CURDIR)/libs/uCommon
-LIBNX_EXT     := $(CURDIR)/libs/libnx-ext/libnx-ext
-LIBNX_IPCEXT  := $(CURDIR)/libs/libnx-ext/libnx-ipcext
+LIBUCOMMON    := $(UPSTREAM_LIBS)/uCommon
+LIBNX_EXT     := $(UPSTREAM_LIBS)/libnx-ext/libnx-ext
+LIBNX_IPCEXT  := $(UPSTREAM_LIBS)/libnx-ext/libnx-ipcext
 
 .PHONY: all umenu libs clean
 

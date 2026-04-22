@@ -40,10 +40,13 @@ CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++23
 ASFLAGS	:=	-g $(ARCH)
 LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
 
-LIBUCOMMON		:=	$(CURDIR)/../../libs/uCommon
-LIBNX_EXT		:=	$(CURDIR)/../../libs/libnx-ext/libnx-ext
-LIBNX_IPCEXT	:=	$(CURDIR)/../../libs/libnx-ext/libnx-ipcext
-INCLUDES 		+=	/../../libs/json/single_include/nlohmann /../../libs/zip/src
+FORK_ROOT		:=	$(abspath $(CURDIR)/../../../..)
+UPSTREAM_LIBS	:=	$(FORK_ROOT)/archive/v0.2.1-prep/upstream/libs
+UPSTREAM_LIBS_REL	:=	../../../v0.2.1-prep/upstream/libs
+LIBUCOMMON		:=	$(UPSTREAM_LIBS)/uCommon
+LIBNX_EXT		:=	$(UPSTREAM_LIBS)/libnx-ext/libnx-ext
+LIBNX_IPCEXT	:=	$(UPSTREAM_LIBS)/libnx-ext/libnx-ipcext
+INCLUDES 		+=	$(UPSTREAM_LIBS_REL)/json/single_include/nlohmann $(UPSTREAM_LIBS_REL)/zip/src
 # ImGui + UI backend headers
 INCLUDES		+=	source/imgui source/ui
 # stb_image header (used by qos_icon_upload)

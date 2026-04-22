@@ -1,0 +1,10 @@
+target/
+build/
+out/
+*.nsp
+*.nso
+*.nro
+*.elf
+*.o
+__pycache__/
+.DS_Store

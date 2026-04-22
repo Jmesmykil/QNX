@@ -1,0 +1,24 @@
+[submodule "Plutonium"]
+	path = libs/Plutonium
+	url = https://github.com/XorTroll/Plutonium
+[submodule "Atmosphere-libs"]
+	path = libs/Atmosphere-libs
+	url = https://github.com/Atmosphere-NX/Atmosphere-libs
+[submodule "arc"]
+	path = arc
+	url = https://github.com/XorTroll/arc
+[submodule "libs/json"]
+	path = libs/json
+	url = https://github.com/nlohmann/json
+[submodule "libs/zip"]
+	path = libs/zip
+	url = https://github.com/kuba--/zip
+[submodule "libs/imgui"]
+	path = libs/imgui
+	url = https://github.com/ocornut/imgui
+[submodule "libs/stb"]
+	path = libs/stb
+	url = https://github.com/nothings/stb
+[submodule "libs/libnx-ext"]
+	path = libs/libnx-ext
+	url = https://github.com/XorTroll/libnx-ext

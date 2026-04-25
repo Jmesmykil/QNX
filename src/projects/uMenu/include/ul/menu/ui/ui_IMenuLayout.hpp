@@ -47,7 +47,15 @@ namespace ul::menu::ui {
             virtual void OnMenuUpdate() {}
             
             virtual bool OnHomeButtonPress() = 0;
-            
+
+            // Q OS cycle SP4.14: invoked when uSystem forwards a long-press
+            // (OS-level AppletMessage_DetectLongPressingHomeButton).  Default
+            // is a no-op that returns true (consume).  qdesktop's
+            // MainMenuLayout overrides this to open the dev mini-menu;
+            // upstream layouts (Settings/Themes/Lockscreen/Startup) keep
+            // the default since they have no surface for a dev menu.
+            virtual bool OnHomeButtonLongPress() { return true; }
+
             virtual void LoadSfx() = 0;
             virtual void DisposeSfx() = 0;
     };

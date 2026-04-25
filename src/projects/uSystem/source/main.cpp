@@ -193,7 +193,7 @@ namespace {
 
     // libstratosphere heap: used for malloc/free/new/delete and everything using them
     // We specially need to take into account app icon/NACP caching (it's around 0.14MB per app) plus thread stack buffers, vectors and so on
-    constexpr size_t LibstratosphereHeapSize = 20_MB;
+    constexpr size_t LibstratosphereHeapSize = 10_MB;
     alignas(ams::os::MemoryPageSize) constinit u8 g_LibstratosphereHeap[LibstratosphereHeapSize];
 
     // libnx heap: used for internal malloc_r/etc called by stdlib stuff, thus a modest size is enough
@@ -695,6 +695,25 @@ namespace {
                 }
                 case ul::system::AppletMessage::DetectShortPressingHomeButton: {
                     HandleHomeButton();
+                    break;
+                }
+                case ul::system::AppletMessage::DetectLongPressingHomeButton: {
+                    // Q OS cycle SP4.14: forward the OS's long-press signal
+                    // to uMenu so qdesktop can open its dev mini-menu without
+                    // depending on the double-press fallback.  We DO NOT call
+                    // HandleHomeButton() here — that path interprets the
+                    // press as "go home" and would terminate the foreground
+                    // applet/app.  Long-press is a uMenu-internal gesture,
+                    // valid only when uMenu itself is the active foreground.
+                    if(IsMenuRunning()) {
+                        UL_LOG_INFO("Got AppletMessage: DetectLongPressingHomeButton "
+                                    "→ forwarding HomeLongRequest to uMenu");
+                        PushSimpleMenuMessage(ul::smi::MenuMessage::HomeLongRequest);
+                    }
+                    else {
+                        UL_LOG_INFO("Got AppletMessage: DetectLongPressingHomeButton "
+                                    "while non-uMenu is foreground — ignoring");
+                    }
                     break;
                 }
                 case ul::system::AppletMessage::DetectShortPressingPowerButton: {

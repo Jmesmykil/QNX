@@ -24,7 +24,15 @@ namespace ul::smi {
         FinishedSleep,
         ApplicationRecordsChanged,
         ApplicationVerifyProgress,
-        ApplicationVerifyResult
+        ApplicationVerifyResult,
+        // Q OS cycle SP4.14: emitted by uSystem when libnx delivers
+        // AppletMessage_DetectLongPressingHomeButton (= 21).  uMenu
+        // (qdesktop) opens its dev mini-menu in response.  Append-only
+        // — wire-protocol enum value MUST stay at the tail to preserve
+        // ABI with previously-built uSystem binaries that don't know
+        // about it (they'll never emit it; uMenu's switch falls through
+        // gracefully).
+        HomeLongRequest
     };
 
     struct MenuMessageContext {

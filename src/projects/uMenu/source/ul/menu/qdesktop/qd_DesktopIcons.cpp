@@ -432,10 +432,23 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
         // called on slot reset) already sets icon_tex_[entry_idx] = nullptr, so
         // the condition below will re-create the texture on the next render.
         if (icon_tex_[entry_idx] == nullptr) {
-            // SDL_PIXELFORMAT_ABGR8888 on ARM little-endian → byte order [R,G,B,A],
-            // which matches our CACHE_ENTRY_BYTES buffer layout.
+            // The cache buffer is BGRA byte-order in memory: bytes [B,G,R,A]
+            // (qd_IconCache::ScaleToBgra64 explicitly writes dst[0]=B, dst[1]=G,
+            // dst[2]=R, dst[3]=A — see qd_IconCache.cpp:146-149).
+            //
+            // SDL pixel-format constants use big-endian word notation, so on
+            // AArch64 LE the memory byte order is reversed from the constant
+            // name:
+            //   SDL_PIXELFORMAT_ARGB8888 → memory bytes [B,G,R,A]   ← we want this
+            //   SDL_PIXELFORMAT_ABGR8888 → memory bytes [R,G,B,A]   ← OLD value, wrong
+            //   SDL_PIXELFORMAT_RGBA8888 → memory bytes [A,B,G,R]
+            //   SDL_PIXELFORMAT_BGRA8888 → memory bytes [A,R,G,B]
+            //
+            // Using ABGR8888 here previously caused a persistent R↔B swap on
+            // every cached icon (skin tones purple, sky orange) because the
+            // texture interpreted byte[0] as R while the cache wrote B there.
             icon_tex_[entry_idx] = SDL_CreateTexture(r,
-                                                      SDL_PIXELFORMAT_ABGR8888,
+                                                      SDL_PIXELFORMAT_ARGB8888,
                                                       SDL_TEXTUREACCESS_STREAMING,
                                                       static_cast<int>(CACHE_ICON_W),
                                                       static_cast<int>(CACHE_ICON_H));

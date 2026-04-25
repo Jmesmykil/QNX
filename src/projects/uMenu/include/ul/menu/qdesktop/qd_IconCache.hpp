@@ -13,7 +13,11 @@ static constexpr u32    CACHE_ICON_H       = 64;     // from icon_cache.rs CACHE
 static constexpr size_t CACHE_ENTRY_BYTES  = CACHE_ICON_W * CACHE_ICON_H * 4;  // 16384
 static constexpr size_t MEM_CACHE_CAP      = 24;     // from icon_cache.rs MEM_CACHE_CAP
 // On-disk directory.  Created by EnsureIconCacheDir() on first use.
-static constexpr const char ICON_CACHE_DIR[] = "sdmc:/switch/qos-icon-cache/";
+// v2: directory bumped from "qos-icon-cache" → "qos-icon-cache-v2" because the
+// v1 ring contains channel-scrambled NRO icons (qd_NroAsset RGBA8888 instead of
+// ABGR8888). Old files are ignored, not migrated; user can delete the v1 dir
+// from the SD root at leisure.
+static constexpr const char ICON_CACHE_DIR[] = "sdmc:/switch/qos-icon-cache-v2/";
 
 // Single LRU slot.
 struct IconCacheEntry {

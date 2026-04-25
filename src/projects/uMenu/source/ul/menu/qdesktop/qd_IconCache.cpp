@@ -42,7 +42,8 @@ bool QdIconCache::EnsureDir() {
         UL_LOG_WARN("qdesktop: IconCache EnsureDir: fsdevGetDeviceFileSystem(sdmc) NULL");
         return false;
     }
-    Result rc = fsFsCreateDirectory(sdmc, "/switch/qos-icon-cache");
+    // Directory name MUST stay in lockstep with ICON_CACHE_DIR in qd_IconCache.hpp.
+    Result rc = fsFsCreateDirectory(sdmc, "/switch/qos-icon-cache-v2");
     const bool ok = R_SUCCEEDED(rc) || (rc == 0x402);
     UL_LOG_INFO("qdesktop: IconCache EnsureDir rc=0x%X ok=%d", static_cast<unsigned>(rc), ok ? 1 : 0);
     // Either success (0) or already-exists (0x402) is fine.
@@ -68,7 +69,7 @@ u64 QdIconCache::PathHash(const char *path) {
 
 // ── DiskPath ──────────────────────────────────────────────────────────────────
 
-// Returns: "sdmc:/switch/qos-icon-cache/<hash16hex>.rgba"
+// Returns: "sdmc:/switch/qos-icon-cache-v2/<hash16hex>.rgba"
 std::string QdIconCache::DiskPath(u64 hash) {
     static constexpr const char hex[] = "0123456789abcdef";
     // 16 hex digits + ".rgba" suffix

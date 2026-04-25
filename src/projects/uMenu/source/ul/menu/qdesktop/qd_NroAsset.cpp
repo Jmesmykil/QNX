@@ -225,8 +225,12 @@ NroIconResult ExtractNroIcon(const char *nro_path) {
         return NroIconResult{ fb, 64, 64, false };
     }
 
-    // Convert surface to RGBA8888.
-    SDL_Surface *rgba_surf = SDL_ConvertSurfaceFormat(surf, SDL_PIXELFORMAT_RGBA8888, 0);
+    // Convert surface to ABGR8888 — on AArch64 LE this stores bytes as
+    // [R, G, B, A] in memory, which is what cache_.Put / ScaleToBgra64 expect.
+    // Using RGBA8888 here would give [A, B, G, R] (channels scrambled), which
+    // is the v1.1.11→v1.1.12 channel-corruption bug fixed in the Rust PoC and
+    // mirrored here. Mirrors the byte-order rule in LoadJpegIconToCache.
+    SDL_Surface *rgba_surf = SDL_ConvertSurfaceFormat(surf, SDL_PIXELFORMAT_ABGR8888, 0);
     SDL_FreeSurface(surf);
     if (!rgba_surf) {
         u8 *fb = MakeFallbackIcon(nro_path);

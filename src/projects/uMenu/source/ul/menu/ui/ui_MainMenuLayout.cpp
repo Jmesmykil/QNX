@@ -12,6 +12,7 @@
 #ifdef QDESKTOP_MODE
 #include <ul/menu/qdesktop/qd_Input.hpp>
 #include <ul/menu/qdesktop/qd_Curve.hpp>
+#include <ul/menu/qdesktop/qd_RecordsBin.hpp>
 #endif
 
 extern ul::menu::ui::GlobalSettings g_GlobalSettings;
@@ -1388,8 +1389,34 @@ namespace ul::menu::ui {
         //   1. SetApplicationEntries — truncates + appends installed games
         //   2. SetSpecialEntries     — appends Switch system applets
         // A future Reload() override will re-run both with the same vector.
+        //
+        // Fallback path (Cycle A3, SP4.10): when the upstream LoadEntries() returns
+        // empty — which happens whenever uMenu boots in a hbloader-hosted /
+        // applet-mode context (rc=0x1F800 on ns:am2 ListApplicationRecord) — we
+        // synthesise the same Entry vector from sdmc:/switch/qos-apps/records.bin
+        // pre-written by uManager.nro. See qd_RecordsBin.{hpp,cpp} and the canonical
+        // Rust qos_apps.rs in mock-nro-desktop-gui.
         if (this->qdesktop_icons) {
-            const auto entries = ul::menu::LoadEntries(ul::menu::GetActiveMenuPath());
+            std::vector<ul::menu::Entry> entries =
+                ul::menu::LoadEntries(ul::menu::GetActiveMenuPath());
+            UL_LOG_INFO("qdesktop: ui_MainMenuLayout: LoadEntries returned %zu",
+                        entries.size());
+
+            if (entries.empty()) {
+                std::vector<ul::menu::Entry> rb_entries;
+                if (ul::menu::qdesktop::LoadEntriesFromRecordsBin(
+                        ul::menu::qdesktop::QAPP_RECORDS_BIN_PATH, rb_entries)) {
+                    UL_LOG_INFO("qdesktop: ui_MainMenuLayout: records.bin"
+                                " fallback yielded %zu entries",
+                                rb_entries.size());
+                    entries = std::move(rb_entries);
+                } else {
+                    UL_LOG_INFO("qdesktop: ui_MainMenuLayout: records.bin"
+                                " fallback unavailable — desktop will show no"
+                                " installed Switch games this boot");
+                }
+            }
+
             this->qdesktop_icons->SetApplicationEntries(entries);
             this->qdesktop_icons->SetSpecialEntries(entries);
         }

@@ -826,7 +826,17 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
 
             if (lift_hit < icon_count_ && lift_hit == down_idx_ && dist_sq <= tol_sq) {
                 UL_LOG_INFO("qdesktop: launch idx=%zu (touch click)", lift_hit);
+                // Cycle E1: clear ALL touch state BEFORE LaunchIcon so the
+                // nested OnInput calls fired by FadeOut's CallForRender
+                // busy-loop see a clean slate (touch_active_now is false,
+                // pressed_ is false, was_touch_active_last_frame_ matches).
+                // This belts-and-suspenders the re-entry guard inside
+                // LaunchIcon itself — they're independent defenses.
+                pressed_                     = false;
+                down_idx_                    = MAX_ICONS;
+                was_touch_active_last_frame_ = touch_active_now;
                 LaunchIcon(lift_hit);
+                return;
             }
         }
 
@@ -839,7 +849,64 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
 
 // ── LaunchIcon ────────────────────────────────────────────────────────────────
 
+namespace {
+    // Cycle E1 (SP4.13): re-entry guard.
+    //
+    // BUG (manifested in SP4.12.1 hardware test):
+    //   Tapping a Themes/Settings icon caused infinite recursion:
+    //
+    //     QdDesktopIconsElement::OnInput     [user touch_up]
+    //       LaunchIcon(themes_idx)
+    //         ShowThemesMenu()
+    //           MenuApplication::LoadMenu(MenuType::Themes, fade=true)
+    //             Application::FadeOut()       [busy-loops CallForRender]
+    //               Application::OnRender()    [per-frame, fires layout OnInput]
+    //                 QdDesktopIconsElement::OnInput  [pressed_ STILL true,
+    //                                                  was_touch_active_last_frame_
+    //                                                  STILL true → re-enters
+    //                                                  TouchUp branch]
+    //                   LaunchIcon(themes_idx)        ← RE-ENTERS
+    //                     ShowThemesMenu()            ← infinite recursion
+    //
+    //   ~2 KB of stack per recursion level (UL_LOG_INFO → LogImpl → vsnprintf).
+    //   With a 1 MB main-thread stack the recursion depth tops out at ~500
+    //   levels, then SP overruns the stack region → null deref in vsnprintf
+    //   scratch.  Crash report 01777148075 confirms this exact chain.
+    //
+    //   For Application/Nro launches (Pokemon, RetroArch, Tinwoo) the same
+    //   re-entry path fired smi::LaunchApplication TWICE with the same app_id,
+    //   confusing uSystem's launch state machine and bouncing the game back
+    //   to the desktop.  That's the "tries to load → black → back to desktop"
+    //   pattern the user reported.
+    //
+    // FIX:
+    //   A static atomic guards the function body.  Any call that finds the
+    //   guard already set (i.e. we're already inside LaunchIcon, presumably
+    //   from a nested OnInput fired by FadeOut's CallForRender loop) is
+    //   discarded.  The guard is reset when the original call returns.
+    //
+    //   This is safe because LaunchIcon is only ever called on the main UI
+    //   thread (from OnInput / Plutonium's render loop).  No cross-thread
+    //   races possible.  std::atomic is used purely for the relaxed memory
+    //   ordering on the load/store; a plain bool with relaxed access would
+    //   work but std::atomic documents the intent.
+    std::atomic<bool> g_launch_icon_in_flight{false};
+}
+
 void QdDesktopIconsElement::LaunchIcon(size_t i) {
+    if (g_launch_icon_in_flight.load(std::memory_order_relaxed)) {
+        UL_LOG_WARN("qdesktop: LaunchIcon(%zu) re-entered while another launch "
+                    "is in flight — discarding (cycle E1 guard)", i);
+        return;
+    }
+    g_launch_icon_in_flight.store(true, std::memory_order_relaxed);
+    // Reset on every exit path via this scope-exit helper.
+    struct LaunchIconReentryGuard {
+        ~LaunchIconReentryGuard() {
+            g_launch_icon_in_flight.store(false, std::memory_order_relaxed);
+        }
+    } reentry_guard;
+
     if (i >= icon_count_) {
         return;
     }

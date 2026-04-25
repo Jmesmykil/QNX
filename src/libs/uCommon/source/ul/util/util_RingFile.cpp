@@ -119,19 +119,62 @@ namespace ul::util {
     }
 
     void RingFile::Flush() {
-        if(m_file != nullptr) {
-            fflush(m_file);
-            fsync(fileno(m_file));
+        // Cycle E2 (SP4.13): snapshot m_file ONCE under no-lock so a parallel
+        // Rotate() (which transiently nulls m_file during fclose+fopen) can't
+        // hand us a stale-but-non-null pointer that we'd then dereference
+        // through fflush/fileno.  Caller is supposed to hold g_ring_lock for
+        // this operation; the snapshot is belt-and-suspenders for any future
+        // caller path that forgets the mutex.
+        //
+        // Hardware crash signature this defends against:
+        //   PC = uMenu + 0x7bc980 inside newlib's fileno()
+        //   Fault address = 0xb0 (offset into a freed/corrupt FILE struct)
+        //   Caller chain: DrainThreadFunc → RingFile::Flush → fileno → CRASH
+        //   Reproduced 2× on SP4.12.1 hardware test (crash reports
+        //   01777147479 and 01777148190, both same PC, both first-boot).
+        //
+        //   The original code was:
+        //       if(m_file != nullptr) {
+        //           fflush(m_file);            ← if m_file flips to null
+        //           fsync(fileno(m_file));     ← here, fileno faults
+        //       }
+        //   Even with mutexes, an invalid FILE* (e.g. from a fopen that
+        //   returned non-null but with a corrupt internal struct due to FD
+        //   exhaustion) would null-deref the same way.  fflush() returning
+        //   EOF means the FILE* is no longer usable; disable it before the
+        //   subsequent fileno call.
+        FILE *fp = m_file;
+        if(fp == nullptr) {
+            return;
+        }
+        if(fflush(fp) == EOF) {
+            // FILE* is corrupt or its underlying FD was closed underneath
+            // us.  Disable further use so the next Write/Flush can't crash.
+            m_file = nullptr;
+            m_dropped_writes++;
+            return;
+        }
+        const int fd = fileno(fp);
+        if(fd >= 0) {
+            fsync(fd);
         }
     }
 
     void RingFile::Close() {
-        if(m_file != nullptr) {
-            fflush(m_file);
-            fsync(fileno(m_file));
-            fclose(m_file);
-            m_file = nullptr;
+        FILE *fp = m_file;
+        if(fp == nullptr) {
+            return;
         }
+        // Mirror Flush's defensive shape — fflush failure invalidates the
+        // FILE*, so don't fileno/fsync after it returns EOF.
+        if(fflush(fp) != EOF) {
+            const int fd = fileno(fp);
+            if(fd >= 0) {
+                fsync(fd);
+            }
+        }
+        fclose(fp);
+        m_file = nullptr;
     }
 
 }  // namespace ul::util

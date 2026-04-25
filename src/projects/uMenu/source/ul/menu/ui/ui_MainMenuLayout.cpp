@@ -1406,8 +1406,31 @@ namespace ul::menu::ui {
             return true;
         }
 
-        // Single press path: record the time, recentre cursor, swallow.
+        // Single press path:
+        //   • If a game/applet is currently suspended → ResumeApplication
+        //     (mirrors Switch native: pressing Home from desktop with a
+        //      backgrounded game brings it back to the foreground).
+        //   • Otherwise → record press time + centre cursor + swallow.
+        // Cycle G3 (SP4.15): the Resume path was previously gated off in
+        // QDESKTOP_MODE; without it the desktop became a one-way trip and
+        // the user was stuck unable to return to the running game.
         this->qdesktop_last_home_press_ns = now_ns;
+        if (g_GlobalSettings.IsTitleSuspended() && g_MenuApplication != nullptr) {
+            UL_LOG_INFO("qdesktop: OnHomeButtonPress -> single + IsTitleSuspended"
+                        " → ResumeApplication 0x%016lX",
+                        g_GlobalSettings.system_status.suspended_app_id);
+            const auto rrc = smi::ResumeApplication();
+            if (R_SUCCEEDED(rrc)) {
+                g_MenuApplication->FadeOutToNonLibraryApplet();
+                g_MenuApplication->Finalize();
+                return true;
+            }
+            UL_LOG_WARN("qdesktop: OnHomeButtonPress single-resume failed rc=0x%X"
+                        " — falling back to cursor-centre",
+                        static_cast<unsigned>(rrc));
+            // Fall through to the cursor-centre default below so the press
+            // doesn't feel completely dead.
+        }
         UL_LOG_INFO("qdesktop: OnHomeButtonPress -> single (no-op + cursor centre)");
         if (this->qdesktop_cursor) {
             this->qdesktop_cursor->SetCursorPos(960, 540);

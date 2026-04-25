@@ -1044,7 +1044,19 @@ namespace {
     }
 
     bool HandleAction(Action &action) {
-        UL_LOG_INFO("Trying to handle action of type %d in queue", static_cast<u32>(action.type));
+        // Cycle G4 (SP4.15): per-frame log throttle.  This function gets called
+        // every MainLoop tick (≈60 Hz) for the head action; on hardware the
+        // common case is "queued but blocked" — e.g. LaunchApplication waiting
+        // for the active library applet (uMenu) to terminate.  The previous
+        // unconditional log produced ~180 lines/sec of "Trying / Failed /
+        // Action queue has" into RingFile, causing noticeable UI slowdown
+        // and obscuring real events in the log.  Throttle: only log when
+        // (action_type, queue size context) actually changes.
+        static u32 s_last_logged_type = 0xFFFFFFFFu;
+        if(static_cast<u32>(action.type) != s_last_logged_type) {
+            UL_LOG_INFO("Trying to handle action of type %d in queue", static_cast<u32>(action.type));
+            s_last_logged_type = static_cast<u32>(action.type);
+        }
         switch(action.type) {
             case ActionType::LaunchApplication: {
                 if(!la::IsActive()) {
@@ -1202,7 +1214,16 @@ namespace {
             }
         }
 
-        UL_LOG_INFO("Failed to handle action in queue");
+        // Cycle G4 (SP4.15): throttle.  HandleAction() itself already
+        // throttles the "Trying" log to fire only on action-type change;
+        // mirror that for "Failed" so we don't write 60 Hz of noise while
+        // waiting for la::IsActive() to clear.
+        static u32 s_last_failed_type = 0xFFFFFFFFu;
+        if(static_cast<u32>(action.type) != s_last_failed_type) {
+            UL_LOG_INFO("Failed to handle action in queue (type=%d, will retry)",
+                        static_cast<u32>(action.type));
+            s_last_failed_type = static_cast<u32>(action.type);
+        }
         return false;
     }
 
@@ -1212,9 +1233,18 @@ namespace {
         HandleMenuMessage();
 
         auto consumed_action = false;
-        // Try to consume one action per loop
-        if(!g_ActionQueue.empty()) {
-            UL_LOG_INFO("Action queue has %lu actions", g_ActionQueue.size());
+        // Try to consume one action per loop.
+        // Cycle G4 (SP4.15): only log queue depth when it CHANGES — the
+        // previous unconditional log fired every frame an action was
+        // pending, producing ~60 entries/sec of identical output that
+        // crowded the log buffer and slowed the UI.
+        static size_t s_last_logged_depth = 0;
+        const size_t depth = g_ActionQueue.size();
+        if(depth != s_last_logged_depth) {
+            if(depth > 0) {
+                UL_LOG_INFO("Action queue has %lu actions", depth);
+            }
+            s_last_logged_depth = depth;
         }
         for(u32 i = 0; i < g_ActionQueue.size(); i++) {
             auto &action = g_ActionQueue.at(i);

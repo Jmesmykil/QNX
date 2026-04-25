@@ -34,6 +34,11 @@
 // won't return to the desktop after the game runs.
 extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
 
+// Cycle G1 (SP4.15): read suspended-app state so LaunchIcon can route
+// Application launches through Resume / close-and-relaunch instead of always
+// firing a fresh smi::LaunchApplication.  Defined in main.cpp.
+extern ul::menu::ui::GlobalSettings g_GlobalSettings;
+
 namespace ul::menu::qdesktop {
 
 // ── Click tolerance ───────────────────────────────────────────────────────────
@@ -765,10 +770,19 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
         }
     }
 
-    // ── ZL: right-click / context menu on the icon under the cursor ──
-    // Mirrors the right-click (secondary action) semantics: ZL opens the
-    // context menu for the focused or cursor-hit icon without launching it.
-    if (keys_down & HidNpadButton_ZL) {
+    // ── ZL / Y: right-click / context menu on the icon under the cursor ──
+    // Cycle G2 (SP4.15): real popup wired.  Both ZL (shoulder) and Y (face)
+    // open the same context menu so users discover the gesture either way.
+    // Options shown depend on icon kind + suspended-app state:
+    //   • Application + this icon's app suspended → Resume / Close / Cancel
+    //   • Application + a DIFFERENT app suspended → Open (close current) /
+    //                                                Close current / Cancel
+    //   • Application, no app suspended           → Open / Cancel
+    //   • Nro                                     → Open / Cancel
+    //   • Special / Builtin                       → Open / Cancel
+    // Real "Verify" / "Delete" / "Move to dock" actions land in a later
+    // cycle once the corresponding SMI surface is wired (T1-4 punch list).
+    if ((keys_down & HidNpadButton_ZL) || (keys_down & HidNpadButton_Y)) {
         size_t ctx_idx = MAX_ICONS;
         if (cursor_ref_ != nullptr) {
             const s32 cx = cursor_ref_->GetCursorX();
@@ -778,12 +792,85 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
         if (ctx_idx >= icon_count_) {
             ctx_idx = focused_idx_;
         }
-        if (ctx_idx < icon_count_) {
-            UL_LOG_INFO("qdesktop: ZL context-menu on icon idx=%zu name='%s'",
-                        ctx_idx, icons_[ctx_idx].name);
-            // Context menu for NRO/Application icons: for now, log the intent.
-            // A full popup will be wired when the context-menu element lands.
-            // This ZL path is fully wired — no stub — just no popup widget yet.
+        if (ctx_idx < icon_count_ && g_MenuApplication != nullptr) {
+            const NroEntry &entry = icons_[ctx_idx];
+            UL_LOG_INFO("qdesktop: context-menu open idx=%zu name='%s' kind=%d",
+                        ctx_idx, entry.name, static_cast<int>(entry.kind));
+
+            const u64 suspended_app_id = g_GlobalSettings.system_status.suspended_app_id;
+            const bool this_is_suspended =
+                entry.kind == IconKind::Application
+                && entry.app_id != 0
+                && suspended_app_id == entry.app_id;
+            const bool other_is_suspended =
+                suspended_app_id != 0 && !this_is_suspended;
+
+            std::vector<std::string> opts;
+            int opt_open    = -1;
+            int opt_close   = -1;
+            int opt_close_other = -1;
+
+            if (this_is_suspended) {
+                opt_open  = static_cast<int>(opts.size()); opts.emplace_back("Resume");
+                opt_close = static_cast<int>(opts.size()); opts.emplace_back("Close");
+            } else {
+                opt_open = static_cast<int>(opts.size());
+                opts.emplace_back(other_is_suspended ? "Open (close current first)"
+                                                     : "Open");
+                if (other_is_suspended) {
+                    opt_close_other = static_cast<int>(opts.size());
+                    opts.emplace_back("Close currently running game");
+                }
+            }
+            opts.emplace_back("Cancel");
+            const int cancel_idx = static_cast<int>(opts.size()) - 1;
+
+            std::string body;
+            if (this_is_suspended) {
+                body = "This game is currently running.";
+            } else if (other_is_suspended) {
+                body = "A different game is currently running.";
+            } else {
+                body = "What would you like to do?";
+            }
+
+            const int choice = g_MenuApplication->DisplayDialog(
+                std::string(entry.name),
+                body,
+                opts,
+                true
+            );
+            if (choice < 0 || choice == cancel_idx) {
+                UL_LOG_INFO("qdesktop: context-menu cancelled");
+            } else if (choice == opt_open) {
+                // Routes through LaunchIcon → G1 logic handles
+                // resume/terminate-and-launch transparently.
+                LaunchIcon(ctx_idx);
+            } else if (choice == opt_close && this_is_suspended) {
+                UL_LOG_INFO("qdesktop: context-menu Close → TerminateApplication 0x%016llx",
+                            static_cast<unsigned long long>(entry.app_id));
+                const auto trc = smi::TerminateApplication();
+                if (R_SUCCEEDED(trc)) {
+                    g_GlobalSettings.ResetSuspendedApplication();
+                    g_MenuApplication->ShowNotification("Closed running game.");
+                } else {
+                    UL_LOG_WARN("qdesktop: TerminateApplication failed rc=0x%X",
+                                static_cast<unsigned>(trc));
+                    g_MenuApplication->ShowNotification("Close failed");
+                }
+            } else if (choice == opt_close_other) {
+                UL_LOG_INFO("qdesktop: context-menu Close-current → TerminateApplication 0x%016llx",
+                            static_cast<unsigned long long>(suspended_app_id));
+                const auto trc = smi::TerminateApplication();
+                if (R_SUCCEEDED(trc)) {
+                    g_GlobalSettings.ResetSuspendedApplication();
+                    g_MenuApplication->ShowNotification("Closed running game.");
+                } else {
+                    UL_LOG_WARN("qdesktop: TerminateApplication failed rc=0x%X",
+                                static_cast<unsigned>(trc));
+                    g_MenuApplication->ShowNotification("Close failed");
+                }
+            }
         }
     }
 
@@ -950,38 +1037,75 @@ void QdDesktopIconsElement::LaunchIcon(size_t i) {
 
         case IconKind::Application:
             if (entry.app_id != 0) {
-                // Cycle D2 (revert C2): restore SP4.10 ordering.
-                //
-                // C2 inverted to FadeOut → Launch → Finalize to mirror the
-                // upstream non-QDESKTOP path. That broke Pokemon and every
-                // other Switch game on hardware. Root cause:
-                // FadeOutToNonLibraryApplet ends with
-                // appletClearCaptureBuffer(AppletCaptureSharedBuffer_CallerApplet),
-                // which is only valid in upstream's AppletHolder mode. In
-                // QDESKTOP_MODE uMenu runs as a regular Application and that
-                // capture slot isn't ours — Horizon either rejects the write
-                // or it lands at the wrong moment, leaving the launched title
-                // to read corrupt buffer state on first vsync.
-                //
-                // SP4.10 order (Launch first, fade after on success) worked
-                // because Horizon's own transition machinery commits to the
-                // foreground swap on the smi::LaunchApplication response,
-                // BEFORE FadeOutToNonLibraryApplet runs its (rogue) capture
-                // write — which then becomes harmless because uMenu is
-                // already past the handoff.
-                //
-                // We keep C2's null-guard at the top because that part was
-                // genuinely useful (avoids a crash when g_MenuApplication is
-                // already torn down). We DO NOT call FadeIn / ShowNotification
-                // on launch failure: in QDESKTOP_MODE the desktop is still
-                // visible (we never started a fade), so simple log + return
-                // suffices.
                 if (g_MenuApplication == nullptr) {
                     UL_LOG_WARN("qdesktop: LaunchApplication: g_MenuApplication"
                                 " null — skipping launch of 0x%016llx",
                                 static_cast<unsigned long long>(entry.app_id));
                     return;
                 }
+
+                // ── Cycle G1 (SP4.15): suspended-app handling ──────────────
+                // Upstream MainMenuLayout has rich resume/close-suspended
+                // logic at ui_MainMenuLayout.cpp:175-189; that whole branch
+                // was gated off in QDESKTOP_MODE awaiting QdContextMenu.
+                // Now we wire the equivalent inline so the user can:
+                //   • Press the SAME game's icon while it's suspended
+                //     → smi::ResumeApplication() (no fresh launch)
+                //   • Press a DIFFERENT game's icon while one is suspended
+                //     → confirmation dialog → smi::TerminateApplication()
+                //       then smi::LaunchApplication() the new one
+                //
+                // Without this, tapping any icon after a game has been
+                // home-buttoned quietly does nothing because Horizon won't
+                // create a second Application while one is already alive.
+                // (Why D2 cycle's launch order is preserved below: see prior
+                // commit history — 26fa3de E1 + 2d11260 D2 — the SP4.10
+                // ordering Launch→fade→Finalize is hardware-validated and
+                // we DO NOT reorder it.)
+                const u64 suspended_app_id = g_GlobalSettings.system_status.suspended_app_id;
+                if (suspended_app_id != 0) {
+                    if (suspended_app_id == entry.app_id) {
+                        UL_LOG_INFO("qdesktop: ResumeApplication 0x%016llx (matches suspended)",
+                                    static_cast<unsigned long long>(entry.app_id));
+                        const auto rrc = smi::ResumeApplication();
+                        if (R_SUCCEEDED(rrc)) {
+                            g_MenuApplication->FadeOutToNonLibraryApplet();
+                            g_MenuApplication->Finalize();
+                        } else {
+                            UL_LOG_WARN("qdesktop: ResumeApplication failed rc=0x%X",
+                                        static_cast<unsigned>(rrc));
+                            g_MenuApplication->ShowNotification("Resume failed");
+                        }
+                        return;
+                    }
+                    // Different app already running — ask before terminating.
+                    const auto opt = g_MenuApplication->DisplayDialog(
+                        std::string(entry.name),
+                        std::string("A different game is currently running.\n"
+                                    "Close it to launch this one?"),
+                        { std::string("Yes, close and launch"),
+                          std::string("Cancel") },
+                        true
+                    );
+                    if (opt != 0) {
+                        UL_LOG_INFO("qdesktop: user declined close-suspended;"
+                                    " keeping running app 0x%016llx",
+                                    static_cast<unsigned long long>(suspended_app_id));
+                        return;
+                    }
+                    const auto trc = smi::TerminateApplication();
+                    if (R_FAILED(trc)) {
+                        UL_LOG_WARN("qdesktop: TerminateApplication failed rc=0x%X"
+                                    " — aborting new launch",
+                                    static_cast<unsigned>(trc));
+                        g_MenuApplication->ShowNotification("Close failed");
+                        return;
+                    }
+                    g_GlobalSettings.ResetSuspendedApplication();
+                    // fall through to fresh-launch path
+                }
+
+                // ── Fresh launch (no suspended app, or just terminated one).
                 const Result rc = smi::LaunchApplication(entry.app_id);
                 if (R_SUCCEEDED(rc)) {
                     UL_LOG_INFO("qdesktop: LaunchApplication ok 0x%016llx — fade + Finalize",
@@ -992,6 +1116,7 @@ void QdDesktopIconsElement::LaunchIcon(size_t i) {
                     UL_LOG_WARN("qdesktop: LaunchApplication(0x%016llx) failed rc=0x%X — desktop stays live",
                                 static_cast<unsigned long long>(entry.app_id),
                                 static_cast<unsigned>(rc));
+                    g_MenuApplication->ShowNotification("Launch failed");
                 }
             }
             return;

@@ -1,9 +1,24 @@
 #include <ul/menu/ui/ui_MenuApplication.hpp>
 #include <ul/menu/smi/smi_Commands.hpp>
 #include <ul/audio/audio_SystemVolume.hpp>
+#include <atomic>
 
 extern ul::menu::ui::GlobalSettings g_GlobalSettings;
 extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
+
+// Cycle D1: terminate sentinel.
+// Set true at the top of Finalize(); checked by render callbacks to
+// short-circuit any work that would dereference soon-to-be-destroyed state.
+//
+// We MUST NOT null g_MenuApplication directly in Finalize() — that drops the
+// shared_ptr refcount 1→0, destroys MenuApplication mid-frame while Show() is
+// iterating lyt->GetRenderCallbacks(), and produces a dangling std::function
+// whose _M_invoker points to freed memory. The next render iteration calls
+// PC=0 → instruction abort. C3 (SP4.11) introduced this regression; D1 reverts
+// it by using an atomic bool sentinel that costs nothing.
+//
+// Visible to other TUs as a free-standing weak symbol via the extern below.
+std::atomic<bool> g_uMenuTerminating { false };
 
 namespace ul::menu::ui {
 
@@ -269,6 +284,9 @@ namespace ul::menu::ui {
         // begins it will nullptr the ref before SDL cleanup runs, and any
         // subsequent render-callback fire sees the guard and returns cleanly.
         this->AddRenderCallback([this]() {
+            // Cycle D1: check the terminate sentinel instead of g_MenuApplication
+            // (the latter is no longer nulled in Finalize — see D1 rationale).
+            if(::g_uMenuTerminating.load(std::memory_order_acquire)) { return; }
             if(g_MenuApplication == nullptr) { return; }
 
             static u32 s_vol_frame = 0;
@@ -322,23 +340,23 @@ namespace ul::menu::ui {
         this->Close(true);
         */
 
-        // Cycle C3 fix: null g_MenuApplication BEFORE handing control to
-        // smi::TerminateMenu(). The render callback in main.cpp captures
-        // g_MenuApplication and dereferences this->loaded_menu inside its
-        // lambda. Several call sites (qd_DesktopIcons::LaunchIcon,
-        // OnHomeButtonPress, applet shutdown) reach Finalize() while the
-        // SDL render thread is still mid-frame; without the null assignment
-        // here, the lambda's intended null-guard at ui_MenuApplication.cpp
-        // line ~272 was dead — g_MenuApplication stayed valid all the way
-        // until the OS process termination, so the lambda happily kept
-        // dereferencing a torn-down loaded_menu. Hence the Home-button
-        // crash on every applet handoff.
+        // Cycle D1 (revert C3): set the global terminate sentinel BEFORE
+        // smi::TerminateMenu(). DO NOT null g_MenuApplication here — that
+        // dropped the only strong shared_ptr ref to MenuApplication, ran the
+        // destructor mid-frame, freed Layout::render_cbs while Show()'s
+        // for-loop was iterating it, and produced a dangling std::function
+        // whose operator() jumped to PC=0. That regression caused every
+        // crash the user reported in SP4.11 (Home press, game launch,
+        // 'self-crash on emuMMC boot' — all the same bug firing on
+        // different frames).
         //
-        // Setting g_MenuApplication = nullptr here makes that guard live:
-        // any subsequent render-callback invocation observes null and
-        // early-returns, even if smi::TerminateMenu() takes another
-        // hundred ms to actually kill the process.
-        g_MenuApplication = nullptr;
+        // The render callbacks check ::g_uMenuTerminating and early-return
+        // when set, which gives us the same kill-after-Finalize semantics
+        // without touching the shared_ptr. Show()'s while-loop will exit
+        // cleanly when smi::TerminateMenu()'s process kill arrives, the
+        // stack unwinds, and main()'s scope releases g_MenuApplication
+        // naturally — no mid-frame destruction.
+        ::g_uMenuTerminating.store(true, std::memory_order_release);
 
         // This might look very ugly, but it is a simple and quick way to exit fast: let uSystem terminate us directly (the OS itself deals with the cleanup)
         // Most importantly, this allows us to exit without cleaning the screen to black when exiting SDL2 stuff (as regular homebrew apps do) so we can do cool transitions with applets/games

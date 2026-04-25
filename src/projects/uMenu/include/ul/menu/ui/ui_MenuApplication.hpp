@@ -19,7 +19,7 @@ namespace ul::menu::ui {
         Themes,
         Settings,
         Lockscreen,
-        Vault
+        Vault,
     };
 
     void OnMessage(const smi::MenuMessageContext &msg_ctx);

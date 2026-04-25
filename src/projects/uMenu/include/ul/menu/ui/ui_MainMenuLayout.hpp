@@ -90,6 +90,11 @@ namespace ul::menu::ui {
             qdesktop::QdWallpaperElement::Ref qdesktop_wallpaper;
             qdesktop::QdDesktopIconsElement::Ref qdesktop_icons;
             qdesktop::QdCursorElement::Ref qdesktop_cursor;
+            // Cycle D5 (SP4.12): timestamp of the most recent Home-button
+            // press, in nanoseconds (armTicksToNs(armGetSystemTick())).
+            // Two presses within 600 ms open the dev mini-menu; otherwise
+            // single presses are no-ops.  0 = "no prior press recorded".
+            u64 qdesktop_last_home_press_ns = 0ULL;
 #endif
 
             void DoMoveTo(const std::string &new_path);

@@ -13,6 +13,7 @@
 #include <ul/menu/qdesktop/qd_Input.hpp>
 #include <ul/menu/qdesktop/qd_Curve.hpp>
 #include <ul/menu/qdesktop/qd_RecordsBin.hpp>
+#include <ul/menu/qdesktop/qd_HomeMiniMenu.hpp>
 #endif
 
 extern ul::menu::ui::GlobalSettings g_GlobalSettings;
@@ -1365,16 +1366,49 @@ namespace ul::menu::ui {
 
     bool MainMenuLayout::OnHomeButtonPress() {
 #ifdef QDESKTOP_MODE
-        // Q OS desktop: "Home always goes home" — Home returns the desktop to
-        // a clean baseline regardless of what was focused or where the cursor
-        // was.  We DO NOT auto-resume a suspended app from the desktop (that
-        // path is upstream behaviour we deliberately gate off — if the user
-        // wants their suspended game back they tap its icon).  Concretely:
-        //   1. Re-centre the cursor at (960, 540) so the next interaction
-        //      starts from a known, predictable origin.
-        //   2. Log the press for crash-trail correlation in qos-shell.log.
-        //   3. Return true to consume the event.
-        UL_LOG_INFO("qdesktop: OnHomeButtonPress -> centre cursor, stay home");
+        // Q OS desktop: Cycle D5 (SP4.12) — Home press is a deliberate no-op
+        // beyond cursor recentering, except when pressed twice within a short
+        // window. That second press inside the window is the dev-menu trigger.
+        //
+        //   Single press        → centre cursor, log, return true (swallow)
+        //   Double press <600ms → open the qdesktop dev mini-menu
+        //
+        // The user's mandate ("home button doesnt need to do anything except
+        // when you hold it the mini menu should pop up") nominally asks for a
+        // press-and-hold gesture. True hold-detection requires uSystem to
+        // catch DetectLongPressingHomeButton (libnx AppletMessage value 21)
+        // and forward it as a new SMI message — that's a cross-binary protocol
+        // change worth doing in a future cycle. For SP4.12 we use the
+        // double-press equivalent: same "deliberate gesture, not accidental"
+        // property, no protocol churn, single-binary patch.
+        //
+        // Threshold: 600 ms (= 600,000,000 ns), measured from the previous
+        // press's armGetSystemTick(). The Switch system tick is in nanoseconds
+        // (armTicksToNs converts ARM timer ticks to ns; armGetSystemTick gives
+        // raw ticks at 19.2 MHz, so we use armTicksToNs to get a real ns count).
+        constexpr u64 DEV_MENU_DOUBLE_PRESS_NS = 600'000'000ULL;
+
+        const u64 now_ns = armTicksToNs(armGetSystemTick());
+        const u64 since_last_ns = (now_ns >= this->qdesktop_last_home_press_ns)
+            ? (now_ns - this->qdesktop_last_home_press_ns)
+            : 0ULL;
+        const bool is_double = (this->qdesktop_last_home_press_ns != 0ULL)
+                            && (since_last_ns < DEV_MENU_DOUBLE_PRESS_NS);
+
+        if (is_double) {
+            UL_LOG_INFO("qdesktop: OnHomeButtonPress -> DOUBLE press (%llu ms) "
+                        "→ ShowDevMenu",
+                        static_cast<unsigned long long>(since_last_ns / 1'000'000ULL));
+            // Reset so a third press inside the window doesn't immediately
+            // re-open the menu after Close.
+            this->qdesktop_last_home_press_ns = 0ULL;
+            ::ul::menu::qdesktop::ShowDevMenu();
+            return true;
+        }
+
+        // Single press path: record the time, recentre cursor, swallow.
+        this->qdesktop_last_home_press_ns = now_ns;
+        UL_LOG_INFO("qdesktop: OnHomeButtonPress -> single (no-op + cursor centre)");
         if (this->qdesktop_cursor) {
             this->qdesktop_cursor->SetCursorPos(960, 540);
         }

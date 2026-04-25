@@ -16,6 +16,7 @@
 // Constants live in qd_Wallpaper.hpp (BLOOM_CX/CY/RADII, STAR_COUNT, etc.).
 
 #include <ul/menu/qdesktop/qd_Wallpaper.hpp>
+#include <ul/menu/qdesktop/qd_HomeMiniMenu.hpp>   // Cycle D5: g_dev_wallpaper_enabled toggle
 #include <ul/ul_Result.hpp>
 #include <SDL2/SDL.h>
 #include <new>  // for std::nothrow
@@ -367,6 +368,14 @@ void QdWallpaperElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     }
 
     if (cached_tex_ == nullptr) {
+        return;
+    }
+
+    // Cycle D5: dev toggle — when disabled the wallpaper is suppressed and
+    // the layout's bg color (qd_Theme PANEL_BG_DEEP) shows through.  We DO
+    // NOT release the cached_tex_ here: the toggle is meant to be flipped
+    // back on without paying the ~3.5 MB regeneration cost.
+    if (!::ul::menu::qdesktop::g_dev_wallpaper_enabled.load(std::memory_order_relaxed)) {
         return;
     }
 

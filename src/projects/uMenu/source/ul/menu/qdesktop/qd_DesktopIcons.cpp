@@ -9,6 +9,7 @@
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
 #include <ul/menu/qdesktop/qd_IconCategory.hpp>
 #include <ul/menu/qdesktop/qd_Anim.hpp>
+#include <ul/menu/qdesktop/qd_HomeMiniMenu.hpp>  // Cycle D5: dev toggles
 #include <ul/menu/smi/smi_Commands.hpp>
 #include <ul/menu/ui/ui_Common.hpp>  // ShowSettingsMenu/ShowAlbum/etc. for Special launch
 #include <ul/ul_Result.hpp>
@@ -562,8 +563,15 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // canvas shows.  Without a background strip they are invisible over the
     // animated wallpaper.  Height = 48 px (qd_WmConstants.hpp TOPBAR_H ×1.5).
     // Drawn here so it is always behind all icon and dock layers.
+    //
+    // Cycle D5 dev toggle: when g_dev_topbar_enabled is false the strip is
+    // suppressed.  The Plutonium time/battery widgets that float above this
+    // strip are owned by ui_MainMenuLayout and continue to render — their
+    // visibility is intentionally NOT gated here because the user's primary
+    // need for the toggle is "show me the wallpaper without the dark band
+    // along the top".
     static constexpr int32_t TOPBAR_H_PX = 48;
-    {
+    if (::ul::menu::qdesktop::g_dev_topbar_enabled.load(std::memory_order_relaxed)) {
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(r, 0x00u, 0x00u, 0x00u, 0xB0u);
         SDL_Rect topbar_bg { 0, y, 1920, TOPBAR_H_PX };
@@ -616,7 +624,15 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // Visually delineates the dock zone (y = DOCK_NOMINAL_TOP..1080) from the
     // icon grid above it.  Drawn BEFORE the icon loop so dock builtins paint
     // on top.  Alpha-blended black at ~38% opacity.  Width = full screen.
-    {
+    //
+    // Cycle D5 dev toggle: when g_dev_dock_enabled is false the dock panel
+    // backdrop is suppressed AND the BUILTIN_ICON_COUNT slots in the icon
+    // loop below are skipped (see the in-loop guard).
+    const bool dev_dock_on = ::ul::menu::qdesktop::g_dev_dock_enabled.load(
+        std::memory_order_relaxed);
+    const bool dev_icons_on = ::ul::menu::qdesktop::g_dev_icons_enabled.load(
+        std::memory_order_relaxed);
+    if (dev_dock_on) {
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(r, 0x00u, 0x00u, 0x00u, 0x60u);
         SDL_Rect dock_panel { 0, DOCK_NOMINAL_TOP + y, 1920, DOCK_H };
@@ -635,11 +651,16 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         s32 cell_x, cell_y;
 
         if (i < BUILTIN_ICON_COUNT) {
+            // Cycle D5 dev toggle: skip dock builtin slots when disabled.
+            if (!dev_dock_on) { continue; }
             // Dock slot: use two-pass magnify position.
             // cell_y: dock is placed at DOCK_NOMINAL_TOP row.
             cell_x = builtin_slot_x[i] + x;
             cell_y = DOCK_NOMINAL_TOP + y;
         } else {
+            // Cycle D5 dev toggle: skip NRO/Application grid icons when
+            // desktop-icons is disabled.
+            if (!dev_icons_on) { continue; }
             // NRO grid icon: use nominal CellRect.
             if (!CellRect(i, cell_x, cell_y)) {
                 continue;

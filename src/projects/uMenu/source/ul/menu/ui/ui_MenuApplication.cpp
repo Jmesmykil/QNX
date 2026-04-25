@@ -2,6 +2,7 @@
 #include <ul/menu/smi/smi_Commands.hpp>
 #include <ul/audio/audio_SystemVolume.hpp>
 #include <ul/menu/qdesktop/qd_Transition.hpp>
+#include <ul/menu/qdesktop/qd_HomeMiniMenu.hpp>
 #include <atomic>
 
 extern ul::menu::ui::GlobalSettings g_GlobalSettings;
@@ -290,6 +291,11 @@ namespace ul::menu::ui {
             if(::g_uMenuTerminating.load(std::memory_order_acquire)) { return; }
             if(g_MenuApplication == nullptr) { return; }
 
+            // Cycle D5 dev toggle: when disabled, the volume re-apply loop
+            // is skipped — useful when diagnosing audio glitches that might
+            // be caused by repeated SetMusicVolume / Mix_Volume calls.
+            if(!::ul::menu::qdesktop::g_dev_volume_policy_enabled.load(std::memory_order_relaxed)) { return; }
+
             static u32 s_vol_frame = 0;
             if(++s_vol_frame < 30) { return; }
             s_vol_frame = 0;
@@ -384,7 +390,17 @@ namespace ul::menu::ui {
         // ui/Background.png: it reads as a "uLaunch style" flash and breaks
         // the Q OS visual identity. D4 just gives us a branded texture to
         // hand the fade compositor instead of a flat colour.)
-        auto brand_fade_tex = ::ul::menu::qdesktop::GetBrandFadeTexture();
+        //
+        // Cycle D5 dev toggle: when g_dev_brand_fade_enabled is false the
+        // user has explicitly chosen the C5 solid-colour fade — skip the
+        // texture path entirely (faster, useful for diagnosing whether the
+        // fade itself is causing a visual artifact vs. the brand texture).
+        const bool brand_fade_on = ::ul::menu::qdesktop::g_dev_brand_fade_enabled.load(
+            std::memory_order_relaxed);
+        ::pu::sdl2::TextureHandle::Ref brand_fade_tex;
+        if (brand_fade_on) {
+            brand_fade_tex = ::ul::menu::qdesktop::GetBrandFadeTexture();
+        }
         if (brand_fade_tex != nullptr) {
             this->SetFadeBackgroundImage(brand_fade_tex);
         }

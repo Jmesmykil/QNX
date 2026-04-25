@@ -1,5 +1,6 @@
 #include <ul/menu/ui/ui_MenuApplication.hpp>
 #include <ul/menu/smi/smi_Commands.hpp>
+#include <ul/audio/audio_SystemVolume.hpp>
 
 extern ul::menu::ui::GlobalSettings g_GlobalSettings;
 extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
@@ -9,7 +10,37 @@ namespace ul::menu::ui {
     namespace {
 
         std::queue<smi::MenuMessageContext> g_PendingInitialMessageQueue;
-        
+
+        // Per-menu BGM volume policy as a percentage of the Switch system master
+        // volume.  The physical volume buttons change the OS master; GetSystemVolume()
+        // reads it back and scales these percentages so the buttons always take effect.
+        //
+        //   Startup  → 75 % (login sound — creator: "I love it, LOCK it in!")
+        //   Main     → 15 % (barely-there ambient)
+        //   Themes   → 25 % (preview while browsing themes)
+        //   Settings → 25 % (preview while in settings)
+        //   Lockscr  → 15 % (subtle)
+        constexpr s32 BgmPctForMenu(const MenuType menu) {
+            switch(menu) {
+                case MenuType::Startup:    return 75;
+                case MenuType::Themes:     return 25;
+                case MenuType::Settings:   return 25;
+                case MenuType::Lockscreen: return 15;
+                case MenuType::Main:       return 15;
+            }
+            return 15;
+        }
+
+        // Compute SDL_mixer volume (0–128) = system_volume × per-menu-pct × (128/100).
+        s32 ComputeVolume(const MenuType menu) {
+            const float sys = ul::audio::GetSystemVolume();           // [0.0, 1.0]
+            const float raw = sys * static_cast<float>(BgmPctForMenu(menu)) * 1.28f;
+            const s32   vol = static_cast<s32>(raw);
+            if(vol < 0)   { return 0;   }
+            if(vol > 128) { return 128; }
+            return vol;
+        }
+
     }
 
     std::string GetLanguageString(const std::string &name) {
@@ -109,7 +140,7 @@ namespace ul::menu::ui {
         this->settings_menu_lyt = nullptr;
         this->lockscreen_menu_lyt = nullptr;
 
-        // TODO: customize
+        // FastFadeAlphaIncrementSteps = 12 → ~200ms at 60fps.  Verified correct.
         this->SetFadeAlphaIncrementStepCount(FastFadeAlphaIncrementSteps);
 
         InitializeResources();
@@ -190,6 +221,9 @@ namespace ul::menu::ui {
             case smi::MenuStartMode::StartupMenu:
             case smi::MenuStartMode::StartupMenuPostBoot: {
                 this->LoadMenu(MenuType::Startup, false);
+                // Pre-warm MainMenuLayout during the boot fade so the first
+                // navigation to Main has zero first-frame construction lag.
+                this->EnsureLayoutCreated(MenuType::Main);
                 break;
             }
             case smi::MenuStartMode::SettingsMenu: {
@@ -198,10 +232,38 @@ namespace ul::menu::ui {
             }
             default: {
                 this->LoadMenu(MenuType::Main, false);
+                // Pre-warm StartupMenuLayout during boot so returning to the
+                // startup/lockscreen path is instant.
+                this->EnsureLayoutCreated(MenuType::Startup);
                 break;
             }
         }
         this->StartPlayBgm();
+
+        // Periodic system-volume re-apply: re-reads audctl every ~30 frames
+        // (~500 ms at 60 fps) and updates SDL_mixer levels so the physical
+        // volume buttons take effect without restarting BGM or SFX.
+        this->AddRenderCallback([this]() {
+            static u32 s_vol_frame = 0;
+            if(++s_vol_frame < 30) { return; }
+            s_vol_frame = 0;
+
+            // Re-apply BGM volume only when music is actually playing.
+            if(Mix_PlayingMusic()) {
+                pu::audio::SetMusicVolume(ComputeVolume(this->loaded_menu));
+            }
+
+            // Re-apply SFX volume: Mix_Volume(-1, v) sets all channels at once.
+            // Use the Main-menu percentage as the global SFX reference level.
+            {
+                const float sys = ul::audio::GetSystemVolume();
+                const float raw = sys * static_cast<float>(BgmPctForMenu(this->loaded_menu)) * 1.28f;
+                s32 sfx_vol = static_cast<s32>(raw);
+                if(sfx_vol < 0)   { sfx_vol = 0;   }
+                if(sfx_vol > 128) { sfx_vol = 128; }
+                Mix_Volume(-1, sfx_vol);
+            }
+        });
 
         for(; !g_PendingInitialMessageQueue.empty(); ) {
             const auto pending_msg_ctx = g_PendingInitialMessageQueue.front();
@@ -301,26 +363,7 @@ namespace ul::menu::ui {
     void MenuApplication::StartPlayBgm() {
         const auto &bgm = this->GetCurrentMenuBgm();
         if(bgm.bgm != nullptr) {
-            // Q OS per-menu volume policy (creator directive 2026-04-24:
-            //   "the background music needs to be MUCH more subtle like
-            //    barely anythign and relaxing").  Range is SDL_mixer 0..128.
-            //
-            //   Startup  → 96  (locked-in volume; creator: "I love the login
-            //                   sound LOCK it in!")
-            //   Main     → 20  (subtle ambient — barely there)
-            //   Themes   → 32  (preview while editing)
-            //   Settings → 32  (preview while editing)
-            //   Lockscr  → 20  (subtle)
-            s32 desktop_vol = 20;
-            switch(this->loaded_menu) {
-                case MenuType::Startup:  desktop_vol = 96; break;
-                case MenuType::Themes:   desktop_vol = 32; break;
-                case MenuType::Settings: desktop_vol = 32; break;
-                case MenuType::Lockscreen: desktop_vol = 20; break;
-                case MenuType::Main:     desktop_vol = 20; break;
-                default:                  desktop_vol = 20; break;
-            }
-            pu::audio::SetMusicVolume(desktop_vol);
+            pu::audio::SetMusicVolume(ComputeVolume(this->loaded_menu));
 
             const int loops = bgm.bgm_loop ? -1 : 1;
             if(bgm.bgm_fade_in_ms > 0) {

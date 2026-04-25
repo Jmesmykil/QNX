@@ -98,6 +98,7 @@ extern "C" {
     void __appExit() {
         ul::tel::Shutdown();
 
+        ul::audio::FinalizeSystemVolume();
         ul::menu::smi::sf::FinalizePrivateService();
 
         // Exit RomFs manually, since we also initialized it manually
@@ -277,6 +278,7 @@ namespace {
         g_MenuApplication = ul::menu::ui::MenuApplication::New(renderer);
 
         UL_ASSERT_TRUE(pu::audio::Initialize(MIX_INIT_MP3));
+        ul::audio::InitializeSystemVolume();
 
         g_MenuApplication->Initialize(g_StartMode);
         ul::menu::ui::RegisterMenuOnMessageDetect();

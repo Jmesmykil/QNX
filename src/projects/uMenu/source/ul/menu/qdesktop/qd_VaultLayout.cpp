@@ -227,14 +227,7 @@ bool QdVaultLayout::DecodeNroIcon(Entry &e) {
         return true;
     }
 
-    // Extraction failed — log the failure so it surfaces in uMenu.0.log,
-    // then generate a DJB2-derived fallback (F-05: free always).
-    UL_LOG_WARN("qdesktop: DecodeNroIcon: ASET extraction failed for '%s'"
-                " (valid=%d pixels=%s w=%d h=%d) — using fallback colour block",
-                e.full_path,
-                res.valid ? 1 : 0,
-                res.pixels != nullptr ? "ok" : "null",
-                res.width, res.height);
+    // Extraction failed — generate DJB2-derived fallback (F-05: free always).
     FreeNroIcon(res);
     u8 *fallback = MakeFallbackIcon(e.full_path);
     if (fallback != nullptr) {

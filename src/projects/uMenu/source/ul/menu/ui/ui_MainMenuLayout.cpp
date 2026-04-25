@@ -745,76 +745,130 @@ namespace ul::menu::ui {
             // this->Add(time_mtext->Get(0/1/2)) internally — do NOT call Add
             // again for time_mtext or you get a double-add.
             //
-            // Layout (1920×1080, 48 px top bar):
+            // ── Top-bar layout — formula-derived, NOT cargo-culted ──────────
             //
-            //  x=24   x=200                    x=1680  x=1790  x=1840
-            //  ┌────────────────────────────────────────────────────┐ y=0
-            //  │ [time]  [date]         [conn]  [batt_icon] [batt%] │ y=12/14 (text)
-            //  └────────────────────────────────────────────────────┘ y=48
+            // Reference: Q OS GUI proof-of-concept (mock-nro-desktop-gui v1.1.12,
+            // src/wm.rs). PoC renders at 1280×720 with a 32 px strip; uMenu renders
+            // at 1920×1080 with a 48 px strip. Scale factor = 1.5×.
             //
-            //  time_mtext             : x=24,   y=12
-            //  date_text              : x=200,  y=14
-            //  connection_top_icon    : x=1680, y=8
-            //  battery_top_icon       : x=1790, y=8  (hidden when charging)
-            //  battery_charging_top_icon: x=1790, y=8 (hidden when not charging)
-            //  battery_text           : x=1840, y=12
+            // Formula constants (all at 1920×1080):
+            //   TOPBAR_H  = qdesktop::TOPBAR_H            = 48 px (Rust 32 × 1.5)
+            //   SAFE_LEFT = 12  (Rust 8  × 1.5)           // left-most element x
+            //   SAFE_RIGHT= 24  (Rust 16 × 1.5)           // right margin from screen edge
+            //   ICON_W    = ICON_H = 32                   // top-bar icons (TOPBAR_H − 16)
+            //   GUTTER    = 8                             // gap between adjacent icons / text
+            //
+            // Vertical centering (text height = font size × 1.5):
+            //   Y_LARGE = (TOPBAR_H − 24) / 2 = 12        // Medium font (~16×1.5)
+            //   Y_SMALL = (TOPBAR_H − 12) / 2 = 18        // Small  font (~ 8×1.5)
+            //   ICON_Y  = (TOPBAR_H − 32) / 2 = 8
+            //
+            // Horizontal anchoring (left → right and right → left):
+            //   TIME_X      = SAFE_LEFT                       = 12
+            //   DATE_X      = SAFE_LEFT + 188                 = 200  (≈ 12-char Medium block)
+            //   BATT_TEXT_W ≈ 4 chars × 12 px/char            = 48   ("100%" Medium width)
+            //   BATT_TEXT_X = SCREEN_W − SAFE_RIGHT − BATT_TEXT_W
+            //                                                 = 1920 − 24 − 48 = 1848
+            //   BATT_ICON_X = BATT_TEXT_X − GUTTER − ICON_W   = 1808
+            //   CONN_ICON_X = BATT_ICON_X − GUTTER − ICON_W   = 1768
+            //
+            //  ┌───────────────────────────────────────────────────────────┐ y=0
+            //  │ [time]  [date]                   [conn] [batt_icon][batt%]│ Y_LARGE
+            //  └───────────────────────────────────────────────────────────┘ y=48
+            //   12     200                          1768   1808       1848
+            //
+            // CRITICAL: the connection / battery PNG assets are 100×100 px. Without
+            // explicit SetWidth(32)/SetHeight(32) they overflow the 48 px strip
+            // by 52 px down — that is what made every prior top-bar attempt look
+            // wrong. The fix is the resize call, not yet another x coordinate.
+            //
+            // IMPORTANT — MultiTextBlock reflow:
+            // InitializeTimeText() calls ApplyConfigForElement internally
+            // (which sets wrong upstream coords), then calls UpdatePositionsSizes()
+            // which bakes child block positions at those wrong coords. After SetX/
+            // SetY we MUST call UpdatePositionsSizes() again to re-bake the
+            // children at the correct position. InitializeTimeText also calls
+            // this->Add(time_mtext) and this->Add(time_mtext->Get(0/1/2)) internally
+            // — do NOT call Add again for time_mtext or you get a double-add.
 
-            // time_mtext: InitializeTimeText adds it to the layout internally.
-            // After SetX/SetY call UpdatePositionsSizes() to reflow child blocks.
+            constexpr s32 TOPBAR_SAFE_LEFT  = 12;
+            constexpr s32 TOPBAR_SAFE_RIGHT = 24;
+            constexpr s32 TOPBAR_ICON_W     = 32;   // square — width == height
+            constexpr s32 TOPBAR_ICON_H     = 32;
+            constexpr s32 TOPBAR_GUTTER     = 8;
+            constexpr s32 TOPBAR_Y_LARGE    = 12;   // (48 − 24) / 2
+            constexpr s32 TOPBAR_Y_SMALL    = 18;   // (48 − 12) / 2
+            constexpr s32 TOPBAR_ICON_Y     = 8;    // (48 − 32) / 2
+
+            // Right-side anchoring: BATT_TEXT_X is computed from screen width, so
+            // a future top-bar widening or screen-size change just propagates.
+            constexpr s32 TOPBAR_BATT_TEXT_W = 48;  // ~"100%" in Medium font
+            constexpr s32 SCREEN_W           = 1920;
+            constexpr s32 BATT_TEXT_X        = SCREEN_W - TOPBAR_SAFE_RIGHT - TOPBAR_BATT_TEXT_W; // 1848
+            constexpr s32 BATT_ICON_X        = BATT_TEXT_X - TOPBAR_GUTTER - TOPBAR_ICON_W;       // 1808
+            constexpr s32 CONN_ICON_X        = BATT_ICON_X - TOPBAR_GUTTER - TOPBAR_ICON_W;       // 1768
+            constexpr s32 TOPBAR_TIME_X      = TOPBAR_SAFE_LEFT;        // 12
+            constexpr s32 TOPBAR_DATE_X      = TOPBAR_SAFE_LEFT + 188;  // 200 (12-char Medium block)
+
+            // ── time (left, large) ────────────────────────────────────────────
             this->InitializeTimeText(this->time_mtext, "main_menu", "time_text");
-            this->time_mtext->SetX(24);
-            this->time_mtext->SetY(12);
+            this->time_mtext->SetX(TOPBAR_TIME_X);
+            this->time_mtext->SetY(TOPBAR_Y_LARGE);
             this->time_mtext->UpdatePositionsSizes();
-            // Do NOT call this->Add(this->time_mtext) — InitializeTimeText already added it.
-            UL_LOG_INFO("[QDESKTOP topbar] time_mtext: x=%d y=%d w=%d h=%d",
+            UL_LOG_INFO("[QDESKTOP topbar] time_mtext: x=%d y=%d w=%d h=%d (formula TIME_X/Y_LARGE)",
                 this->time_mtext->GetX(), this->time_mtext->GetY(),
                 this->time_mtext->GetWidth(), this->time_mtext->GetHeight());
 
-            this->date_text = pu::ui::elm::TextBlock::New(200, 14, "...");
+            // ── date (left, small) ────────────────────────────────────────────
+            this->date_text = pu::ui::elm::TextBlock::New(TOPBAR_DATE_X, TOPBAR_Y_SMALL, "...");
             this->date_text->SetColor(g_MenuApplication->GetTextColor());
             this->Add(this->date_text);
-            // Re-apply position after Add() in case Plutonium resets it.
-            this->date_text->SetX(200);
-            this->date_text->SetY(14);
-            UL_LOG_INFO("[QDESKTOP topbar] date_text: x=%d y=%d w=%d h=%d",
+            this->date_text->SetX(TOPBAR_DATE_X);
+            this->date_text->SetY(TOPBAR_Y_SMALL);
+            UL_LOG_INFO("[QDESKTOP topbar] date_text: x=%d y=%d w=%d h=%d (formula DATE_X/Y_SMALL=%d)",
                 this->date_text->GetX(), this->date_text->GetY(),
-                this->date_text->GetWidth(), this->date_text->GetHeight());
+                this->date_text->GetWidth(), this->date_text->GetHeight(),
+                TOPBAR_Y_SMALL);
 
-            // Top-bar right-side layout (all coords in 1920×1080 layout space):
-            //   x=1680  connection icon  (~32 px wide -> ends ~1712)
-            //   x=1790  battery icon     (~32 px wide -> ends ~1822)
-            //   x=1840  battery text     ("100%" ~60 px wide -> ends ~1900)
-            this->connection_top_icon = pu::ui::elm::Image::New(1680, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Connection/None"));
+            // ── connection icon (right, resized 100→32) ──────────────────────
+            this->connection_top_icon = pu::ui::elm::Image::New(CONN_ICON_X, TOPBAR_ICON_Y, TryFindLoadImageHandle("ui/Main/TopIcon/Connection/None"));
             this->Add(this->connection_top_icon);
-            // Re-apply position after Add() as insurance.
-            this->connection_top_icon->SetX(1680);
-            this->connection_top_icon->SetY(8);
-            UL_LOG_INFO("[QDESKTOP topbar] connection_top_icon: x=%d y=%d w=%d h=%d",
+            this->connection_top_icon->SetX(CONN_ICON_X);
+            this->connection_top_icon->SetY(TOPBAR_ICON_Y);
+            this->connection_top_icon->SetWidth(TOPBAR_ICON_W);   // CRITICAL: 100 → 32
+            this->connection_top_icon->SetHeight(TOPBAR_ICON_H);
+            UL_LOG_INFO("[QDESKTOP topbar] connection_top_icon: x=%d y=%d w=%d h=%d (resized 100→32)",
                 this->connection_top_icon->GetX(), this->connection_top_icon->GetY(),
                 this->connection_top_icon->GetWidth(), this->connection_top_icon->GetHeight());
 
-            this->battery_top_icon = pu::ui::elm::Image::New(1790, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/100"));
-            this->battery_charging_top_icon = pu::ui::elm::Image::New(1790, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/Charging"));
+            // ── battery icon (right, resized 100→32) ─────────────────────────
+            this->battery_top_icon = pu::ui::elm::Image::New(BATT_ICON_X, TOPBAR_ICON_Y, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/100"));
+            this->battery_charging_top_icon = pu::ui::elm::Image::New(BATT_ICON_X, TOPBAR_ICON_Y, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/Charging"));
             this->battery_charging_top_icon->SetVisible(false);
             this->Add(this->battery_top_icon);
-            this->battery_top_icon->SetX(1790);
-            this->battery_top_icon->SetY(8);
-            UL_LOG_INFO("[QDESKTOP topbar] battery_top_icon: x=%d y=%d w=%d h=%d",
+            this->battery_top_icon->SetX(BATT_ICON_X);
+            this->battery_top_icon->SetY(TOPBAR_ICON_Y);
+            this->battery_top_icon->SetWidth(TOPBAR_ICON_W);   // CRITICAL: 100 → 32
+            this->battery_top_icon->SetHeight(TOPBAR_ICON_H);
+            UL_LOG_INFO("[QDESKTOP topbar] battery_top_icon: x=%d y=%d w=%d h=%d (resized 100→32)",
                 this->battery_top_icon->GetX(), this->battery_top_icon->GetY(),
                 this->battery_top_icon->GetWidth(), this->battery_top_icon->GetHeight());
             this->Add(this->battery_charging_top_icon);
-            this->battery_charging_top_icon->SetX(1790);
-            this->battery_charging_top_icon->SetY(8);
-            UL_LOG_INFO("[QDESKTOP topbar] battery_charging_top_icon: x=%d y=%d w=%d h=%d",
+            this->battery_charging_top_icon->SetX(BATT_ICON_X);
+            this->battery_charging_top_icon->SetY(TOPBAR_ICON_Y);
+            this->battery_charging_top_icon->SetWidth(TOPBAR_ICON_W);
+            this->battery_charging_top_icon->SetHeight(TOPBAR_ICON_H);
+            UL_LOG_INFO("[QDESKTOP topbar] battery_charging_top_icon: x=%d y=%d w=%d h=%d (resized 100→32)",
                 this->battery_charging_top_icon->GetX(), this->battery_charging_top_icon->GetY(),
                 this->battery_charging_top_icon->GetWidth(), this->battery_charging_top_icon->GetHeight());
 
-            this->battery_text = pu::ui::elm::TextBlock::New(1840, 12, "...");
+            // ── battery percentage text (right, large) ───────────────────────
+            this->battery_text = pu::ui::elm::TextBlock::New(BATT_TEXT_X, TOPBAR_Y_LARGE, "...");
             this->battery_text->SetColor(g_MenuApplication->GetTextColor());
             this->Add(this->battery_text);
-            this->battery_text->SetX(1840);
-            this->battery_text->SetY(12);
-            UL_LOG_INFO("[QDESKTOP topbar] battery_text: x=%d y=%d w=%d h=%d",
+            this->battery_text->SetX(BATT_TEXT_X);
+            this->battery_text->SetY(TOPBAR_Y_LARGE);
+            UL_LOG_INFO("[QDESKTOP topbar] battery_text: x=%d y=%d w=%d h=%d (formula BATT_TEXT_X/Y_LARGE)",
                 this->battery_text->GetX(), this->battery_text->GetY(),
                 this->battery_text->GetWidth(), this->battery_text->GetHeight());
 

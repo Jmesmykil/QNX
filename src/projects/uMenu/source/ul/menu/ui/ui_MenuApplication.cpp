@@ -322,6 +322,24 @@ namespace ul::menu::ui {
         this->Close(true);
         */
 
+        // Cycle C3 fix: null g_MenuApplication BEFORE handing control to
+        // smi::TerminateMenu(). The render callback in main.cpp captures
+        // g_MenuApplication and dereferences this->loaded_menu inside its
+        // lambda. Several call sites (qd_DesktopIcons::LaunchIcon,
+        // OnHomeButtonPress, applet shutdown) reach Finalize() while the
+        // SDL render thread is still mid-frame; without the null assignment
+        // here, the lambda's intended null-guard at ui_MenuApplication.cpp
+        // line ~272 was dead — g_MenuApplication stayed valid all the way
+        // until the OS process termination, so the lambda happily kept
+        // dereferencing a torn-down loaded_menu. Hence the Home-button
+        // crash on every applet handoff.
+        //
+        // Setting g_MenuApplication = nullptr here makes that guard live:
+        // any subsequent render-callback invocation observes null and
+        // early-returns, even if smi::TerminateMenu() takes another
+        // hundred ms to actually kill the process.
+        g_MenuApplication = nullptr;
+
         // This might look very ugly, but it is a simple and quick way to exit fast: let uSystem terminate us directly (the OS itself deals with the cleanup)
         // Most importantly, this allows us to exit without cleaning the screen to black when exiting SDL2 stuff (as regular homebrew apps do) so we can do cool transitions with applets/games
         ul::menu::smi::TerminateMenu();

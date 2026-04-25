@@ -645,27 +645,12 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         //                 If icon_path is empty, generate hash-derived fallback.
         if (!entry.icon_loaded && entry.kind != IconKind::Builtin) {
             if (entry.kind == IconKind::Nro && entry.nro_path[0] != '\0') {
+                // Check cache first (memory LRU then on-disk); only call the
+                // extractor on a full miss.  LoadNroIconToCache emits UL_LOG_WARN
+                // on ASET parse failure so failures surface in uMenu.0.log.
                 const u8 *cached = cache_.Get(entry.nro_path);
                 if (cached == nullptr) {
-                    // Not on disk either — load from NRO.
-                    NroIconResult res = ExtractNroIcon(entry.nro_path);
-                    if (res.valid && res.pixels != nullptr
-                            && res.width > 0 && res.height > 0) {
-                        cache_.Put(entry.nro_path, res.pixels, res.width, res.height);
-                        FreeNroIcon(res);
-                    } else {
-                        // Extraction failed — generate a fallback 64×64 RGBA block.
-                        // ExtractNroIcon always allocates res.pixels (even on failure);
-                        // free it here before it goes out of scope (F-03 fix).
-                        FreeNroIcon(res);
-                        u8 *fallback = MakeFallbackIcon(entry.nro_path);
-                        if (fallback != nullptr) {
-                            cache_.Put(entry.nro_path, fallback,
-                                       static_cast<s32>(CACHE_ICON_W),
-                                       static_cast<s32>(CACHE_ICON_H));
-                            delete[] fallback;
-                        }
-                    }
+                    LoadNroIconToCache(entry.nro_path, entry.nro_path);
                 }
             } else if (entry.kind == IconKind::Application) {
                 if (entry.icon_path[0] != '\0') {
@@ -1272,9 +1257,25 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
     }
 
     if (R_FAILED(rc) || icon_size == 0) {
-        UL_LOG_WARN("qdesktop: LoadNsIconToCache: both Storage and CacheOnly"
-                    " failed for app_id=0x%016llx rc=0x%08x icon_size=%llu"
-                    " — using fallback colour block",
+        UL_LOG_WARN("qdesktop: LoadNsIconToCache: CacheOnly also failed"
+                    " for app_id=0x%016llx rc=0x%08x icon_size=%llu"
+                    " — retrying with StorageOnly (bypass cache)",
+                    static_cast<unsigned long long>(app_id),
+                    static_cast<unsigned int>(rc),
+                    static_cast<unsigned long long>(icon_size));
+        icon_size = 0;
+        rc = nsextGetApplicationControlData(
+            NsApplicationControlSource_StorageOnly,
+            app_id,
+            ctrl_data,
+            sizeof(NsApplicationControlData),
+            &icon_size);
+    }
+
+    if (R_FAILED(rc) || icon_size == 0) {
+        UL_LOG_WARN("qdesktop: LoadNsIconToCache: all three sources (Storage,"
+                    " CacheOnly, StorageOnly) failed for app_id=0x%016llx rc=0x%08x"
+                    " icon_size=%llu — using fallback colour block",
                     static_cast<unsigned long long>(app_id),
                     static_cast<unsigned int>(rc),
                     static_cast<unsigned long long>(icon_size));
@@ -1394,6 +1395,52 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
                 static_cast<unsigned long long>(icon_size),
                 cache_key);
     return true;
+}
+
+// ── LoadNroIconToCache ────────────────────────────────────────────────────────
+//
+// Extracts the JPEG icon embedded in the NRO ASET section at nro_path via
+// ExtractNroIcon, decodes it (ExtractNroIcon handles the SDL2_image decode
+// internally and returns RGBA pixel data), then inserts the result into cache_
+// under cache_key.
+//
+// If ExtractNroIcon returns valid==false the function emits UL_LOG_WARN with the
+// NRO path so the failure is visible in /qos-shell/logs/uMenu.0.log, then falls
+// back to MakeFallbackIcon() so the caller always has a usable cache entry.
+//
+// Returns true if a real ASET JPEG was decoded; false if the fallback was used.
+// FreeNroIcon is called in both branches (F-05 rule).
+
+bool QdDesktopIconsElement::LoadNroIconToCache(const char *nro_path,
+                                                const char *cache_key)
+{
+    NroIconResult res = ExtractNroIcon(nro_path);
+    if (res.valid && res.pixels != nullptr && res.width > 0 && res.height > 0) {
+        cache_.Put(cache_key, res.pixels, res.width, res.height);
+        FreeNroIcon(res);
+        UL_LOG_INFO("qdesktop: LoadNroIconToCache: loaded ASET icon from '%s'"
+                    " (%d×%d) → cache key %s",
+                    nro_path, res.width, res.height, cache_key);
+        return true;
+    }
+
+    // ASET extraction failed — log and fall back to DJB2-derived colour block.
+    UL_LOG_WARN("qdesktop: LoadNroIconToCache: ASET extraction failed for '%s'"
+                " (valid=%d pixels=%s w=%d h=%d) — using fallback colour block",
+                nro_path,
+                res.valid ? 1 : 0,
+                res.pixels != nullptr ? "ok" : "null",
+                res.width, res.height);
+    FreeNroIcon(res);
+
+    u8 *fallback = MakeFallbackIcon(nro_path);
+    if (fallback != nullptr) {
+        cache_.Put(cache_key, fallback,
+                   static_cast<s32>(CACHE_ICON_W),
+                   static_cast<s32>(CACHE_ICON_H));
+        delete[] fallback;
+    }
+    return false;
 }
 
 } // namespace ul::menu::qdesktop

@@ -1,5 +1,6 @@
 #include <ul/man/man_AppScanner.hpp>
 #include <ul/ul_Include.hpp>
+#include <ul/ul_Result.hpp>     // UL_LOG_INFO / UL_LOG_WARN
 #include <ul/fs/fs_Stdio.hpp>
 #include <switch.h>
 #include <cstdio>
@@ -229,6 +230,15 @@ namespace ul::man {
         std::vector<AppInfo> apps;
         apps.reserve(static_cast<size_t>(total_written));
 
+        // F1 (SP4.14 cycle): retry with CacheOnly when Storage source fails.
+        // The Storage source talks to the actual title NSP/NCA on disk.  For
+        // unsigned/orphaned/partially-installed titles, that read returns an
+        // NS-module RC and we previously fell straight to a hex fallback name
+        // (visible to the user as e.g. "0x059f5d9789168000").  CacheOnly hits
+        // ns's in-memory cache populated at boot from the Application Control
+        // database — much more permissive — so we get the real NACP name as
+        // long as the title was ever shown on a Horizon home screen.  Both
+        // failing is the only path that keeps the hex fallback.
         for(s32 i = 0; i < total_written; ++i) {
             const u64 app_id = record_buf[i].application_id;
 
@@ -239,34 +249,53 @@ namespace ul::man {
             info.name[0]   = '\0';
             info.author[0] = '\0';
 
-            std::memset(ctrl_data, 0, sizeof(NsApplicationControlData));
-            u64 actual_size = 0;
-
-            const auto rc = nsGetApplicationControlData(
+            // Try sources in order: Storage (signed-installed titles, returns
+            // NACP+icon), then CacheOnly (any title ns has indexed, returns
+            // NACP, often no icon).
+            constexpr NsApplicationControlSource SourceLadder[] = {
                 NsApplicationControlSource_Storage,
-                app_id,
-                ctrl_data,
-                sizeof(NsApplicationControlData),
-                &actual_size
-            );
+                NsApplicationControlSource_CacheOnly,
+            };
 
-            if(R_SUCCEEDED(rc)) {
+            bool extracted = false;
+            for(const auto src : SourceLadder) {
+                std::memset(ctrl_data, 0, sizeof(NsApplicationControlData));
+                u64 actual_size = 0;
+
+                const auto rc = nsGetApplicationControlData(
+                    src,
+                    app_id,
+                    ctrl_data,
+                    sizeof(NsApplicationControlData),
+                    &actual_size
+                );
+                if(R_FAILED(rc)) {
+                    UL_LOG_WARN("uManager: nsGetApplicationControlData(src=%d, app=0x%016lx) rc=0x%08X",
+                                static_cast<int>(src),
+                                static_cast<unsigned long>(app_id),
+                                static_cast<unsigned>(rc));
+                    continue;  // try next source in the ladder
+                }
+
                 // Extract ApplicationName and DeveloperName.
                 const NacpStruct *nacp = &ctrl_data->nacp;
 
                 const char *app_name = FirstNonEmptyName(nacp);
-                if(app_name) {
-                    CopyNacpString(
-                        reinterpret_cast<uint8_t*>(info.name),
-                        sizeof(info.name),
-                        app_name, sizeof(nacp->lang[0].name)
-                    );
+                if(app_name == nullptr) {
+                    // NACP returned but every language slot is blank — try the
+                    // next source.  CacheOnly sometimes returns a stale
+                    // header-only entry whose lang[] is all-zero.
+                    UL_LOG_WARN("uManager: NACP empty for app=0x%016lx via src=%d — trying next source",
+                                static_cast<unsigned long>(app_id),
+                                static_cast<int>(src));
+                    continue;
                 }
-                else {
-                    // Fallback: hex title ID.
-                    snprintf(info.name, sizeof(info.name), "0x%016lx",
-                             static_cast<unsigned long>(app_id));
-                }
+
+                CopyNacpString(
+                    reinterpret_cast<uint8_t*>(info.name),
+                    sizeof(info.name),
+                    app_name, sizeof(nacp->lang[0].name)
+                );
 
                 const char *app_author = FirstNonEmptyAuthor(nacp);
                 if(app_author) {
@@ -277,9 +306,9 @@ namespace ul::man {
                     );
                 }
 
-                // Copy icon if within size limit.
-                // NsApplicationControlData::icon is a fixed u8[0x20000] array.
-                // actual_size - sizeof(NacpStruct) tells us the real icon byte count.
+                // Copy icon if within size limit.  CacheOnly may report
+                // actual_size == sizeof(NacpStruct) (NACP only, no icon) —
+                // the inner check handles that gracefully.
                 const size_t nacp_size = sizeof(NacpStruct);
                 if(actual_size > nacp_size) {
                     const size_t icon_bytes = actual_size - nacp_size;
@@ -289,9 +318,14 @@ namespace ul::man {
                         info.icon_size = icon_bytes;
                     }
                 }
+
+                extracted = true;
+                break;  // got a real name — stop walking the ladder
             }
-            else {
-                // GetApplicationControlData failed — use hex fallback name.
+
+            if(!extracted) {
+                // Both sources failed (or returned all-blank NACP).  Hex
+                // fallback so the entry still has a printable label.
                 snprintf(info.name, sizeof(info.name), "0x%016lx",
                          static_cast<unsigned long>(app_id));
             }

@@ -313,9 +313,10 @@ namespace ul::menu::ui {
                 this->qd_user_cards[static_cast<size_t>(this->qd_focused_card)]->SetFocused(true);
                 UL_LOG_INFO("qdesktop: focus %d -> %d (Right)", prev, this->qd_focused_card);
             }
-            else if(keys_down & HidNpadButton_A) {
-                UL_LOG_INFO("qdesktop: A pressed on card %d", this->qd_focused_card);
+            else if((keys_down & HidNpadButton_A) || (keys_down & HidNpadButton_ZR)) {
+                UL_LOG_INFO("qdesktop: A/ZR pressed on card %d", this->qd_focused_card);
                 // Activate the currently focused card.
+                // Pass the raw keys_down so the card's OnInput can also see ZR.
                 this->qd_user_cards[static_cast<size_t>(this->qd_focused_card)]->OnInput(
                     keys_down, 0, 0, pu::ui::TouchPoint{});
             }

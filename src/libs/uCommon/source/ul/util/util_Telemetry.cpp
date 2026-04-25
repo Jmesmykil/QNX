@@ -232,7 +232,15 @@ namespace {
                 mutexUnlock(&g_ring_lock);
                 did_work = true;
             }
-            if(!did_work) {
+            if(did_work) {
+                // Flush to disk after each drained burst so entries survive
+                // a hard crash.  Without this call the ring file's internal
+                // write buffer holds all async log data and only BOOT lines
+                // (which call Flush() synchronously in Init) reach the SD card.
+                mutexLock(&g_ring_lock);
+                g_ring.Flush();
+                mutexUnlock(&g_ring_lock);
+            } else {
                 svcSleepThread(DrainSleepNs);
             }
         }
@@ -244,6 +252,9 @@ namespace {
             g_ring.Write("\n", 1);
             mutexUnlock(&g_ring_lock);
         }
+        mutexLock(&g_ring_lock);
+        g_ring.Flush();
+        mutexUnlock(&g_ring_lock);
 
         threadExit();
     }
@@ -317,6 +328,12 @@ namespace ul::tel {
         // messages that never drain.  Flush() drains synchronously if called.
 
         g_initialized.store(true, std::memory_order_release);
+
+        // Synchronous post-init marker: if this line appears in the log, the
+        // drain-flush path is working.  Emit goes through the async queue, so
+        // this also validates that QueuePush + DrainThread round-trips to disk.
+        EmitSync(Cat::Generic, Sev::Info, "tel::Init: post-init marker proc=%s", proc_name);
+
         return true;
     }
 

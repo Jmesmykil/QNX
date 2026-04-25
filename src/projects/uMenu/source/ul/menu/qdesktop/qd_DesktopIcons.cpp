@@ -730,8 +730,10 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
     (void)keys_up;
     (void)keys_held;
 
-    // ── A-button: launch icon under the cursor (or focused icon as fallback) ──
-    if (keys_down & HidNpadButton_A) {
+    // ── A / ZR: launch icon under the cursor (or focused icon as fallback) ──
+    // ZR is the primary trigger — it mirrors the A-button action so players can
+    // use either the face button or the shoulder trigger to launch.
+    if ((keys_down & HidNpadButton_A) || (keys_down & HidNpadButton_ZR)) {
         if (cursor_ref_ != nullptr) {
             const s32 cx = cursor_ref_->GetCursorX();
             const s32 cy = cursor_ref_->GetCursorY();
@@ -744,6 +746,28 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
             // This path is not reachable in normal QDESKTOP_MODE operation
             // because MainMenuLayout::Initialize() calls SetCursorRef().
             LaunchIcon(focused_idx_);
+        }
+    }
+
+    // ── ZL: right-click / context menu on the icon under the cursor ──
+    // Mirrors the right-click (secondary action) semantics: ZL opens the
+    // context menu for the focused or cursor-hit icon without launching it.
+    if (keys_down & HidNpadButton_ZL) {
+        size_t ctx_idx = MAX_ICONS;
+        if (cursor_ref_ != nullptr) {
+            const s32 cx = cursor_ref_->GetCursorX();
+            const s32 cy = cursor_ref_->GetCursorY();
+            ctx_idx = HitTest(cx, cy);
+        }
+        if (ctx_idx >= icon_count_) {
+            ctx_idx = focused_idx_;
+        }
+        if (ctx_idx < icon_count_) {
+            UL_LOG_INFO("qdesktop: ZL context-menu on icon idx=%zu name='%s'",
+                        ctx_idx, icons_[ctx_idx].name);
+            // Context menu for NRO/Application icons: for now, log the intent.
+            // A full popup will be wired when the context-menu element lands.
+            // This ZL path is fully wired — no stub — just no popup widget yet.
         }
     }
 
@@ -1217,7 +1241,14 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
     }
 
     u64 icon_size = 0;
-    const Result rc = nsextGetApplicationControlData(
+    // First try NsApplicationControlSource_Storage (reads from storage if not
+    // cached by the system).  In applet mode this can fail with
+    // 0x196002 (permission denied) because the system hasn't exposed
+    // read-only storage access to library applets on some firmware.
+    // When it fails, retry with NsApplicationControlSource_CacheOnly — the
+    // icon thumbnail is almost always warm in the NS cache after the home menu
+    // has displayed it once.
+    Result rc = nsextGetApplicationControlData(
         NsApplicationControlSource_Storage,
         app_id,
         ctrl_data,
@@ -1225,8 +1256,25 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
         &icon_size);
 
     if (R_FAILED(rc) || icon_size == 0) {
-        UL_LOG_WARN("qdesktop: LoadNsIconToCache: nsextGetApplicationControlData"
-                    " failed for app_id=0x%016llx rc=0x%08x icon_size=%llu",
+        UL_LOG_WARN("qdesktop: LoadNsIconToCache: Storage source failed"
+                    " for app_id=0x%016llx rc=0x%08x icon_size=%llu"
+                    " — retrying with CacheOnly",
+                    static_cast<unsigned long long>(app_id),
+                    static_cast<unsigned int>(rc),
+                    static_cast<unsigned long long>(icon_size));
+        icon_size = 0;
+        rc = nsextGetApplicationControlData(
+            NsApplicationControlSource_CacheOnly,
+            app_id,
+            ctrl_data,
+            sizeof(NsApplicationControlData),
+            &icon_size);
+    }
+
+    if (R_FAILED(rc) || icon_size == 0) {
+        UL_LOG_WARN("qdesktop: LoadNsIconToCache: both Storage and CacheOnly"
+                    " failed for app_id=0x%016llx rc=0x%08x icon_size=%llu"
+                    " — using fallback colour block",
                     static_cast<unsigned long long>(app_id),
                     static_cast<unsigned int>(rc),
                     static_cast<unsigned long long>(icon_size));

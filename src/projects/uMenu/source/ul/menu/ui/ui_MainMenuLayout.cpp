@@ -758,15 +758,21 @@ namespace ul::menu::ui {
             this->date_text->SetColor(g_MenuApplication->GetTextColor());
             this->Add(this->date_text);
 
-            this->connection_top_icon = pu::ui::elm::Image::New(1750, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Connection/None"));
+            // Top-bar right-side layout (all coords in 1920×1080 layout space):
+            //   x=1680  connection icon  (~32 px wide → ends ~1712)
+            //   x=1790  battery icon     (~32 px wide → ends ~1822)
+            //   x=1840  battery text     ("100%" ~60 px wide → ends ~1900)
+            // 68-px gap between connection and battery; 18-px gap between battery
+            // icon and text.  Tight but clear at 1920 canvas width.
+            this->connection_top_icon = pu::ui::elm::Image::New(1680, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Connection/None"));
             this->Add(this->connection_top_icon);
 
-            this->battery_text = pu::ui::elm::TextBlock::New(1820, 12, "...");
+            this->battery_text = pu::ui::elm::TextBlock::New(1840, 12, "...");
             this->battery_text->SetColor(g_MenuApplication->GetTextColor());
             this->Add(this->battery_text);
 
-            this->battery_top_icon = pu::ui::elm::Image::New(1750, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/100"));
-            this->battery_charging_top_icon = pu::ui::elm::Image::New(1750, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/Charging"));
+            this->battery_top_icon = pu::ui::elm::Image::New(1790, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/100"));
+            this->battery_charging_top_icon = pu::ui::elm::Image::New(1790, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/Charging"));
             this->battery_charging_top_icon->SetVisible(false);
             this->Add(this->battery_top_icon);
             this->Add(this->battery_charging_top_icon);

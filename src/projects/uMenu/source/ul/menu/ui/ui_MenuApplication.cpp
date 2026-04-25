@@ -243,21 +243,37 @@ namespace ul::menu::ui {
         // Periodic system-volume re-apply: re-reads audctl every ~30 frames
         // (~500 ms at 60 fps) and updates SDL_mixer levels so the physical
         // volume buttons take effect without restarting BGM or SFX.
+        //
+        // SP4.1 safety: guard against invocation during applet teardown.
+        // Plutonium fires render callbacks until the very end of its Finalize
+        // path.  If this lambda runs after the Home button has triggered
+        // TerminateMenu() (via Finalize), g_MenuApplication / loaded_menu are
+        // being destroyed — dereferencing them crashes the renderer cleanup.
+        // The g_shutdown flag set in tel::Shutdown() is not available here, so
+        // we use g_MenuApplication itself as the null sentinel: once Finalize
+        // begins it will nullptr the ref before SDL cleanup runs, and any
+        // subsequent render-callback fire sees the guard and returns cleanly.
         this->AddRenderCallback([this]() {
+            if(g_MenuApplication == nullptr) { return; }
+
             static u32 s_vol_frame = 0;
             if(++s_vol_frame < 30) { return; }
             s_vol_frame = 0;
 
+            // Snapshot loaded_menu once under the guard so we use a consistent
+            // value even if a concurrent state transition is in progress.
+            const MenuType cur_menu = this->loaded_menu;
+
             // Re-apply BGM volume only when music is actually playing.
             if(Mix_PlayingMusic()) {
-                pu::audio::SetMusicVolume(ComputeVolume(this->loaded_menu));
+                pu::audio::SetMusicVolume(ComputeVolume(cur_menu));
             }
 
             // Re-apply SFX volume: Mix_Volume(-1, v) sets all channels at once.
-            // Use the Main-menu percentage as the global SFX reference level.
+            // Use the current menu percentage as the global SFX reference level.
             {
                 const float sys = ul::audio::GetSystemVolume();
-                const float raw = sys * static_cast<float>(BgmPctForMenu(this->loaded_menu)) * 1.28f;
+                const float raw = sys * static_cast<float>(BgmPctForMenu(cur_menu)) * 1.28f;
                 s32 sfx_vol = static_cast<s32>(raw);
                 if(sfx_vol < 0)   { sfx_vol = 0;   }
                 if(sfx_vol > 128) { sfx_vol = 128; }

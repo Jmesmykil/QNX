@@ -615,13 +615,15 @@ void QdVaultLayout::OnInput(const u64 keys_down,
         }
     }
 
-    // ── A: enter / launch ────────────────────────────────────────────────────
-    if (keys_down & HidNpadButton_A) {
+    // ── A / ZR: enter / launch ───────────────────────────────────────────────
+    // ZR mirrors A so the shoulder trigger can be used as the primary action.
+    if ((keys_down & HidNpadButton_A) || (keys_down & HidNpadButton_ZR)) {
         EnterFocused();
     }
 
-    // ── B: navigate up ───────────────────────────────────────────────────────
-    if (keys_down & HidNpadButton_B) {
+    // ── B / ZL: navigate up ──────────────────────────────────────────────────
+    // ZL mirrors B so the left shoulder trigger navigates back (go up a level).
+    if ((keys_down & HidNpadButton_B) || (keys_down & HidNpadButton_ZL)) {
         NavigateUp();
     }
 }

@@ -86,7 +86,19 @@ namespace ul::menu::smi::sf {
         UL_RC_TRY(InitializePrivateServiceImpl());
 
         g_ReceiverThreadShouldStop = false;
-        UL_RC_TRY(threadCreate(&g_ReceiverThread, &MenuMessageReceiverThread, nullptr, nullptr, 0x1000, 49, -2));
+        // Q OS cycle D7 (SP4.12.1): bump receiver-thread stack from 4 KB to
+        // 16 KB.  At 4 KB the path through ScopedLock → UL_LOG_INFO →
+        // ul::LogImpl → ul::tel::Emit → FormatLine → vsnprintf
+        // peaks around 2.0–2.2 KB of stack frames per log call (LogImpl
+        // tel_buf[512] + Emit line[SlotSize=512] + FormatLine msg[480] +
+        // newlib's _svfprintf_r internal buffers).  With two UL_LOG_INFO
+        // calls in the receive loop (lines 63 and 65) and ~1 KB of thread
+        // overhead, we sat right on the 4 KB ceiling; SP4.12 hardware
+        // boots crashed in _svfprintf_r with SP at 0x32a8993d40 — 704 bytes
+        // BELOW the stack region (overflow into unmapped page, fault
+        // address = 0).  16 KB matches the libnx default and gives ~12 KB
+        // headroom over current peak.
+        UL_RC_TRY(threadCreate(&g_ReceiverThread, &MenuMessageReceiverThread, nullptr, nullptr, 0x4000, 49, -2));
         UL_RC_TRY(threadStart(&g_ReceiverThread));
 
         g_Initialized = true;

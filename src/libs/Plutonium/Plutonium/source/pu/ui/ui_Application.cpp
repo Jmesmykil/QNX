@@ -112,7 +112,17 @@ namespace pu::ui {
         const auto over_alpha = static_cast<u8>(0xFF - this->fade_alpha);
         if(over_alpha > 0) {
             if(this->fade_bg_tex != nullptr) {
-                this->renderer->RenderTexture(this->fade_bg_tex->Get(), 0, 0, render::TextureRenderOptions(over_alpha, {}, {}, {}, {}, {}));
+                // Q OS cycle D6 (SP4.12.1): force the fade-overlay texture to
+                // span the full logical screen.  Upstream uLaunch shipped a
+                // 1280×720 ui/Background.png that matched the original
+                // BaseScreen — RenderTexture's default (no width/height
+                // override) resolves to the texture's native size, which is
+                // 1280×720, and lands in the top-left of the 1920×1080
+                // framebuffer when ScreenFactor>1.  Pass ScreenWidth/Height
+                // explicitly so SDL_RenderCopy scales the fade image to the
+                // full screen at blit time (hardware bilinear).  Cost: zero
+                // GPU memory delta — same texture, different dst rect.
+                this->renderer->RenderTexture(this->fade_bg_tex->Get(), 0, 0, render::TextureRenderOptions(over_alpha, render::ScreenWidth, render::ScreenHeight, {}, {}, {}));
             }
             else {
                 this->renderer->RenderRectangleFill(this->fade_bg_clr.WithAlpha(over_alpha), 0, 0, render::ScreenWidth, render::ScreenHeight);

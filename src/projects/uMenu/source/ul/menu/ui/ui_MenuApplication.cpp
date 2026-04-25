@@ -1,6 +1,7 @@
 #include <ul/menu/ui/ui_MenuApplication.hpp>
 #include <ul/menu/smi/smi_Commands.hpp>
 #include <ul/audio/audio_SystemVolume.hpp>
+#include <ul/menu/qdesktop/qd_Transition.hpp>
 #include <atomic>
 
 extern ul::menu::ui::GlobalSettings g_GlobalSettings;
@@ -367,23 +368,30 @@ namespace ul::menu::ui {
         this->SetFadeAlphaIncrementStepCount(FastFadeAlphaIncrementSteps);
 
 #ifdef QDESKTOP_MODE
-        // Cycle C5: in qdesktop mode the fade compositor must render a solid
-        // dark colour, NOT the upstream wallpaper texture. Reasons:
-        //   1. GetBackgroundTexture() is `ui/Background.png` from upstream
-        //      uLaunch's romfs — the user reports it as a "uLaunch style"
-        //      flash between the login screen and the desktop, breaking the
-        //      Q OS visual identity.
-        //   2. The qdesktop main layout uses a procedural plasma wallpaper
-        //      (qd_Wallpaper) that renders inside the layout, not as a fade
-        //      texture, so there is no Q OS-branded image to substitute.
+        // Cycle D4 (SP4.12): branded fade texture = vertical gradient bg +
+        // centered Q glyph in cyan→lavender. Replaces C5's solid-colour fade
+        // with something that actually reads as a Q OS-identity transition
+        // instead of "screen dimmed to dark blue". The texture is a
+        // procedurally generated 1280×720 ABGR8888 surface produced by
+        // qdesktop::GetBrandFadeTexture(); first call generates and uploads,
+        // every later fade reuses the cached SDL_Texture.
         //
-        // Plutonium's SetFadeBackgroundColor + ResetFadeBackgroundImage path
-        // is the canonical way to opt out of the bg-image fade. We pick a
-        // dark Q OS panel colour (matches qd_Theme PANEL_BG_DARK roughly)
-        // rather than pure black so the transition reads as 'closing into
-        // the next surface' rather than 'screen turned off'.
-        this->ResetFadeBackgroundImage();
-        this->SetFadeBackgroundColor({ 0x0Cu, 0x0Cu, 0x20u, 0xFFu });
+        // Falls back to the C5 solid-colour path if SDL_CreateTexture or
+        // SDL_LockTexture fails — that way a transient GPU pool exhaustion
+        // never costs the user the entire fade transition.
+        //
+        // (The C5 rationale still applies for *why* we don't use the upstream
+        // ui/Background.png: it reads as a "uLaunch style" flash and breaks
+        // the Q OS visual identity. D4 just gives us a branded texture to
+        // hand the fade compositor instead of a flat colour.)
+        auto brand_fade_tex = ::ul::menu::qdesktop::GetBrandFadeTexture();
+        if (brand_fade_tex != nullptr) {
+            this->SetFadeBackgroundImage(brand_fade_tex);
+        }
+        else {
+            this->ResetFadeBackgroundImage();
+            this->SetFadeBackgroundColor({ 0x0Cu, 0x0Cu, 0x20u, 0xFFu });
+        }
 #else
         if(!this->HasFadeBackgroundImage()) {
             this->SetFadeBackgroundImage(GetBackgroundTexture());

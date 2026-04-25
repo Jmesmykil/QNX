@@ -301,6 +301,27 @@ namespace ul::menu::ui {
     void MenuApplication::StartPlayBgm() {
         const auto &bgm = this->GetCurrentMenuBgm();
         if(bgm.bgm != nullptr) {
+            // Q OS per-menu volume policy (creator directive 2026-04-24:
+            //   "the background music needs to be MUCH more subtle like
+            //    barely anythign and relaxing").  Range is SDL_mixer 0..128.
+            //
+            //   Startup  → 96  (locked-in volume; creator: "I love the login
+            //                   sound LOCK it in!")
+            //   Main     → 20  (subtle ambient — barely there)
+            //   Themes   → 32  (preview while editing)
+            //   Settings → 32  (preview while editing)
+            //   Lockscr  → 20  (subtle)
+            s32 desktop_vol = 20;
+            switch(this->loaded_menu) {
+                case MenuType::Startup:  desktop_vol = 96; break;
+                case MenuType::Themes:   desktop_vol = 32; break;
+                case MenuType::Settings: desktop_vol = 32; break;
+                case MenuType::Lockscreen: desktop_vol = 20; break;
+                case MenuType::Main:     desktop_vol = 20; break;
+                default:                  desktop_vol = 20; break;
+            }
+            pu::audio::SetMusicVolume(desktop_vol);
+
             const int loops = bgm.bgm_loop ? -1 : 1;
             if(bgm.bgm_fade_in_ms > 0) {
                 pu::audio::PlayMusicWithFadeIn(bgm.bgm, loops, bgm.bgm_fade_in_ms);

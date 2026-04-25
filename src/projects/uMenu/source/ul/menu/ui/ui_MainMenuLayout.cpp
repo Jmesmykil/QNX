@@ -4,10 +4,15 @@
 #include <ul/menu/menu_Cache.hpp>
 #include <ul/menu/smi/smi_Commands.hpp>
 #include <ul/util/util_String.hpp>
+#include <ul/util/util_Telemetry.hpp>
 #include <ul/net/net_Service.hpp>
 #include <ul/acc/acc_Accounts.hpp>
 #include <ul/os/os_System.hpp>
 #include <ul/os/os_Applications.hpp>
+#ifdef QDESKTOP_MODE
+#include <ul/menu/qdesktop/qd_Input.hpp>
+#include <ul/menu/qdesktop/qd_Curve.hpp>
+#endif
 
 extern ul::menu::ui::GlobalSettings g_GlobalSettings;
 extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
@@ -530,8 +535,6 @@ namespace ul::menu::ui {
             auto &cur_entry = this->entry_menu->GetFocusedEntry();
             if(cur_entry.Is<EntryType::Folder>()) {
                 this->SetTopMenuFolder();
-                // TODO: show folder entry count?
-                // this->cur_entry_author_text->SetText(std::to_string(folder_entry_count) + " " + ((folder_entry_count == 1) ? "One entry" : "Multiple entries";
                 this->cur_entry_main_text->SetText(cur_entry.folder_info.name);
                 this->cur_entry_sub_text->SetVisible(false);
             }
@@ -665,7 +668,6 @@ namespace ul::menu::ui {
     MainMenuLayout::MainMenuLayout() : IMenuLayout(), last_quick_menu_on(false), start_time_elapsed(false), is_incrementing_decrementing(false), next_reload_user_changed(false) {
         UL_LOG_INFO("Creating MainMenuLayout...");
         const auto time = std::chrono::system_clock::now();
-        // TODO (low priority): like nxlink but for sending themes and quickly being able to test them?
         this->cur_folder_path = g_GlobalSettings.system_status.last_menu_path;
 
         this->quick_menu = nullptr;
@@ -715,45 +717,57 @@ namespace ul::menu::ui {
             this->Add(this->qdesktop_wallpaper);
             this->qdesktop_icons = qdesktop::QdDesktopIconsElement::New(qdt);
             this->Add(this->qdesktop_icons);
-
-            // Populate installed Switch applications (NSP/XCI) as desktop icons.
-            // The element keeps its builtin + NRO entries and appends each
-            // EntryType::Application that has main contents and is launchable.
-            // Idempotent under reload — internal app_entry_start_idx_ truncates
-            // and re-appends on subsequent calls (see SetApplicationEntries).
-            {
-                const auto entries = ul::menu::LoadEntries(ul::menu::GetActiveMenuPath());
-                this->qdesktop_icons->SetApplicationEntries(entries);
-            }
+            // NOTE: Application + Special entries are populated in Initialize()
+            // (which runs AFTER this constructor and AFTER InitializeEntries()).
+            // Calling LoadEntries() here returns an empty vector because the
+            // upstream menu system hasn't loaded the per-user entry directory
+            // yet.  See MainMenuLayout::Initialize() below.
 
             // ── Top bar ──────────────────────────────────────────────────
-            // Connection / battery / time / date — same elements the upstream
-            // layout uses; positions come from the active theme via
-            // ApplyConfigForElement("main_menu", "<key>", ...).  This keeps
-            // visual positions consistent with stock Plutonium themes.
+            // Connection / battery / time / date are pinned to explicit pixel
+            // positions that form a clean horizontal row inside the 48 px
+            // translucent backing strip drawn by QdDesktopIconsElement::OnRender.
+            //
+            // The upstream ApplyConfigForElement() calls are intentionally
+            // skipped here: the JSON config was authored for the stock uLaunch
+            // layout (top-menu-bar tabs) which does NOT exist in QDESKTOP_MODE.
+            // Applying it scatters the elements across the screen instead of
+            // placing them inside the 48 px strip, causing the clutter reported
+            // by users.
+            //
+            // Layout (1920×1080, 48 px top bar, vertical centre y=24):
+            //
+            //  x=24   x=200                          x=1750 x=1820
+            //  ┌────────────────────────────────────────────────────┐ y=0
+            //  │ [time]  [date]           [conn icon] [battery txt] │ y=24 (centre)
+            //  └────────────────────────────────────────────────────┘ y=48
+            //
+            //  time_mtext        : x=24,   y=12  (24 px font, centred in 48 px)
+            //  date_text         : x=200,  y=14  (22 px font, slightly lower for hierarchy)
+            //  connection_top_icon: x=1750, y=8   (32×32 icon, centred in 48 px)
+            //  battery_text      : x=1820, y=12  (same baseline as time)
+            //  battery_top_icon  : x=1750, y=8   (same slot as connection; toggled by state)
+            //  battery_charging_top_icon: same position, hidden until charging
 
             this->InitializeTimeText(this->time_mtext, "main_menu", "time_text");
+            this->time_mtext->SetX(24);
+            this->time_mtext->SetY(12);
             this->Add(this->time_mtext);
 
-            this->date_text = pu::ui::elm::TextBlock::New(0, 0, "...");
+            this->date_text = pu::ui::elm::TextBlock::New(200, 14, "...");
             this->date_text->SetColor(g_MenuApplication->GetTextColor());
-            g_GlobalSettings.ApplyConfigForElement("main_menu", "date_text", this->date_text);
             this->Add(this->date_text);
 
-            this->connection_top_icon = pu::ui::elm::Image::New(0, 0, TryFindLoadImageHandle("ui/Main/TopIcon/Connection/None"));
-            g_GlobalSettings.ApplyConfigForElement("main_menu", "connection_top_icon", this->connection_top_icon);
+            this->connection_top_icon = pu::ui::elm::Image::New(1750, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Connection/None"));
             this->Add(this->connection_top_icon);
 
-            this->battery_text = pu::ui::elm::TextBlock::New(0, 0, "...");
+            this->battery_text = pu::ui::elm::TextBlock::New(1820, 12, "...");
             this->battery_text->SetColor(g_MenuApplication->GetTextColor());
-            g_GlobalSettings.ApplyConfigForElement("main_menu", "battery_text", this->battery_text);
             this->Add(this->battery_text);
 
-            this->battery_top_icon = pu::ui::elm::Image::New(0, 0, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/100"));
-            this->battery_charging_top_icon = pu::ui::elm::Image::New(0, 0, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/Charging"));
+            this->battery_top_icon = pu::ui::elm::Image::New(1750, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/100"));
+            this->battery_charging_top_icon = pu::ui::elm::Image::New(1750, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/Charging"));
             this->battery_charging_top_icon->SetVisible(false);
-            g_GlobalSettings.ApplyConfigForElement("main_menu", "battery_top_icon", this->battery_top_icon);
-            g_GlobalSettings.ApplyConfigForElement("main_menu", "battery_top_icon", this->battery_charging_top_icon);
             this->Add(this->battery_top_icon);
             this->Add(this->battery_charging_top_icon);
 
@@ -764,6 +778,11 @@ namespace ul::menu::ui {
             // the cursor element is self-driving.
             this->qdesktop_cursor = qdesktop::QdCursorElement::New(qdt);
             this->Add(this->qdesktop_cursor);
+
+            // Wire the cursor reference into the icons element so A-button
+            // launches the icon under the cursor position rather than the
+            // D-pad focused index.
+            this->qdesktop_icons->SetCursorRef(this->qdesktop_cursor);
         }
         // Skip every other upstream UI element below — they don't exist in
         // qdesktop mode.  All upstream-element-touching member functions also
@@ -790,12 +809,16 @@ namespace ul::menu::ui {
         this->Add(this->top_menu_hb_bg);
 
         // Then load buttons and other UI elements
+#ifndef QDESKTOP_MODE
+        // In QDESKTOP_MODE the top-bar replaces the uLaunch logo slot, so skip
+        // instantiating logo_top_icon entirely (logo_top_icon stays nullptr).
         this->logo_top_icon = ClickableImage::New(0, 0, GetLogoTexture());
         this->logo_top_icon->SetWidth(LogoSize);
         this->logo_top_icon->SetHeight(LogoSize);
         this->logo_top_icon->SetOnClick(&ShowAboutDialog);
         g_GlobalSettings.ApplyConfigForElement("main_menu", "logo_top_icon", this->logo_top_icon, false); // Sorry theme makers... uLaunch's logo must be visible, but can be moved
         this->Add(this->logo_top_icon);
+#endif
 
         this->connection_top_icon = pu::ui::elm::Image::New(0, 0, TryFindLoadImageHandle("ui/Main/TopIcon/Connection/None"));
         g_GlobalSettings.ApplyConfigForElement("main_menu", "connection_top_icon", this->connection_top_icon);
@@ -1081,7 +1104,6 @@ namespace ul::menu::ui {
                 else {
                     pu::audio::PlaySfx(this->create_hb_entry_sfx);
 
-                    // TODO (low priority): custom argv option?
                     const auto hb_entry = CreateHomebrewEntry(g_GlobalSettings.initial_last_menu_fs_path, nro_path, nro_path, g_GlobalSettings.initial_last_menu_index);
                     this->entry_menu->NotifyEntryAdded(hb_entry);
                     this->entry_menu->OrganizeUpdateEntries();
@@ -1167,6 +1189,67 @@ namespace ul::menu::ui {
             this->qdesktop_icons->AdvanceTick();
         }
 
+        // ── Stick → cursor (five-zone dynamic curve, SP3.3) ──────────────────
+        // pump_input is called here rather than in OnMenuInput because
+        // OnMenuInput is gated off in QDESKTOP_MODE (the icons element's own
+        // OnInput handles Plutonium-routed events).  OnMenuUpdate fires once
+        // per frame unconditionally.
+        //
+        // The velocity curve is the five-zone hybrid from
+        // tools/mock-nro-desktop-gui/src/curve.rs (v0.5.0):
+        //   zone 1: dead-zone     [0,4500)     → 0 px/frame
+        //   zone 2: precision     [4500,12000) → 0.5–2 px/frame  (linear)
+        //   zone 3: linear        [12000,22000)→ 2–8 px/frame    (linear)
+        //   zone 4: acceleration  [22000,30000)→ 8–24 px/frame   (quadratic)
+        //   zone 5: burst         [30000,32767]→ 24–40 px/frame  (linear)
+        // Plus adaptive boost (12-frame hold → 1.0×→1.5× over next 24 frames)
+        // and slow-mode (ZR held → ×0.4).
+        if (this->qdesktop_cursor) {
+            static qdesktop::InputState  g_qd_input_state  = qdesktop::input_state_zero();
+            static qdesktop::PolledFrame g_qd_polled_frame = {};
+
+            qdesktop::pump_input(g_qd_input_state, g_qd_polled_frame);
+
+            // Persistent per-axis curve state (file-static; OnMenuUpdate is
+            // the sole caller, so no locking is needed).
+            static qdesktop::StickState s_stick_x = qdesktop::stick_state_zero();
+            static qdesktop::StickState s_stick_y = qdesktop::stick_state_zero();
+
+            const bool    slow = g_qd_polled_frame.zr_held;
+            const int32_t dx   = qdesktop::ComputeStickSpeed(
+                                     g_qd_polled_frame.stick_r_x, s_stick_x, slow);
+            // HID Y positive = up; Plutonium layout Y positive = down.  Negate.
+            const int32_t dy   = -qdesktop::ComputeStickSpeed(
+                                     g_qd_polled_frame.stick_r_y, s_stick_y, slow);
+
+            if ((dx != 0 || dy != 0)) {
+                s32 cx = this->qdesktop_cursor->GetCursorX();
+                s32 cy = this->qdesktop_cursor->GetCursorY();
+                s32 nx = cx + dx;
+                s32 ny = cy + dy;
+                if (nx < 0)        nx = 0;
+                if (nx >= 1920)    nx = 1919;
+                if (ny < 0)        ny = 0;
+                if (ny >= 1080)    ny = 1079;
+                this->qdesktop_cursor->SetCursorPos(nx, ny);
+            }
+        }
+
+        // Periodic telemetry flush (Regression 1 fix) ────────────────────────
+        // The async SPSC ring drains lazily every 8 ms in the drain thread, but
+        // a hard crash (applet killed by kernel) can lose up to one drain window
+        // of INFO messages.  Flushing here every 180 frames (~3 s at 60 fps)
+        // bounds the worst-case INFO loss to 3 s of events instead of the full
+        // SPSC buffer.  WARN/CRIT already use EmitSync (synchronous) and are
+        // never affected.  The atexit handler in main.cpp covers normal exit.
+        {
+            static uint32_t s_flush_frame = 0u;
+            if (++s_flush_frame >= 180u) {
+                s_flush_frame = 0u;
+                ul::tel::Flush();
+            }
+        }
+
         // Top-bar live updates — clock, date, battery, wifi.  Each helper
         // is a no-op when its target element is null, so the order is
         // immaterial.  All members are guaranteed non-null in qdesktop mode
@@ -1181,10 +1264,20 @@ namespace ul::menu::ui {
 
     bool MainMenuLayout::OnHomeButtonPress() {
 #ifdef QDESKTOP_MODE
-        // qdesktop currently treats Home as a no-op (returning the system to
-        // sleep is owned by uSystem).  Returning false signals "not consumed"
-        // so the system applet handles default behaviour.
-        return false;
+        // Q OS desktop: "Home always goes home" — Home returns the desktop to
+        // a clean baseline regardless of what was focused or where the cursor
+        // was.  We DO NOT auto-resume a suspended app from the desktop (that
+        // path is upstream behaviour we deliberately gate off — if the user
+        // wants their suspended game back they tap its icon).  Concretely:
+        //   1. Re-centre the cursor at (960, 540) so the next interaction
+        //      starts from a known, predictable origin.
+        //   2. Log the press for crash-trail correlation in qos-shell.log.
+        //   3. Return true to consume the event.
+        UL_LOG_INFO("qdesktop: OnHomeButtonPress -> centre cursor, stay home");
+        if (this->qdesktop_cursor) {
+            this->qdesktop_cursor->SetCursorPos(960, 540);
+        }
+        return true;
 #endif
         pu::audio::PlaySfx(this->home_press_sfx);
 
@@ -1229,10 +1322,32 @@ namespace ul::menu::ui {
 
     void MainMenuLayout::Initialize() {
         if(HasScreenCaptureBackground()) {
+#ifndef QDESKTOP_MODE
+            // post_suspend_sfx is null in qdesktop mode (LoadSfx is gated); skip
+            // the PlaySfx so we don't dereference a null Mix_Chunk.  The
+            // suspended-app resume path itself still runs; only the audio cue
+            // is omitted in qdesktop mode (will return in v0.24 via QdAudio).
             pu::audio::PlaySfx(this->post_suspend_sfx);
+#endif
         }
 
+        // InitializeEntries MUST run in both modes — qdesktop's
+        // SetApplicationEntries / SetSpecialEntries depend on the upstream
+        // entry vector being populated.
         g_GlobalSettings.InitializeEntries();
+
+#ifdef QDESKTOP_MODE
+        // Populate the desktop with the upstream entry vector now that
+        // InitializeEntries has run.  Order matters:
+        //   1. SetApplicationEntries — truncates + appends installed games
+        //   2. SetSpecialEntries     — appends Switch system applets
+        // A future Reload() override will re-run both with the same vector.
+        if (this->qdesktop_icons) {
+            const auto entries = ul::menu::LoadEntries(ul::menu::GetActiveMenuPath());
+            this->qdesktop_icons->SetApplicationEntries(entries);
+            this->qdesktop_icons->SetSpecialEntries(entries);
+        }
+#endif
     }
 
     void MainMenuLayout::Reload() {

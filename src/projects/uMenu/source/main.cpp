@@ -2,12 +2,14 @@
 #include <ul/cfg/cfg_Config.hpp>
 #include <ul/util/util_Json.hpp>
 #include <ul/util/util_Telemetry.hpp>
+#include <cstdlib>
 #include <ul/menu/ui/ui_MenuApplication.hpp>
 #include <ul/util/util_Size.hpp>
 #include <ul/net/net_Service.hpp>
 #include <ul/menu/smi/sf/sf_PrivateService.hpp>
 #include <ul/menu/am/am_LibraryAppletUtils.hpp>
 #include <ul/menu/am/am_LibnxLibappletWrap.hpp>
+#include <ul/audio/audio_SystemVolume.hpp>
 
 using namespace ul::util::size;
 
@@ -62,6 +64,13 @@ extern "C" {
 
         ul::InitializeLogging("uMenu");
         ul::tel::Init("uMenu");
+        // Flush the async SPSC telemetry queue on normal C-library exit (covers
+        // the Home-button-press-from-library-applet path which calls C atexit
+        // handlers before __appExit).  Crashes that skip atexit still get
+        // synchronous WARN/CRIT entries via EmitSync; BOOT markers are already
+        // written synchronously in tel::Init.  This captures best-effort INFO
+        // messages accumulated since the last periodic flush.
+        std::atexit([] { ul::tel::Flush(); });
         UL_LOG_INFO("Alive!");
 
         UL_RC_ASSERT(setsysInitialize());

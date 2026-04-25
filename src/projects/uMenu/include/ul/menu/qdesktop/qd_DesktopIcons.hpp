@@ -11,6 +11,7 @@
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
 #include <ul/menu/qdesktop/qd_IconCategory.hpp>
 #include <ul/menu/qdesktop/qd_Anim.hpp>
+#include <ul/menu/qdesktop/qd_Cursor.hpp>
 #include <ul/menu/menu_Entries.hpp>
 #include <string>
 #include <array>
@@ -153,6 +154,13 @@ public:
     // Call from AdvanceTick / OnMenuUpdate once per frame.
     void UpdateDockMagnify(int32_t cursor_y);
 
+    // Wire a cursor element so OnInput can read the cursor position for
+    // A-button-as-click.  Called from MainMenuLayout constructor after both
+    // elements are created.  Ownership remains with the layout.
+    void SetCursorRef(QdCursorElement::Ref cursor_ref) {
+        cursor_ref_ = cursor_ref;
+    }
+
 private:
     QdTheme theme_;
     std::array<NroEntry, MAX_ICONS> icons_;
@@ -170,6 +178,41 @@ private:
     // SetApplicationEntries() truncates icon_count_ back to this value, then appends.
     size_t app_entry_start_idx_;
 
+    // ── Touch click-vs-drag state machine ────────────────────────────────────
+    // Prevents drag-across-icons from triggering unintended launches.
+    // A launch fires only on TouchUp when the finger has not moved more than
+    // CLICK_TOLERANCE_PX from the TouchDown position and the hit-test still
+    // resolves to the same icon as at TouchDown.
+    bool   pressed_;                  // true while a finger is actively down
+    s32    down_x_;                   // layout X at TouchDown
+    s32    down_y_;                   // layout Y at TouchDown
+    s32    last_touch_x_;             // layout X of most-recent TouchMove/Down
+    s32    last_touch_y_;             // layout Y of most-recent TouchMove/Down
+    size_t down_idx_;                 // HitTest result at TouchDown (MAX_ICONS = no hit)
+    bool   was_touch_active_last_frame_; // previous frame's touch-active flag
+
+    // Optional cursor reference for A-button-as-click (injected by layout).
+    QdCursorElement::Ref cursor_ref_;
+
+    // ── Cached text textures (rendered once, reused every frame) ─────────────
+    // Plutonium's RenderText is expensive (TTF rasterisation + GPU upload).
+    // Re-running it for every icon every frame costs ~5760 texture creates/sec
+    // at 48 icons × 2 texts × 60fps.  We render once on first paint of each
+    // slot and cache the SDL_Texture*; freed in the destructor.  Slots are
+    // reset to nullptr when SetApplicationEntries() truncates icon_count_,
+    // forcing re-rasterisation for new entries on the next paint.
+    std::array<SDL_Texture *, MAX_ICONS> name_text_tex_;
+    std::array<SDL_Texture *, MAX_ICONS> glyph_text_tex_;
+
+    // ── Cached icon BGRA textures (created once per slot, reused every frame) ─
+    // The BGRA pixel data from QdIconCache is uploaded to a streaming
+    // SDL_Texture once and reused.  Previously the code created and destroyed
+    // a texture every frame per icon (1 200 GPU allocs/sec at 20 icons × 60 fps),
+    // fragmenting the Switch's 8 MB GPU pool and causing progressive lag.
+    // Freed alongside name_text_tex_/glyph_text_tex_ in FreeCachedText() so the
+    // same icon-reload reset path invalidates all three per-slot textures atomically.
+    std::array<SDL_Texture *, MAX_ICONS> icon_tex_;
+
     // Scan sdmc:/switch/ for *.nro files and append entries to icons_.
     // Skips hidden files (starting with '.').
     // Called once from constructor.
@@ -181,10 +224,18 @@ private:
 
     // Paint one icon cell at grid position (x, y) on the SDL renderer.
     // Uses QdIconCache for real JPEG data; falls back to category colour.
+    // entry_idx indexes name_text_tex_/glyph_text_tex_ for the cached text
+    // textures rendered lazily by this method.
     void PaintIconCell(SDL_Renderer *r,
                        const NroEntry &entry,
+                       size_t entry_idx,
                        s32 x, s32 y,
                        bool is_focused);
+
+    // Free a cached name/glyph text texture pair (no-op if both null).
+    // Called by the destructor and when an Application slot is reused after
+    // SetApplicationEntries truncation.
+    void FreeCachedText(size_t entry_idx);
 
     // Compute DJB2 hash colour for a name byte sequence (u32 DJB2 → HSL).
     // Matches desktop_icons.rs::hash_to_color / hsl_to_rgb exactly.
@@ -195,6 +246,13 @@ private:
     // file is absent, unreadable, or not a valid JPEG.
     // Returns true if a real JPEG was decoded; false if the fallback was used.
     bool LoadJpegIconToCache(const char *jpeg_path, const char *cache_key);
+
+    // Fetch an application icon from NS storage (NsApplicationControlData::icon),
+    // decode it via SDL2_image, and insert the result into the icon cache keyed by
+    // cache_key.  Falls back to a hash-derived solid-colour block on any NS or SDL
+    // failure so the caller always has a cache entry after this call returns.
+    // Returns true if a real JPEG was decoded; false if the fallback was used.
+    bool LoadNsIconToCache(u64 app_id, const char *cache_key);
 
     // Launch the icon at index i via smi::LaunchHomebrewLibraryApplet.
     // No-op for built-in icons (SP1 scope).

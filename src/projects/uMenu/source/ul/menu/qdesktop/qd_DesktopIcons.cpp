@@ -838,8 +838,21 @@ void QdDesktopIconsElement::LaunchIcon(size_t i) {
 
         case IconKind::Nro:
             if (entry.nro_path[0] != '\0') {
+                UL_LOG_INFO("qdesktop: LaunchHomebrewLibraryApplet '%s' — Finalize uMenu",
+                            entry.nro_path);
                 smi::LaunchHomebrewLibraryApplet(
                     std::string(entry.nro_path), std::string(""));
+                // CRITICAL (cycle C1): mirror the upstream
+                // MainMenuLayout::HandleHomebrewLaunch path
+                // (ui_MainMenuLayout.cpp:1529-1531). Without these two calls
+                // uMenu re-asserts foreground after smi::LaunchHomebrewLibraryApplet
+                // returns, which silently kills hbloader before the NRO can
+                // display. This is why Tinwoo (and every other NRO) appeared
+                // to "do nothing" when launched from the desktop.
+                if (g_MenuApplication) {
+                    g_MenuApplication->FadeOutToNonLibraryApplet();
+                    g_MenuApplication->Finalize();
+                }
             } else {
                 UL_LOG_WARN("qdesktop: LaunchIcon: Nro entry '%s' has empty nro_path — launch skipped",
                             entry.name);

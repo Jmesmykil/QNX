@@ -228,6 +228,12 @@ bool QdVaultLayout::DecodeNroIcon(Entry &e) {
     }
 
     // Extraction failed — generate DJB2-derived fallback (F-05: free always).
+    UL_LOG_WARN("vault: DecodeNroIcon: ExtractNroIcon failed for %s"
+                " valid=%d width=%d height=%d — using fallback colour block",
+                e.full_path,
+                static_cast<int>(res.valid),
+                res.width,
+                res.height);
     FreeNroIcon(res);
     u8 *fallback = MakeFallbackIcon(e.full_path);
     if (fallback != nullptr) {

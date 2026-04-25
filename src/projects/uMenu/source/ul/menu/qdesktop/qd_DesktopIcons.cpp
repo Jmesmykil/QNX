@@ -647,25 +647,7 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
             if (entry.kind == IconKind::Nro && entry.nro_path[0] != '\0') {
                 const u8 *cached = cache_.Get(entry.nro_path);
                 if (cached == nullptr) {
-                    // Not on disk either — load from NRO.
-                    NroIconResult res = ExtractNroIcon(entry.nro_path);
-                    if (res.valid && res.pixels != nullptr
-                            && res.width > 0 && res.height > 0) {
-                        cache_.Put(entry.nro_path, res.pixels, res.width, res.height);
-                        FreeNroIcon(res);
-                    } else {
-                        // Extraction failed — generate a fallback 64×64 RGBA block.
-                        // ExtractNroIcon always allocates res.pixels (even on failure);
-                        // free it here before it goes out of scope (F-03 fix).
-                        FreeNroIcon(res);
-                        u8 *fallback = MakeFallbackIcon(entry.nro_path);
-                        if (fallback != nullptr) {
-                            cache_.Put(entry.nro_path, fallback,
-                                       static_cast<s32>(CACHE_ICON_W),
-                                       static_cast<s32>(CACHE_ICON_H));
-                            delete[] fallback;
-                        }
-                    }
+                    LoadNroIconToCache(entry.nro_path, entry.nro_path);
                 }
             } else if (entry.kind == IconKind::Application) {
                 if (entry.icon_path[0] != '\0') {
@@ -1394,6 +1376,84 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
                 static_cast<unsigned long long>(icon_size),
                 cache_key);
     return true;
+}
+
+// ── LoadNroIconToCache ────────────────────────────────────────────────────────
+//
+// Extract the JPEG icon from the ASET section of the NRO at nro_path via
+// ExtractNroIcon, decode it, and insert the result into the icon cache under
+// cache_key.  Falls back to a MakeFallbackIcon solid-colour block on any
+// parse/decode failure.  Returns true if a real JPEG was decoded; false if the
+// fallback was used.
+//
+// FreeNroIcon semantics (from qd_NroAsset.hpp):
+//   FreeNroIcon(res) calls delete[] res.pixels (if non-null) then zeroes the
+//   pointer and sets res.valid = false.  It is safe to call on an invalid result
+//   (valid==false) because pixels is still a valid fallback buffer allocated by
+//   MakeFallbackIcon inside ExtractNroIcon.  FreeNroIcon must be called in BOTH
+//   the success and failure branches — see F-05 fix comment in NroIconResult.
+//
+// pixel snapshot rule: capture res.width/res.height to locals BEFORE calling
+// FreeNroIcon so the log line reads from stack not from a freed struct.
+
+bool QdDesktopIconsElement::LoadNroIconToCache(const char *nro_path,
+                                               const char *cache_key)
+{
+    // Guard: reject null or empty path.
+    if (nro_path == nullptr || nro_path[0] == '\0') {
+        UL_LOG_WARN("qdesktop: LoadNroIconToCache: invalid nro_path (null or empty)"
+                    " for cache_key=%s — using fallback colour block",
+                    cache_key != nullptr ? cache_key : "(null)");
+        u8 *fallback = MakeFallbackIcon(cache_key != nullptr ? cache_key : "");
+        if (fallback != nullptr) {
+            cache_.Put(cache_key, fallback,
+                       static_cast<s32>(CACHE_ICON_W),
+                       static_cast<s32>(CACHE_ICON_H));
+            delete[] fallback;
+        }
+        return false;
+    }
+
+    NroIconResult res = ExtractNroIcon(nro_path);
+
+    // Sanity-check the result dimensions before we hand pixels to cache_.Put.
+    // The 4096 upper bound guards against absurdly large JPEG blobs that
+    // ExtractNroIcon accepted but that would overflow ScaleToBgra64's buffers.
+    if (res.valid && res.pixels != nullptr
+            && res.width > 0 && res.height > 0
+            && res.width <= 4096 && res.height <= 4096) {
+        // Snapshot dimensions to locals before FreeNroIcon zeroes the struct.
+        const s32 snap_w = res.width;
+        const s32 snap_h = res.height;
+        // cache_.Put copies via ScaleToBgra64 — res.pixels is not read after this.
+        cache_.Put(cache_key, res.pixels, snap_w, snap_h);
+        FreeNroIcon(res);
+        UL_LOG_INFO("qdesktop: LoadNroIconToCache: loaded %s (%d×%d) → cache key %s",
+                    nro_path, snap_w, snap_h, cache_key);
+        return true;
+    }
+
+    // Extraction failed or dimensions out of range — log diagnostics using
+    // res.width/res.height directly here (safe: pixels not yet freed), then
+    // free, then insert fallback.
+    UL_LOG_WARN("qdesktop: LoadNroIconToCache: ExtractNroIcon failed or bad dims"
+                " for %s valid=%d pixels=%p width=%d height=%d"
+                " — using fallback colour block",
+                nro_path,
+                static_cast<int>(res.valid),
+                static_cast<const void *>(res.pixels),
+                res.width,
+                res.height);
+    FreeNroIcon(res);
+
+    u8 *fallback = MakeFallbackIcon(nro_path);
+    if (fallback != nullptr) {
+        cache_.Put(cache_key, fallback,
+                   static_cast<s32>(CACHE_ICON_W),
+                   static_cast<s32>(CACHE_ICON_H));
+        delete[] fallback;
+    }
+    return false;
 }
 
 } // namespace ul::menu::qdesktop

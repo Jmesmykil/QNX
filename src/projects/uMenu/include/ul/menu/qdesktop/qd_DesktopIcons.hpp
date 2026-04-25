@@ -254,6 +254,14 @@ private:
     // Returns true if a real JPEG was decoded; false if the fallback was used.
     bool LoadNsIconToCache(u64 app_id, const char *cache_key);
 
+    // Extract the JPEG icon from the ASET section of the NRO at nro_path, decode it
+    // via ExtractNroIcon, and insert the result into the icon cache keyed by
+    // cache_key.  Falls back to a MakeFallbackIcon solid-colour block on any parse or
+    // decode failure so the caller always has a usable cache entry after this call.
+    // nro_path must be a non-null, non-empty null-terminated path string.
+    // Returns true if a real JPEG was decoded; false if the fallback was used.
+    bool LoadNroIconToCache(const char *nro_path, const char *cache_key);
+
     // Launch the icon at index i via smi::LaunchHomebrewLibraryApplet.
     // No-op for built-in icons (SP1 scope).
     void LaunchIcon(size_t i);

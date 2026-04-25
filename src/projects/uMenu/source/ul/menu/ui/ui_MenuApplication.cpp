@@ -347,9 +347,30 @@ namespace ul::menu::ui {
 
     void MenuApplication::SetBackgroundFade() {
         this->SetFadeAlphaIncrementStepCount(FastFadeAlphaIncrementSteps);
+
+#ifdef QDESKTOP_MODE
+        // Cycle C5: in qdesktop mode the fade compositor must render a solid
+        // dark colour, NOT the upstream wallpaper texture. Reasons:
+        //   1. GetBackgroundTexture() is `ui/Background.png` from upstream
+        //      uLaunch's romfs — the user reports it as a "uLaunch style"
+        //      flash between the login screen and the desktop, breaking the
+        //      Q OS visual identity.
+        //   2. The qdesktop main layout uses a procedural plasma wallpaper
+        //      (qd_Wallpaper) that renders inside the layout, not as a fade
+        //      texture, so there is no Q OS-branded image to substitute.
+        //
+        // Plutonium's SetFadeBackgroundColor + ResetFadeBackgroundImage path
+        // is the canonical way to opt out of the bg-image fade. We pick a
+        // dark Q OS panel colour (matches qd_Theme PANEL_BG_DARK roughly)
+        // rather than pure black so the transition reads as 'closing into
+        // the next surface' rather than 'screen turned off'.
+        this->ResetFadeBackgroundImage();
+        this->SetFadeBackgroundColor({ 0x0Cu, 0x0Cu, 0x20u, 0xFFu });
+#else
         if(!this->HasFadeBackgroundImage()) {
             this->SetFadeBackgroundImage(GetBackgroundTexture());
         }
+#endif
     }
 
     void MenuApplication::LoadMenu(const MenuType type, const bool fade, MenuFadeCallback fade_cb) {

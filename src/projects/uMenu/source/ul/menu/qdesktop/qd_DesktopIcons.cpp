@@ -861,25 +861,43 @@ void QdDesktopIconsElement::LaunchIcon(size_t i) {
 
         case IconKind::Application:
             if (entry.app_id != 0) {
+                if (g_MenuApplication == nullptr) {
+                    UL_LOG_WARN("qdesktop: LaunchApplication: g_MenuApplication"
+                                " null — skipping launch of 0x%016llx",
+                                static_cast<unsigned long long>(entry.app_id));
+                    return;
+                }
+                // Cycle C2 fix: invert the order to match upstream's canonical
+                // pattern (ui_MainMenuLayout.cpp:255-265). Previously we
+                // launched first then faded out, which races: the game tries
+                // to take foreground before our fade animation completes, the
+                // applet state machine sees two foreground claimants
+                // simultaneously, and the game crash-loops on first frame.
+                //
+                // Correct order:
+                //   1. FadeOutToNonLibraryApplet()   - hands foreground claim
+                //   2. smi::LaunchApplication(rc)    - queues game launch
+                //   3a. R_SUCCEEDED → Finalize()    - terminate uMenu cleanly
+                //   3b. R_FAILED   → FadeIn + ResetFade + ShowNotification
+                //                   (recover gracefully so the desktop is usable
+                //                    again without a reboot)
+                UL_LOG_INFO("qdesktop: LaunchApplication 0x%016llx — fade out first",
+                            static_cast<unsigned long long>(entry.app_id));
+                g_MenuApplication->FadeOutToNonLibraryApplet();
                 const Result rc = smi::LaunchApplication(entry.app_id);
-                if (R_FAILED(rc)) {
-                    UL_LOG_WARN("qdesktop: LaunchApplication(0x%016llx) failed rc=0x%X",
-                                static_cast<unsigned long long>(entry.app_id),
-                                static_cast<unsigned>(rc));
-                } else {
-                    // CRITICAL: gracefully hand the foreground to the launched
-                    // application.  Without this pair of calls the system
-                    // applet state stays "uMenu is foreground", the game
-                    // fights for focus, and pressing Home from the running
-                    // game cannot suspend it cleanly back to the desktop.
-                    // Mirrors upstream MainMenuLayout::OnMenuInput launch path
-                    // (ui_MainMenuLayout.cpp around line 250).
+                if (R_SUCCEEDED(rc)) {
                     UL_LOG_INFO("qdesktop: LaunchApplication ok 0x%016llx — Finalize uMenu",
                                 static_cast<unsigned long long>(entry.app_id));
-                    if (g_MenuApplication) {
-                        g_MenuApplication->FadeOutToNonLibraryApplet();
-                        g_MenuApplication->Finalize();
-                    }
+                    g_MenuApplication->Finalize();
+                } else {
+                    UL_LOG_WARN("qdesktop: LaunchApplication(0x%016llx) failed rc=0x%X — recovering",
+                                static_cast<unsigned long long>(entry.app_id),
+                                static_cast<unsigned>(rc));
+                    g_MenuApplication->FadeIn();
+                    g_MenuApplication->ResetFade();
+                    g_MenuApplication->ShowNotification(
+                        ::ul::menu::ui::GetLanguageString("app_launch_error")
+                        + ": " + ::ul::util::FormatResultDisplay(rc));
                 }
             }
             return;

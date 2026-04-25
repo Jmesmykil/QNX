@@ -813,7 +813,14 @@ void QdDesktopIconsElement::LaunchIcon(size_t i) {
 
     switch (entry.kind) {
         case IconKind::Builtin:
-            // Built-in dock shortcuts: no launch action in SP3 (SP1 scope-out preserved).
+            // dock_slot 0 = Vault file browser.
+            if (entry.dock_slot == 0) {
+                if (g_MenuApplication) {
+                    g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Vault);
+                }
+            } else {
+                UL_LOG_WARN("qdesktop: LaunchIcon: unhandled builtin dock_slot=%u", (unsigned)entry.dock_slot);
+            }
             return;
 
         case IconKind::Nro:

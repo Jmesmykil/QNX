@@ -15,6 +15,7 @@
 #include <dirent.h>
 #include <cstring>
 #include <cstdio>
+#include <cctype>
 
 namespace ul::menu::qdesktop {
 
@@ -44,7 +45,10 @@ s32 QdVaultLayout::MainPaneCols() {
 // ── Constructor / Destructor ──────────────────────────────────────────────────
 
 QdVaultLayout::QdVaultLayout(const QdTheme &theme)
-    : theme_(theme), entry_count_(0), focus_idx_(0), scroll_offset_(0)
+    : theme_(theme), entry_count_(0), focus_idx_(0), scroll_offset_(0),
+      text_viewer_(QdTextViewer::New(theme)),
+      image_viewer_(QdImageViewer::New(theme)),
+      viewer_active_(false)
 {
     UL_LOG_INFO("vault: QdVaultLayout ctor");
     cwd_[0] = '\0';
@@ -535,7 +539,7 @@ void QdVaultLayout::RenderMainPane(SDL_Renderer *r,
 
 // ── OnRender ──────────────────────────────────────────────────────────────────
 
-void QdVaultLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
+void QdVaultLayout::OnRender(pu::ui::render::Renderer::Ref &drawer,
                               const s32 x, const s32 y) {
     SDL_Renderer *r = pu::ui::render::GetMainRenderer();
     {
@@ -563,6 +567,18 @@ void QdVaultLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
 
     RenderSidebar(r, x, y);
     RenderMainPane(r, x, y);
+
+    // Draw the active viewer as a full-screen overlay on top of the vault UI.
+    if (viewer_active_) {
+        if (text_viewer_->IsOpen()) {
+            text_viewer_->OnRender(drawer, x, y);
+        } else if (image_viewer_->IsOpen()) {
+            image_viewer_->OnRender(drawer, x, y);
+        } else {
+            // Both closed — should not happen, but clear the flag.
+            viewer_active_ = false;
+        }
+    }
 }
 
 // ── OnInput ───────────────────────────────────────────────────────────────────
@@ -571,6 +587,24 @@ void QdVaultLayout::OnInput(const u64 keys_down,
                              const u64 keys_up,
                              const u64 keys_held,
                              const pu::ui::TouchPoint touch_pos) {
+    // When a viewer is active, route all input to it until it closes.
+    if (viewer_active_) {
+        if (text_viewer_->IsOpen()) {
+            text_viewer_->OnInput(keys_down, keys_up, keys_held, touch_pos);
+            if (!text_viewer_->IsOpen()) {
+                viewer_active_ = false;
+            }
+        } else if (image_viewer_->IsOpen()) {
+            image_viewer_->OnInput(keys_down, keys_up, keys_held, touch_pos);
+            if (!image_viewer_->IsOpen()) {
+                viewer_active_ = false;
+            }
+        } else {
+            viewer_active_ = false;
+        }
+        return;
+    }
+
     (void)keys_up;
     (void)keys_held;
     (void)touch_pos;
@@ -698,11 +732,56 @@ void QdVaultLayout::EnterFocused() {
             }
             break;
 
-        case EntryKind::OtherFile:
-            // Stage 3 will add inline text/image viewers.
-            // For now, show a brief visual indication (focus ring is sufficient).
-            UL_LOG_INFO("vault: selected non-NRO file '%s' (no viewer yet)", e.full_path);
+        case EntryKind::OtherFile: {
+            // Determine the file extension (lower-cased) to pick the viewer.
+            const char *dot = nullptr;
+            for (const char *p = e.full_path; *p != '\0'; ++p) {
+                if (*p == '.') {
+                    dot = p;
+                }
+            }
+            // Build a lower-cased extension string (without the dot, max 8 chars).
+            char ext[9] = {};
+            if (dot != nullptr && dot[1] != '\0') {
+                size_t ei = 0;
+                for (const char *p = dot + 1; *p != '\0' && ei < 8; ++p, ++ei) {
+                    ext[ei] = static_cast<char>(tolower(static_cast<unsigned char>(*p)));
+                }
+            }
+            // Image viewer handles: png, jpg, jpeg, bmp, gif.
+            const bool is_image = (strcmp(ext, "png")  == 0 ||
+                                   strcmp(ext, "jpg")  == 0 ||
+                                   strcmp(ext, "jpeg") == 0 ||
+                                   strcmp(ext, "bmp")  == 0 ||
+                                   strcmp(ext, "gif")  == 0);
+            // Text viewer handles: txt, log, md, toml, json, ini, cfg, nfo.
+            const bool is_text  = (strcmp(ext, "txt")  == 0 ||
+                                   strcmp(ext, "log")  == 0 ||
+                                   strcmp(ext, "md")   == 0 ||
+                                   strcmp(ext, "toml") == 0 ||
+                                   strcmp(ext, "json") == 0 ||
+                                   strcmp(ext, "ini")  == 0 ||
+                                   strcmp(ext, "cfg")  == 0 ||
+                                   strcmp(ext, "nfo")  == 0);
+            if (is_image) {
+                if (image_viewer_->LoadFile(e.full_path)) {
+                    viewer_active_ = true;
+                    UL_LOG_INFO("vault: image viewer opened for '%s'", e.full_path);
+                } else {
+                    UL_LOG_WARN("vault: image viewer failed to load '%s'", e.full_path);
+                }
+            } else if (is_text) {
+                if (text_viewer_->LoadFile(e.full_path)) {
+                    viewer_active_ = true;
+                    UL_LOG_INFO("vault: text viewer opened for '%s'", e.full_path);
+                } else {
+                    UL_LOG_WARN("vault: text viewer failed to load '%s'", e.full_path);
+                }
+            } else {
+                UL_LOG_INFO("vault: no viewer for extension '%s' — file '%s'", ext, e.full_path);
+            }
             break;
+        }
     }
 }
 

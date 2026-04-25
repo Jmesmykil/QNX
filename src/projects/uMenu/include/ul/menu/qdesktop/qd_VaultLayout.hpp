@@ -9,6 +9,8 @@
 #include <ul/menu/qdesktop/qd_Theme.hpp>
 #include <ul/menu/qdesktop/qd_IconCache.hpp>
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
+#include <ul/menu/qdesktop/qd_TextViewer.hpp>
+#include <ul/menu/qdesktop/qd_ImageViewer.hpp>
 #include <SDL2/SDL.h>
 
 namespace ul::menu::qdesktop {
@@ -108,6 +110,12 @@ private:
     SDL_Texture *name_tex_[MAX_ENTRIES];
 
     QdIconCache cache_;
+
+    // ── Viewer overlay ─────────────────────────────────────────────────────
+    // One or the other is active at a time; viewer_active_ gates routing.
+    QdTextViewer::Ref  text_viewer_;
+    QdImageViewer::Ref image_viewer_;
+    bool               viewer_active_ = false;
 
     // ── Private helpers ────────────────────────────────────────────────────
 

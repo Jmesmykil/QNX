@@ -7,6 +7,7 @@
 #include <ul/menu/ui/ui_LockscreenMenuLayout.hpp>
 #include <ul/menu/ui/ui_BackgroundScreenCapture.hpp>
 #include <ul/menu/smi/smi_Commands.hpp>
+#include <ul/menu/qdesktop/qd_VaultLayout.hpp>
 
 namespace ul::menu::ui {
 
@@ -17,7 +18,8 @@ namespace ul::menu::ui {
         Startup,
         Themes,
         Settings,
-        Lockscreen
+        Lockscreen,
+        Vault
     };
 
     void OnMessage(const smi::MenuMessageContext &msg_ctx);
@@ -36,6 +38,8 @@ namespace ul::menu::ui {
             ThemesMenuLayout::Ref themes_menu_lyt;
             SettingsMenuLayout::Ref settings_menu_lyt;
             LockscreenMenuLayout::Ref lockscreen_menu_lyt;
+            qdesktop::QdVaultLayout::Ref vault_lyt;
+            pu::ui::Layout::Ref vault_host_lyt_;
             pu::ui::extras::Toast::Ref notif_toast;
             bool launch_failed;
             Result pending_gc_mount_rc;

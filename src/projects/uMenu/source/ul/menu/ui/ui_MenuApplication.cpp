@@ -27,6 +27,7 @@ namespace ul::menu::ui {
                 case MenuType::Settings:   return 25;
                 case MenuType::Lockscreen: return 15;
                 case MenuType::Main:       return 15;
+                case MenuType::Vault:      return 15;
             }
             return 15;
         }
@@ -71,6 +72,8 @@ namespace ul::menu::ui {
                 return g_GlobalSettings.settings_menu_bgm;
             case MenuType::Lockscreen:
                 return g_GlobalSettings.lockscreen_menu_bgm;
+            case MenuType::Vault:
+                return g_GlobalSettings.main_menu_bgm;
         }
 
         UL_ASSERT_FAIL("Invalid current menu?");
@@ -114,6 +117,16 @@ namespace ul::menu::ui {
                     TryParseBgmEntry("lockscreen_menu", "Lockscreen", g_GlobalSettings.lockscreen_menu_bgm);
                 }
                 break;
+            case MenuType::Vault:
+                if(this->vault_lyt == nullptr) {
+                    const qdesktop::QdTheme qdt = qdesktop::QdTheme::DarkLiquidGlass();
+                    this->vault_lyt = qdesktop::QdVaultLayout::New(qdt);
+                    this->vault_host_lyt_ = pu::ui::Layout::New();
+                    this->vault_host_lyt_->SetBackgroundColor({ 0, 0, 0, 255 });
+                    this->vault_host_lyt_->Add(this->vault_lyt);
+                }
+                this->vault_lyt->Navigate("sdmc:/switch/");
+                break;
         }
     }
 
@@ -139,6 +152,8 @@ namespace ul::menu::ui {
         this->themes_menu_lyt = nullptr;
         this->settings_menu_lyt = nullptr;
         this->lockscreen_menu_lyt = nullptr;
+        this->vault_lyt = nullptr;
+        this->vault_host_lyt_ = nullptr;
 
         // FastFadeAlphaIncrementSteps = 12 → ~200ms at 60fps.  Verified correct.
         this->SetFadeAlphaIncrementStepCount(FastFadeAlphaIncrementSteps);
@@ -357,6 +372,11 @@ namespace ul::menu::ui {
             }
             case MenuType::Lockscreen: {
                 this->LoadLayout(this->lockscreen_menu_lyt);
+                break;
+            }
+            case MenuType::Vault: {
+                this->vault_lyt->Navigate("sdmc:/switch/");
+                this->LoadLayout(this->vault_host_lyt_);
                 break;
             }
         }

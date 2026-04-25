@@ -1,4 +1,5 @@
 #include <ul/ul_Result.hpp>
+#include <ul/util/util_Telemetry.hpp>
 #include <ul/fs/fs_Stdio.hpp>
 #include <ul/os/os_System.hpp>
 #include <cstdarg>
@@ -100,6 +101,34 @@ namespace ul {
     }
 
     void LogImpl(const LogKind kind, const char *log_fmt, ...) {
+        // Telemetry path: route through the structured pipeline when available.
+        // EmitSync is used for Warning/Critical so the message survives a crash.
+        if(::ul::tel::IsInitialized()) {
+            va_list tel_args;
+            va_start(tel_args, log_fmt);
+            char tel_buf[512];
+            vsnprintf(tel_buf, sizeof(tel_buf), log_fmt, tel_args);
+            va_end(tel_args);
+            tel_buf[sizeof(tel_buf) - 1] = '\0';
+
+            switch(kind) {
+                case LogKind::Information:
+                    ::ul::tel::Emit(::ul::tel::Cat::Generic, ::ul::tel::Sev::Info, "%s", tel_buf);
+                    break;
+                case LogKind::Warning:
+                    ::ul::tel::EmitSync(::ul::tel::Cat::Generic, ::ul::tel::Sev::Warn, "%s", tel_buf);
+                    break;
+                case LogKind::Critical:
+                    ::ul::tel::EmitSync(::ul::tel::Cat::Generic, ::ul::tel::Sev::Crit, "%s", tel_buf);
+                    break;
+                default:
+                    ::ul::tel::Emit(::ul::tel::Cat::Generic, ::ul::tel::Sev::Info, "%s", tel_buf);
+                    break;
+            }
+        }
+
+        // Legacy file path: kept as fallback for early-boot and as the
+        // human-readable per-process log at sdmc:/ulaunch/log_<proc>.log.
         ScopedLock lk(g_LogLock);
 
         if(g_LogPath[0] == '\0') {

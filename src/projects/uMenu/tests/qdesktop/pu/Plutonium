@@ -1,0 +1,58 @@
+// Stub pu/Plutonium.hpp for host-side (macOS) unit testing.
+// Guards the real header's include guard and provides the minimal types used
+// by qdesktop headers that are under test.
+#pragma once
+#ifndef PU_PLUTONIUM_HPP
+#define PU_PLUTONIUM_HPP
+
+#include <cstdint>
+
+// Primitive types expected by qdesktop headers.
+using u8  = uint8_t;
+using u16 = uint16_t;
+using u32 = uint32_t;
+using u64 = uint64_t;
+using s32 = int32_t;
+using s64 = int64_t;
+
+using Result = u32;
+static inline bool R_SUCCEEDED(Result rc) { return rc == 0u; }
+
+namespace pu {
+namespace ui {
+    struct Color {
+        u8 r, g, b, a;
+        Color() : r(0), g(0), b(0), a(0) {}
+        constexpr Color(u8 rr, u8 gg, u8 bb, u8 aa) : r(rr), g(gg), b(bb), a(aa) {}
+    };
+
+    namespace elm {
+        // Minimal Element base class stub so qdesktop element headers compile.
+        class Element {
+        public:
+            virtual ~Element() = default;
+            virtual s32 GetX() = 0;
+            virtual s32 GetY() = 0;
+            virtual s32 GetWidth() = 0;
+            virtual s32 GetHeight() = 0;
+            virtual void OnRender(void* /*renderer*/, s32 /*x*/, s32 /*y*/) {}
+            virtual void OnInput(u64 /*keys_down*/, u64 /*keys_up*/, u64 /*keys_held*/,
+                                 void* /*touch_pos*/) {}
+        };
+    } // namespace elm
+
+    // Minimal TouchPoint stub.
+    struct TouchPoint {
+        s32 x = 0, y = 0;
+        bool IsEmpty() const { return x == 0 && y == 0; }
+    };
+} // namespace ui
+
+namespace sdl2 {
+    // Forward declarations; concrete types are defined per-test as needed.
+    using Renderer = struct SDL_Renderer*;
+    using Texture  = struct SDL_Texture*;
+} // namespace sdl2
+} // namespace pu
+
+#endif // PU_PLUTONIUM_HPP

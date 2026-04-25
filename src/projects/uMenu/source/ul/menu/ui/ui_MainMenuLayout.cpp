@@ -52,6 +52,11 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::DoMoveTo(const std::string &new_path) {
+#ifdef QDESKTOP_MODE
+        // qdesktop owns the layout; upstream entry/folder navigation is a no-op.
+        (void)new_path;
+        return;
+#endif
         // Empty path used as a "reload" argumnet
         if(!new_path.empty()) {
             util::CopyToStringBuffer(g_MenuFsPathBuffer, new_path);
@@ -63,6 +68,11 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::menu_EntryInputPressed(const u64 keys_down) {
+#ifdef QDESKTOP_MODE
+        // qdesktop has no entry_menu; upstream input dispatch is gated off.
+        (void)keys_down;
+        return;
+#endif
         if(keys_down & HidNpadButton_B) {
             if(this->entry_menu->IsAnySelected()) {
                 pu::audio::PlaySfx(this->entry_cancel_select_sfx);
@@ -503,6 +513,11 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::menu_FocusedEntryChanged(const bool has_prev_entry, const bool is_prev_entry_suspended, const bool is_cur_entry_suspended) {
+#ifdef QDESKTOP_MODE
+        // qdesktop has no entry_menu / cur_entry_*_text; nothing to refresh.
+        (void)has_prev_entry; (void)is_prev_entry_suspended; (void)is_cur_entry_suspended;
+        return;
+#endif
         this->cur_entry_main_text->SetVisible(true);
         this->cur_entry_sub_text->SetVisible(true);
         this->input_bar_changed = true;
@@ -612,6 +627,12 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::LaunchHomebrewApplication(const Entry &hb_entry) {
+#ifdef QDESKTOP_MODE
+        // qdesktop will route launches through QdLauncher (SP4); until then,
+        // upstream homebrew launch is gated off to avoid deref of null members.
+        (void)hb_entry;
+        return;
+#endif
         // Take care if there is a suspended app
         auto do_launch = true;
         if(g_GlobalSettings.IsSuspended()) {
@@ -681,6 +702,78 @@ namespace ul::menu::ui {
         this->error_sfx = nullptr;
         this->menu_increment_sfx = nullptr;
         this->menu_decrement_sfx = nullptr;
+
+#ifdef QDESKTOP_MODE
+        {
+            // Q OS desktop mode: wallpaper + icon grid + top bar are the only
+            // elements added.  The upstream icon ring, entry menu, and quick
+            // menu are NOT instantiated.  Top-bar elements are still owned by
+            // upstream IMenuLayout helpers (UpdateTimeText et al.), so we
+            // initialise them here and the OnMenuUpdate gate refreshes them.
+            const qdesktop::QdTheme qdt = qdesktop::QdTheme::DarkLiquidGlass();
+            this->qdesktop_wallpaper = qdesktop::QdWallpaperElement::New(qdt);
+            this->Add(this->qdesktop_wallpaper);
+            this->qdesktop_icons = qdesktop::QdDesktopIconsElement::New(qdt);
+            this->Add(this->qdesktop_icons);
+
+            // Populate installed Switch applications (NSP/XCI) as desktop icons.
+            // The element keeps its builtin + NRO entries and appends each
+            // EntryType::Application that has main contents and is launchable.
+            // Idempotent under reload — internal app_entry_start_idx_ truncates
+            // and re-appends on subsequent calls (see SetApplicationEntries).
+            {
+                const auto entries = ul::menu::LoadEntries(ul::menu::GetActiveMenuPath());
+                this->qdesktop_icons->SetApplicationEntries(entries);
+            }
+
+            // ── Top bar ──────────────────────────────────────────────────
+            // Connection / battery / time / date — same elements the upstream
+            // layout uses; positions come from the active theme via
+            // ApplyConfigForElement("main_menu", "<key>", ...).  This keeps
+            // visual positions consistent with stock Plutonium themes.
+
+            this->InitializeTimeText(this->time_mtext, "main_menu", "time_text");
+            this->Add(this->time_mtext);
+
+            this->date_text = pu::ui::elm::TextBlock::New(0, 0, "...");
+            this->date_text->SetColor(g_MenuApplication->GetTextColor());
+            g_GlobalSettings.ApplyConfigForElement("main_menu", "date_text", this->date_text);
+            this->Add(this->date_text);
+
+            this->connection_top_icon = pu::ui::elm::Image::New(0, 0, TryFindLoadImageHandle("ui/Main/TopIcon/Connection/None"));
+            g_GlobalSettings.ApplyConfigForElement("main_menu", "connection_top_icon", this->connection_top_icon);
+            this->Add(this->connection_top_icon);
+
+            this->battery_text = pu::ui::elm::TextBlock::New(0, 0, "...");
+            this->battery_text->SetColor(g_MenuApplication->GetTextColor());
+            g_GlobalSettings.ApplyConfigForElement("main_menu", "battery_text", this->battery_text);
+            this->Add(this->battery_text);
+
+            this->battery_top_icon = pu::ui::elm::Image::New(0, 0, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/100"));
+            this->battery_charging_top_icon = pu::ui::elm::Image::New(0, 0, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/Charging"));
+            this->battery_charging_top_icon->SetVisible(false);
+            g_GlobalSettings.ApplyConfigForElement("main_menu", "battery_top_icon", this->battery_top_icon);
+            g_GlobalSettings.ApplyConfigForElement("main_menu", "battery_top_icon", this->battery_charging_top_icon);
+            this->Add(this->battery_top_icon);
+            this->Add(this->battery_charging_top_icon);
+
+            // ── Cursor (LAST, renders on top of icons + top bar) ─────────
+            // Plutonium dispatches OnInput per-element each frame, so the
+            // cursor's own OnInput consumes the layout-space TouchPoint and
+            // tracks the pointer.  Layout-level routing is unnecessary —
+            // the cursor element is self-driving.
+            this->qdesktop_cursor = qdesktop::QdCursorElement::New(qdt);
+            this->Add(this->qdesktop_cursor);
+        }
+        // Skip every other upstream UI element below — they don't exist in
+        // qdesktop mode.  All upstream-element-touching member functions also
+        // early-return under QDESKTOP_MODE; see LoadSfx, DisposeSfx,
+        // OnMenuInput, OnHomeButtonPress, Reload, MoveTo, DoMoveTo,
+        // HandleCloseSuspended, HandleHomebrewLaunch, StopSelection,
+        // DoTerminateApplication, menu_EntryInputPressed,
+        // menu_FocusedEntryChanged, LaunchHomebrewApplication.
+        return;
+#endif
 
         // Load banners first
         this->top_menu_default_bg = pu::ui::elm::Image::New(0, 0, TryFindLoadImageHandle("ui/Main/TopMenuBackground/Default"));
@@ -779,6 +872,12 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::LoadSfx() {
+#ifdef QDESKTOP_MODE
+        // qdesktop has no upstream sfx in v0.21; cursor-click + launch-confirm
+        // sfx land in v0.24 via QdAudio.  Skip until then so we don't fault on
+        // missing theme resources that the upstream tree expects.
+        return;
+#endif
         this->post_suspend_sfx = pu::audio::LoadSfx(TryGetActiveThemeResource("sound/Main/PostSuspend.wav"));
         this->cursor_move_sfx = pu::audio::LoadSfx(TryGetActiveThemeResource("sound/Main/CursorMove.wav"));
         this->page_move_sfx = pu::audio::LoadSfx(TryGetActiveThemeResource("sound/Main/PageMove.wav"));
@@ -814,6 +913,10 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::DisposeSfx() {
+#ifdef QDESKTOP_MODE
+        // Symmetric with LoadSfx — nothing to dispose because nothing was loaded.
+        return;
+#endif
         pu::audio::DestroySfx(this->post_suspend_sfx);
         pu::audio::DestroySfx(this->cursor_move_sfx);
         pu::audio::DestroySfx(this->page_move_sfx);
@@ -846,6 +949,14 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::OnMenuInput(const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
+#ifdef QDESKTOP_MODE
+        // qdesktop input is dispatched to child elements (QdDesktopIconsElement,
+        // future QdCursor/HUD/Launchpad) by Plutonium's own per-element OnInput
+        // chain.  This layout-level handler intentionally does nothing — the
+        // upstream entry/quick-menu state machine is gated off in qdesktop mode.
+        (void)keys_down; (void)keys_up; (void)keys_held; (void)touch_pos;
+        return;
+#endif
         const auto quick_menu_on = this->quick_menu->IsOn();
         if(this->last_quick_menu_on != quick_menu_on) {
             this->last_quick_menu_on = quick_menu_on;
@@ -1048,10 +1159,33 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::OnMenuUpdate() {
-        
+#ifdef QDESKTOP_MODE
+        // F-06 fix: advance the icon LRU cache tick exactly once per frame.
+        // OnRender no longer calls cache_.AdvanceTick() directly — this is the
+        // single authoritative tick site for QDESKTOP_MODE builds.
+        if (this->qdesktop_icons) {
+            this->qdesktop_icons->AdvanceTick();
+        }
+
+        // Top-bar live updates — clock, date, battery, wifi.  Each helper
+        // is a no-op when its target element is null, so the order is
+        // immaterial.  All members are guaranteed non-null in qdesktop mode
+        // because the constructor's QDESKTOP_MODE block initialises them
+        // before returning.
+        this->UpdateTimeText(this->time_mtext);
+        this->UpdateDateText(this->date_text);
+        this->UpdateBatteryTextAndTopIcons(this->battery_text, this->battery_top_icon, this->battery_charging_top_icon);
+        this->UpdateConnectionTopIcon(this->connection_top_icon);
+#endif
     }
 
     bool MainMenuLayout::OnHomeButtonPress() {
+#ifdef QDESKTOP_MODE
+        // qdesktop currently treats Home as a no-op (returning the system to
+        // sleep is owned by uSystem).  Returning false signals "not consumed"
+        // so the system applet handles default behaviour.
+        return false;
+#endif
         pu::audio::PlaySfx(this->home_press_sfx);
 
         if(g_GlobalSettings.IsSuspended()) {
@@ -1069,6 +1203,14 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::MoveTo(const std::string &new_path, const bool fade, std::function<void()> action) {
+#ifdef QDESKTOP_MODE
+        // qdesktop has no folder navigation in v0.21.  Run the caller's action
+        // (if any) so external callers that pass a continuation still progress;
+        // skip the upstream fade transition (relies on null entry_menu).
+        (void)new_path; (void)fade;
+        if (action) { action(); }
+        return;
+#endif
         if(fade) {
             g_MenuApplication->SetBackgroundFade();
             g_MenuApplication->FadeOut();
@@ -1094,6 +1236,12 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::Reload() {
+#ifdef QDESKTOP_MODE
+        // qdesktop reloads its icon set via QdDesktopIconsElement::Reload()
+        // during user-change events; the upstream entry_menu/quick_menu reload
+        // path is gated off because those members don't exist here.
+        return;
+#endif
         UL_RC_ASSERT(acc::GetAccountName(g_GlobalSettings.system_status.selected_user, g_UserName));
         this->entry_menu->Initialize(g_GlobalSettings.system_status.last_menu_index, this->next_reload_user_changed ? g_GlobalSettings.system_status.last_menu_fs_path : "");
         this->quick_menu->UpdateItems();
@@ -1101,6 +1249,11 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::HandleCloseSuspended() {
+#ifdef QDESKTOP_MODE
+        // qdesktop has no quick_menu / input_bar to refresh; suspension control
+        // moves to QdContextMenu in SP4.
+        return;
+#endif
         const auto option = g_MenuApplication->DisplayDialog(GetLanguageString("suspended_app"), GetLanguageString("suspended_app_close"), { GetLanguageString("yes"), GetLanguageString("no") }, true);
         if(option == 0) {
             this->DoTerminateApplication();
@@ -1109,6 +1262,12 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::HandleHomebrewLaunch(const Entry &hb_entry) {
+#ifdef QDESKTOP_MODE
+        // Homebrew launches will route through QdLauncher in SP4; for now,
+        // gate off the upstream dialog path that depends on input_bar etc.
+        (void)hb_entry;
+        return;
+#endif
         const auto can_launch_as_app = g_GlobalSettings.cache_hb_takeover_app_id != os::InvalidApplicationId;
         if(can_launch_as_app) {
             bool def_launch_as_app = false;
@@ -1140,10 +1299,20 @@ namespace ul::menu::ui {
     }
 
     void MainMenuLayout::StopSelection() {
+#ifdef QDESKTOP_MODE
+        // qdesktop's selection model lives on QdDesktopIconsElement; the
+        // upstream entry_menu does not exist.
+        return;
+#endif
         this->entry_menu->ResetSelection();
     }
 
     void MainMenuLayout::DoTerminateApplication() {
+#ifdef QDESKTOP_MODE
+        // qdesktop will own application termination via QdContextMenu in SP4;
+        // upstream entry_menu / sfx members are absent in this build.
+        return;
+#endif
         pu::audio::PlaySfx(this->close_suspended_sfx);
 
         auto &entries = this->entry_menu->GetEntries();

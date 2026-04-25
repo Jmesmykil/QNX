@@ -4,12 +4,26 @@
 > Phase 1.5 bridging lane: between Phase 1 (Atmosphère NROs from hbmenu) and Phase 2 (Hekate bare-metal — HELD 2026-04-18).
 > Sibling tracks: [`tools/mock-nro-desktop-gui/ROADMAP.md`](../mock-nro-desktop-gui/ROADMAP.md) (UX source) | [`tools/mock-nro-desktop/ROADMAP.md`](../mock-nro-desktop/ROADMAP.md) (TUI baseline) | [`tools/switch-nro-harness/ROADMAP.md`](../switch-nro-harness/ROADMAP.md) (correctness gate)
 
-## Live status (2026-04-18 scaffold)
+## Live status (updated 2026-04-25T08:00Z)
 
-- **Current state:** PLANNED-SCAFFOLDING — directory tree + governance docs created 2026-04-18 HST.
-- **Waiting on:** sibling agent (uLaunch Upstream Analyst) to deliver `INTEGRATION-SPEC.md` and `UPSTREAM-ANALYSIS.md` + `LICENSE-AUDIT.md` details. v0.1.0 is not promotable to READY until those land.
-- **No hardware tests yet** — nothing has been staged to SD.
-- **Phase 2 Hekate:** HELD independently. This lane does not depend on it and will not be blocked by it.
+- **Current state:** SP3.1 + SP3.2 + Telemetry v0.21 BUILT. SP3.1 VERIFIED on hardware. SP3.3 (icon population) IN FLIGHT.
+- **On hardware:** Cold Plasma Cascade wallpaper renders at 1280×720 native. Upstream icon ring is GONE. Top bar (time/date/battery/connection) renders. uSystem: upstream XorTroll v1.2.0 (fork uSystem NPDM rejected by fw 20.0.0 — tracked separately).
+- **Next deploy:** SP3.2 cursor + SP3.3 icons when agent ace69bc8 finishes.
+- **Phase 2 Hekate:** HELD independently. This lane does not depend on it.
+
+### Sub-port completion status
+
+| Sub-port | Status | Notes |
+|---|---|---|
+| SP1 — Wallpaper (Cold Plasma Cascade) | ✅ HARDWARE-VERIFIED | 1280×720 native, bilinear-scale to 1920×1080 |
+| SP2 — GPU-pool fix (8 MB → 3.5 MB) | ✅ BUILT + STAGED | 45/45 host tests |
+| SP3 — Input pump (libnx 4.x PadState) | ✅ BUILT + STAGED | 88/88 host tests; inert until SP5 |
+| SP3.1 — QDESKTOP_MODE layout ownership | ✅ HARDWARE-VERIFIED | Upstream icon ring suppressed |
+| SP3.2 — Cursor + top bar + touch remap | ✅ BUILT (hw pending) | `qd_Cursor.hpp/cpp`; touch scale 3/2 correct |
+| Telemetry v0.21 | ✅ BUILT (hw pending) | RingFile 4×512KB; boot-seq counter; 11 log strings |
+| SP3.3 — Icon population | 🔄 IN FLIGHT | Agent ace69bc8; `IconKind` discriminator + `SetApplicationEntries` + NCA icon load; build-green |
+| SP4 — OSK | 📋 PLANNED | After SP3.3 complete |
+| SP5 — Input dispatch / cursor-driver wiring | 📋 PLANNED | D-pad/cursor → FocusSurface dispatch |
 
 ## Version chain
 

@@ -10,6 +10,12 @@
 #include <ul/menu/ui/ui_Common.hpp>
 #include <ul/menu/menu_Entries.hpp>
 #include <ul/cfg/cfg_Config.hpp>
+#ifdef QDESKTOP_MODE
+#include <ul/menu/qdesktop/qd_Theme.hpp>
+#include <ul/menu/qdesktop/qd_Wallpaper.hpp>
+#include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
+#include <ul/menu/qdesktop/qd_Cursor.hpp>
+#endif
 
 namespace ul::menu::ui {
 
@@ -80,6 +86,11 @@ namespace ul::menu::ui {
             pu::audio::Sfx menu_increment_sfx;
             pu::audio::Sfx menu_decrement_sfx;
             bool next_reload_user_changed;
+#ifdef QDESKTOP_MODE
+            qdesktop::QdWallpaperElement::Ref qdesktop_wallpaper;
+            qdesktop::QdDesktopIconsElement::Ref qdesktop_icons;
+            qdesktop::QdCursorElement::Ref qdesktop_cursor;
+#endif
 
             void DoMoveTo(const std::string &new_path);
             void menu_EntryInputPressed(const u64 keys_down);

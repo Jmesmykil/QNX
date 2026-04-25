@@ -1,6 +1,7 @@
 #include <ul/fs/fs_Stdio.hpp>
 #include <ul/cfg/cfg_Config.hpp>
 #include <ul/util/util_Json.hpp>
+#include <ul/util/util_Telemetry.hpp>
 #include <ul/menu/ui/ui_MenuApplication.hpp>
 #include <ul/util/util_Size.hpp>
 #include <ul/net/net_Service.hpp>
@@ -60,6 +61,7 @@ extern "C" {
         __libnx_init_time();
 
         ul::InitializeLogging("uMenu");
+        ul::tel::Init("uMenu");
         UL_LOG_INFO("Alive!");
 
         UL_RC_ASSERT(setsysInitialize());
@@ -85,6 +87,8 @@ extern "C" {
     }
 
     void __appExit() {
+        ul::tel::Shutdown();
+
         ul::menu::smi::sf::FinalizePrivateService();
 
         // Exit RomFs manually, since we also initialized it manually

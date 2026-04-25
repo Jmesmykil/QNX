@@ -132,14 +132,19 @@ void QdWallpaperElement::GeneratePixelsInto(const QdTheme & /*theme*/, u8 *buf, 
                 }
                 const u32 dist = Isqrt64(dist_sq);
 
+                // Cycle C4: alpha cap dropped 180→110 and falloff 120→80
+                // so the blooms read as background ambience, not as
+                // foreground objects. Combined with the radii reduction in
+                // qd_Wallpaper.hpp BLOOM_RADII_CPP this kills the
+                // three-giant-glow-blob symptom the user reported on hw.
                 u32 alpha256;
                 if (dist < static_cast<u32>(r / 3)) {
-                    alpha256 = 180U;
+                    alpha256 = 110U;
                 } else {
                     const u32 fade  = static_cast<u32>(r) - dist;
                     const u32 range = static_cast<u32>(r) - static_cast<u32>(r / 3);
-                    alpha256 = (range > 0u) ? (fade * 120u / range) : 0u;
-                    if (alpha256 > 180u) { alpha256 = 180u; }
+                    alpha256 = (range > 0u) ? (fade * 80u / range) : 0u;
+                    if (alpha256 > 110u) { alpha256 = 110u; }
                 }
 
                 u8 *p = px(x, y);

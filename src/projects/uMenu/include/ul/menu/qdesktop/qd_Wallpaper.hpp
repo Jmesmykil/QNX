@@ -36,8 +36,17 @@ static constexpr u8 BLOOM_PAL_B[6] = { 0xFC, 0x99, 0xF8, 0xFC, 0xF8, 0xFA };
 static constexpr u32 BLOOM_CX[6] = { 190, 740,  1120, 320, 900, 620 };
 static constexpr u32 BLOOM_CY[6] = { 200, 110,  250,  540, 490, 360 };
 
-// Bloom radii (1280×720 native) — from wallpaper.rs BLOOM_RADII.
-static constexpr u32 BLOOM_RADII_CPP[6] = { 220, 190, 160, 200, 180, 140 };
+// Bloom radii (1280×720 native).
+//
+// Cycle C4: reduced from the Rust-PoC values { 220, 190, 160, 200, 180, 140 }
+// because at the C++ port's 1.5× SDL_RenderCopy upscale the blooms read as
+// three giant translucent disks dominating the centre of the screen on
+// hardware. The radii here are roughly 60% of the PoC values, which after
+// the 1.5× upscale lands at ~the PoC's perceived size on a 720p screen.
+// Combined with the alpha-cap drop from 180→110 in qd_Wallpaper.cpp, the
+// wallpaper now reads as background ambience instead of a foreground
+// element competing with the desktop icons.
+static constexpr u32 BLOOM_RADII_CPP[6] = { 130, 110, 96, 120, 108, 84 };
 
 // ── QdWallpaperElement ─────────────────────────────────────────────────────
 

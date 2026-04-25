@@ -728,54 +728,94 @@ namespace ul::menu::ui {
             // positions that form a clean horizontal row inside the 48 px
             // translucent backing strip drawn by QdDesktopIconsElement::OnRender.
             //
-            // The upstream ApplyConfigForElement() calls are intentionally
-            // skipped here: the JSON config was authored for the stock uLaunch
-            // layout (top-menu-bar tabs) which does NOT exist in QDESKTOP_MODE.
-            // Applying it scatters the elements across the screen instead of
-            // placing them inside the 48 px strip, causing the clutter reported
-            // by users.
+            // ApplyConfigForElement() is NOT called for any element here.
+            // The JSON config was authored for the stock uLaunch layout
+            // (top-menu-bar tabs) which does NOT exist in QDESKTOP_MODE.
+            // Applying it would scatter the elements across the screen.
             //
-            // Layout (1920×1080, 48 px top bar, vertical centre y=24):
+            // IMPORTANT — MultiTextBlock reflow:
+            // InitializeTimeText() calls ApplyConfigForElement internally
+            // (which sets wrong upstream coords), then calls UpdatePositionsSizes()
+            // which bakes child block positions at those wrong coords.
+            // After SetX/SetY we MUST call UpdatePositionsSizes() again to
+            // re-bake the children at the correct position.
             //
-            //  x=24   x=200                          x=1750 x=1820
+            // InitializeTimeText also calls this->Add(time_mtext) and
+            // this->Add(time_mtext->Get(0/1/2)) internally — do NOT call Add
+            // again for time_mtext or you get a double-add.
+            //
+            // Layout (1920×1080, 48 px top bar):
+            //
+            //  x=24   x=200                    x=1680  x=1790  x=1840
             //  ┌────────────────────────────────────────────────────┐ y=0
-            //  │ [time]  [date]           [conn icon] [battery txt] │ y=24 (centre)
+            //  │ [time]  [date]         [conn]  [batt_icon] [batt%] │ y=12/14 (text)
             //  └────────────────────────────────────────────────────┘ y=48
             //
-            //  time_mtext        : x=24,   y=12  (24 px font, centred in 48 px)
-            //  date_text         : x=200,  y=14  (22 px font, slightly lower for hierarchy)
-            //  connection_top_icon: x=1750, y=8   (32×32 icon, centred in 48 px)
-            //  battery_text      : x=1820, y=12  (same baseline as time)
-            //  battery_top_icon  : x=1750, y=8   (same slot as connection; toggled by state)
-            //  battery_charging_top_icon: same position, hidden until charging
+            //  time_mtext             : x=24,   y=12
+            //  date_text              : x=200,  y=14
+            //  connection_top_icon    : x=1680, y=8
+            //  battery_top_icon       : x=1790, y=8  (hidden when charging)
+            //  battery_charging_top_icon: x=1790, y=8 (hidden when not charging)
+            //  battery_text           : x=1840, y=12
 
+            // time_mtext: InitializeTimeText adds it to the layout internally.
+            // After SetX/SetY call UpdatePositionsSizes() to reflow child blocks.
             this->InitializeTimeText(this->time_mtext, "main_menu", "time_text");
             this->time_mtext->SetX(24);
             this->time_mtext->SetY(12);
-            this->Add(this->time_mtext);
+            this->time_mtext->UpdatePositionsSizes();
+            // Do NOT call this->Add(this->time_mtext) — InitializeTimeText already added it.
+            UL_LOG_INFO("[QDESKTOP topbar] time_mtext: x=%d y=%d w=%d h=%d",
+                this->time_mtext->GetX(), this->time_mtext->GetY(),
+                this->time_mtext->GetWidth(), this->time_mtext->GetHeight());
 
             this->date_text = pu::ui::elm::TextBlock::New(200, 14, "...");
             this->date_text->SetColor(g_MenuApplication->GetTextColor());
             this->Add(this->date_text);
+            // Re-apply position after Add() in case Plutonium resets it.
+            this->date_text->SetX(200);
+            this->date_text->SetY(14);
+            UL_LOG_INFO("[QDESKTOP topbar] date_text: x=%d y=%d w=%d h=%d",
+                this->date_text->GetX(), this->date_text->GetY(),
+                this->date_text->GetWidth(), this->date_text->GetHeight());
 
             // Top-bar right-side layout (all coords in 1920×1080 layout space):
-            //   x=1680  connection icon  (~32 px wide → ends ~1712)
-            //   x=1790  battery icon     (~32 px wide → ends ~1822)
-            //   x=1840  battery text     ("100%" ~60 px wide → ends ~1900)
-            // 68-px gap between connection and battery; 18-px gap between battery
-            // icon and text.  Tight but clear at 1920 canvas width.
+            //   x=1680  connection icon  (~32 px wide -> ends ~1712)
+            //   x=1790  battery icon     (~32 px wide -> ends ~1822)
+            //   x=1840  battery text     ("100%" ~60 px wide -> ends ~1900)
             this->connection_top_icon = pu::ui::elm::Image::New(1680, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Connection/None"));
             this->Add(this->connection_top_icon);
-
-            this->battery_text = pu::ui::elm::TextBlock::New(1840, 12, "...");
-            this->battery_text->SetColor(g_MenuApplication->GetTextColor());
-            this->Add(this->battery_text);
+            // Re-apply position after Add() as insurance.
+            this->connection_top_icon->SetX(1680);
+            this->connection_top_icon->SetY(8);
+            UL_LOG_INFO("[QDESKTOP topbar] connection_top_icon: x=%d y=%d w=%d h=%d",
+                this->connection_top_icon->GetX(), this->connection_top_icon->GetY(),
+                this->connection_top_icon->GetWidth(), this->connection_top_icon->GetHeight());
 
             this->battery_top_icon = pu::ui::elm::Image::New(1790, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/100"));
             this->battery_charging_top_icon = pu::ui::elm::Image::New(1790, 8, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/Charging"));
             this->battery_charging_top_icon->SetVisible(false);
             this->Add(this->battery_top_icon);
+            this->battery_top_icon->SetX(1790);
+            this->battery_top_icon->SetY(8);
+            UL_LOG_INFO("[QDESKTOP topbar] battery_top_icon: x=%d y=%d w=%d h=%d",
+                this->battery_top_icon->GetX(), this->battery_top_icon->GetY(),
+                this->battery_top_icon->GetWidth(), this->battery_top_icon->GetHeight());
             this->Add(this->battery_charging_top_icon);
+            this->battery_charging_top_icon->SetX(1790);
+            this->battery_charging_top_icon->SetY(8);
+            UL_LOG_INFO("[QDESKTOP topbar] battery_charging_top_icon: x=%d y=%d w=%d h=%d",
+                this->battery_charging_top_icon->GetX(), this->battery_charging_top_icon->GetY(),
+                this->battery_charging_top_icon->GetWidth(), this->battery_charging_top_icon->GetHeight());
+
+            this->battery_text = pu::ui::elm::TextBlock::New(1840, 12, "...");
+            this->battery_text->SetColor(g_MenuApplication->GetTextColor());
+            this->Add(this->battery_text);
+            this->battery_text->SetX(1840);
+            this->battery_text->SetY(12);
+            UL_LOG_INFO("[QDESKTOP topbar] battery_text: x=%d y=%d w=%d h=%d",
+                this->battery_text->GetX(), this->battery_text->GetY(),
+                this->battery_text->GetWidth(), this->battery_text->GetHeight());
 
             // ── Cursor (LAST, renders on top of icons + top bar) ─────────
             // Plutonium dispatches OnInput per-element each frame, so the

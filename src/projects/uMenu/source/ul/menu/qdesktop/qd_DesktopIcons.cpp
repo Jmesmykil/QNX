@@ -827,6 +827,7 @@ void QdDesktopIconsElement::LaunchIcon(size_t i) {
     switch (entry.kind) {
         case IconKind::Builtin:
             // dock_slot 0 = Vault file browser.
+            // dock_slot 3 = Control (Settings) panel.
             if (entry.dock_slot == 0) {
                 if (g_MenuApplication) {
                     g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Vault);
@@ -861,43 +862,48 @@ void QdDesktopIconsElement::LaunchIcon(size_t i) {
 
         case IconKind::Application:
             if (entry.app_id != 0) {
+                // Cycle D2 (revert C2): restore SP4.10 ordering.
+                //
+                // C2 inverted to FadeOut → Launch → Finalize to mirror the
+                // upstream non-QDESKTOP path. That broke Pokemon and every
+                // other Switch game on hardware. Root cause:
+                // FadeOutToNonLibraryApplet ends with
+                // appletClearCaptureBuffer(AppletCaptureSharedBuffer_CallerApplet),
+                // which is only valid in upstream's AppletHolder mode. In
+                // QDESKTOP_MODE uMenu runs as a regular Application and that
+                // capture slot isn't ours — Horizon either rejects the write
+                // or it lands at the wrong moment, leaving the launched title
+                // to read corrupt buffer state on first vsync.
+                //
+                // SP4.10 order (Launch first, fade after on success) worked
+                // because Horizon's own transition machinery commits to the
+                // foreground swap on the smi::LaunchApplication response,
+                // BEFORE FadeOutToNonLibraryApplet runs its (rogue) capture
+                // write — which then becomes harmless because uMenu is
+                // already past the handoff.
+                //
+                // We keep C2's null-guard at the top because that part was
+                // genuinely useful (avoids a crash when g_MenuApplication is
+                // already torn down). We DO NOT call FadeIn / ShowNotification
+                // on launch failure: in QDESKTOP_MODE the desktop is still
+                // visible (we never started a fade), so simple log + return
+                // suffices.
                 if (g_MenuApplication == nullptr) {
                     UL_LOG_WARN("qdesktop: LaunchApplication: g_MenuApplication"
                                 " null — skipping launch of 0x%016llx",
                                 static_cast<unsigned long long>(entry.app_id));
                     return;
                 }
-                // Cycle C2 fix: invert the order to match upstream's canonical
-                // pattern (ui_MainMenuLayout.cpp:255-265). Previously we
-                // launched first then faded out, which races: the game tries
-                // to take foreground before our fade animation completes, the
-                // applet state machine sees two foreground claimants
-                // simultaneously, and the game crash-loops on first frame.
-                //
-                // Correct order:
-                //   1. FadeOutToNonLibraryApplet()   - hands foreground claim
-                //   2. smi::LaunchApplication(rc)    - queues game launch
-                //   3a. R_SUCCEEDED → Finalize()    - terminate uMenu cleanly
-                //   3b. R_FAILED   → FadeIn + ResetFade + ShowNotification
-                //                   (recover gracefully so the desktop is usable
-                //                    again without a reboot)
-                UL_LOG_INFO("qdesktop: LaunchApplication 0x%016llx — fade out first",
-                            static_cast<unsigned long long>(entry.app_id));
-                g_MenuApplication->FadeOutToNonLibraryApplet();
                 const Result rc = smi::LaunchApplication(entry.app_id);
                 if (R_SUCCEEDED(rc)) {
-                    UL_LOG_INFO("qdesktop: LaunchApplication ok 0x%016llx — Finalize uMenu",
+                    UL_LOG_INFO("qdesktop: LaunchApplication ok 0x%016llx — fade + Finalize",
                                 static_cast<unsigned long long>(entry.app_id));
+                    g_MenuApplication->FadeOutToNonLibraryApplet();
                     g_MenuApplication->Finalize();
                 } else {
-                    UL_LOG_WARN("qdesktop: LaunchApplication(0x%016llx) failed rc=0x%X — recovering",
+                    UL_LOG_WARN("qdesktop: LaunchApplication(0x%016llx) failed rc=0x%X — desktop stays live",
                                 static_cast<unsigned long long>(entry.app_id),
                                 static_cast<unsigned>(rc));
-                    g_MenuApplication->FadeIn();
-                    g_MenuApplication->ResetFade();
-                    g_MenuApplication->ShowNotification(
-                        ::ul::menu::ui::GetLanguageString("app_launch_error")
-                        + ": " + ::ul::util::FormatResultDisplay(rc));
                 }
             }
             return;

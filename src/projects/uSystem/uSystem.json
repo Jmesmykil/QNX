@@ -4,11 +4,11 @@
     "program_id_range_min": "0x0100000000001000",
     "program_id_range_max": "0x0100000000001000",
     "main_thread_stack_size": "0x0100000",
-    "system_resource_size": "0xE00000",
+    "system_resource_size": "0xC00000",
     "main_thread_priority": 40,
     "default_cpu_id": 3,
     "is_retail": true,
-    "pool_partition": 2,
+    "pool_partition": 1,
     "is_64_bit": true,
     "address_space_type": 3,
     "filesystem_access": {

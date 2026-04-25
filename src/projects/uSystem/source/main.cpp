@@ -193,7 +193,11 @@ namespace {
 
     // libstratosphere heap: used for malloc/free/new/delete and everything using them
     // We specially need to take into account app icon/NACP caching (it's around 0.14MB per app) plus thread stack buffers, vectors and so on
-    constexpr size_t LibstratosphereHeapSize = 10_MB;
+    // SP4.15.1 hotfix: revert cycleE0's untested 20→10 MB tightening.  At 10 MB
+    // the boot path crashes (black screen on hardware test 2026-04-25).  20 MB
+    // matches the SP4.13 hardware-validated baseline and is what every shipped
+    // build through SP4.14 used.  Re-tune only with hardware verification.
+    constexpr size_t LibstratosphereHeapSize = 20_MB;
     alignas(ams::os::MemoryPageSize) constinit u8 g_LibstratosphereHeap[LibstratosphereHeapSize];
 
     // libnx heap: used for internal malloc_r/etc called by stdlib stuff, thus a modest size is enough

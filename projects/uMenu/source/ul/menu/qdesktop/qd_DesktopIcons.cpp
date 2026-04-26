@@ -18,6 +18,7 @@
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
+#include <unordered_map>
 
 // Pull in SDL2 directly (sdl2_Types.hpp aliases Renderer = SDL_Renderer*).
 #include <SDL2/SDL.h>
@@ -1670,42 +1671,41 @@ void QdDesktopIconsElement::SetSpecialEntries(
         { ET::SpecialEntryAmiibo,      "Amiibo",      'A', 0xF0, 0x70, 0xC0 },
     };
 
-    // Lookup helper for the static table.
-    auto find_def = [](ET t) -> const SpecialDef * {
-        for (const auto &d : SPECIAL_DEFS) {
-            if (d.type == t) {
-                return &d;
-            }
+    // v1.2.7 fix for first-boot Special-entry invisibility:
+    // Iterate the static SPECIAL_DEFS table unconditionally rather than
+    // filtering the input vector. The input vector becomes a localized-name
+    // override map. This avoids the bug where LoadEntries returns empty in
+    // applet-mode privilege denial (rc=0x1F800), the records.bin fallback
+    // wipes specials (records.bin contains apps only), and SetSpecialEntries
+    // ends up with zero IsSpecial() matches in `entries`. The launch path
+    // already keys off special_subtype, not entry_path, so the desktop click
+    // dispatch works without an .m.json file on disk.
+    std::unordered_map<ET, std::string> name_overrides;
+    for (const auto &entry : entries) {
+        if (entry.IsSpecial() && !entry.control.name.empty()) {
+            name_overrides.emplace(entry.type, entry.control.name);
         }
-        return nullptr;
-    };
+    }
 
     size_t added = 0;
-    for (const auto &entry : entries) {
+    for (const auto &def : SPECIAL_DEFS) {
         if (icon_count_ >= MAX_ICONS) {
             break;
-        }
-        if (!entry.IsSpecial()) {
-            continue;
-        }
-        const SpecialDef *def = find_def(entry.type);
-        if (def == nullptr) {
-            continue;
         }
 
         NroEntry &e = icons_[icon_count_];
 
-        // Display name: prefer the localised control name, fall back to def.
-        if (!entry.control.name.empty()) {
-            snprintf(e.name, sizeof(e.name), "%s", entry.control.name.c_str());
+        auto it = name_overrides.find(def.type);
+        if (it != name_overrides.end()) {
+            snprintf(e.name, sizeof(e.name), "%s", it->second.c_str());
         } else {
-            snprintf(e.name, sizeof(e.name), "%s", def->fallback_name);
+            snprintf(e.name, sizeof(e.name), "%s", def.fallback_name);
         }
 
-        e.glyph    = def->glyph;
-        e.bg_r     = def->r;
-        e.bg_g     = def->g;
-        e.bg_b     = def->b;
+        e.glyph    = def.glyph;
+        e.bg_r     = def.r;
+        e.bg_g     = def.g;
+        e.bg_b     = def.b;
 
         e.nro_path[0]  = '\0';
         e.icon_path[0] = '\0';
@@ -1715,13 +1715,13 @@ void QdDesktopIconsElement::SetSpecialEntries(
         e.icon_loaded  = false;
         e.kind         = IconKind::Special;
         e.app_id       = 0;
-        e.special_subtype = static_cast<u16>(entry.type);
+        e.special_subtype = static_cast<u16>(def.type);
 
         ++icon_count_;
         ++added;
     }
 
-    UL_LOG_INFO("qdesktop: SetSpecialEntries: in=%zu added=%zu total=%zu",
+    UL_LOG_INFO("qdesktop: SetSpecialEntries: in=%zu added=%zu total=%zu (table-driven)",
                 entries.size(), added, icon_count_);
 }
 

@@ -8,9 +8,6 @@
 namespace ul::menu::ui {
 
     class IMenuLayout : public pu::ui::Layout {
-        public:
-            static constexpr u32 TimeDotsAnimStepCount = 60;
-
         private:
             RecursiveMutex msg_queue_lock;
             std::queue<ul::smi::MenuMessageContext> msg_queue;
@@ -23,9 +20,6 @@ namespace ul::menu::ui {
 
             os::Time last_time;
             os::Date last_date;
-
-            u32 time_anim_frame;
-            bool time_anim_dots;
 
         protected:
             void UpdateConnectionTopIcon(pu::ui::elm::Image::Ref &icon);
@@ -47,7 +41,15 @@ namespace ul::menu::ui {
             virtual void OnMenuUpdate() {}
             
             virtual bool OnHomeButtonPress() = 0;
-            
+
+            // Q OS cycle SP4.14: invoked when uSystem forwards a long-press
+            // (OS-level AppletMessage_DetectLongPressingHomeButton).  Default
+            // is a no-op that returns true (consume).  qdesktop's
+            // MainMenuLayout overrides this to open the dev mini-menu;
+            // upstream layouts (Settings/Themes/Lockscreen/Startup) keep
+            // the default since they have no surface for a dev menu.
+            virtual bool OnHomeButtonLongPress() { return true; }
+
             virtual void LoadSfx() = 0;
             virtual void DisposeSfx() = 0;
     };

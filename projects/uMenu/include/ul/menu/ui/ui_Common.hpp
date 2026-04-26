@@ -29,6 +29,90 @@ namespace ul::menu::ui {
         return pu::sdl2::TextureHandle::New(TryFindLoadImage(path_no_ext));
     }
 
+    // Skip active-theme override; load directly from romfs:/default. Used for
+    // elements where the K-cycle Q OS-branded asset MUST win over any inherited
+    // upstream theme PNGs (top-bar status icons in particular).
+    pu::sdl2::Texture TryFindLoadImageDefaultOnly(const std::string &path_no_ext);
+    pu::sdl2::TextureHandle::Ref TryFindLoadImageHandleDefaultOnly(const std::string &path_no_ext);
+
+    // Cycle J-fix (system-wide text auto-fit, NO ELLIPSIS):
+    // Renders text shrinking the font size progressively so the rasterised
+    // width fits within max_w pixels. Returns an owned SDL_Texture* (caller
+    // must SDL_DestroyTexture) or nullptr.
+    //
+    // Size chain (largest -> smallest), skips entries larger than start_size:
+    //   Built-in: Large(45) -> MediumLarge(37) -> Medium(30) -> Small(27)
+    //   Extra:    22 -> 18 -> 14   (registered in main.cpp via
+    //                               renderer_opts.AddExtraDefaultFontSize)
+    //
+    // CRITICAL: this function NEVER calls RenderText with max_width set,
+    // because Plutonium's RenderText(..., max_width) branch truncates the
+    // string and appends "..." (render_Renderer.cpp:375). That ellipsis
+    // path is exactly what the user reported needing to kill. We instead
+    // try smaller font sizes; if even 14 px overflows, we accept the small
+    // overflow (the icon's adjacent gap absorbs it visually).
+    //
+    // Use for: icon labels, login user-card name, dev menu rows, any UI text
+    // whose container width is fixed but content length varies.
+    inline SDL_Texture *RenderTextAutoFit(const std::string &text,
+                                          const pu::ui::Color color,
+                                          const u32 max_w,
+                                          const pu::ui::DefaultFontSize start_size = pu::ui::DefaultFontSize::Medium) {
+        // Built-in default sizes, largest first. Skip until we hit start_size.
+        static constexpr pu::ui::DefaultFontSize kBuiltinSizes[] = {
+            pu::ui::DefaultFontSize::Large,
+            pu::ui::DefaultFontSize::MediumLarge,
+            pu::ui::DefaultFontSize::Medium,
+            pu::ui::DefaultFontSize::Small,
+        };
+        // Extra sizes below the built-in 27 px Small floor. Must be registered
+        // via RendererInitOptions::AddExtraDefaultFontSize at app init.
+        static constexpr u32 kExtraSizes[] = { 22u, 18u, 14u };
+
+        SDL_Texture *last = nullptr;
+        bool past_start = false;
+        for (const auto sz : kBuiltinSizes) {
+            if (!past_start) {
+                if (sz != start_size) {
+                    continue;
+                }
+                past_start = true;
+            }
+            SDL_Texture *tex = pu::ui::render::RenderText(
+                pu::ui::GetDefaultFont(sz), text, color);
+            if (tex == nullptr) {
+                continue;
+            }
+            int w = 0, h = 0;
+            SDL_QueryTexture(tex, nullptr, nullptr, &w, &h);
+            if (static_cast<u32>(w) <= max_w) {
+                if (last != nullptr) { SDL_DestroyTexture(last); }
+                return tex;
+            }
+            if (last != nullptr) { SDL_DestroyTexture(last); }
+            last = tex;
+        }
+        // Built-in chain exhausted — try the extra small sizes.
+        for (const auto px : kExtraSizes) {
+            SDL_Texture *tex = pu::ui::render::RenderText(
+                pu::ui::MakeDefaultFontName(px), text, color);
+            if (tex == nullptr) {
+                continue;
+            }
+            int w = 0, h = 0;
+            SDL_QueryTexture(tex, nullptr, nullptr, &w, &h);
+            if (static_cast<u32>(w) <= max_w) {
+                if (last != nullptr) { SDL_DestroyTexture(last); }
+                return tex;
+            }
+            if (last != nullptr) { SDL_DestroyTexture(last); }
+            last = tex;
+        }
+        // Even the smallest extra (14 px) overflowed. Return it anyway; small
+        // overflow into icon gap is acceptable, ellipsis is not.
+        return last;
+    }
+
     void InitializeResources();
     void DisposeAllBgm();
 

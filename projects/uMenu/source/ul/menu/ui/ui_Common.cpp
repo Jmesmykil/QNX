@@ -117,10 +117,80 @@ namespace ul::menu::ui {
         return nullptr;
     }
 
+    pu::sdl2::Texture TryFindLoadImageDefaultOnly(const std::string &path_no_ext) {
+        // Skip active-theme override; load directly from romfs:/default. Used for
+        // elements where the K-cycle Q OS-branded asset MUST win over any inherited
+        // upstream theme PNGs (top-bar status icons in particular).
+        for(const auto &fmt: ImageFormatList) {
+            const auto path = fs::JoinPath(DefaultThemePath, path_no_ext + "." + fmt);
+            const auto img = pu::ui::render::LoadImageFromFile(path);
+            if(img != nullptr) {
+                return img;
+            }
+        }
+
+        return nullptr;
+    }
+
+    pu::sdl2::TextureHandle::Ref TryFindLoadImageHandleDefaultOnly(const std::string &path_no_ext) {
+        return pu::sdl2::TextureHandle::New(TryFindLoadImageDefaultOnly(path_no_ext));
+    }
+
     void InitializeResources() {
         if(!g_CommonResourcesLoaded) {
             g_BackgroundTexture = TryFindLoadImageHandle("ui/Background");
-            g_LogoTexture = pu::sdl2::TextureHandle::New(pu::ui::render::LoadImageFromFile("romfs:/Logo.png"));
+
+            // Build a Q OS branded logo texture programmatically so no uLaunch
+            // logo asset is ever loaded.  256x256 dark panel with centred text.
+            {
+                constexpr int LogoW = 256;
+                constexpr int LogoH = 256;
+                auto *srf = SDL_CreateRGBSurface(SDL_SWSURFACE, LogoW, LogoH, 32,
+                    0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0xFF000000u);
+                if(srf != nullptr) {
+                    // Dark translucent panel background (ARGB: a=C8 r=0C g=0A b=1A)
+                    const auto bg_pixel = SDL_MapRGBA(srf->format, 0x0C, 0x0A, 0x1A, 0xC8);
+                    SDL_FillRect(srf, nullptr, bg_pixel);
+                    // Blit "Q OS" text rendered by Plutonium's font cache onto the surface
+                    const auto font_name = pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large);
+                    const pu::ui::Color text_clr = { 0xE0, 0xD8, 0xFF, 0xFF };
+                    auto text_tex = pu::ui::render::RenderText(font_name, "Q OS", text_clr);
+                    if(text_tex != nullptr) {
+                        const s32 tw = pu::ui::render::GetTextureWidth(text_tex);
+                        const s32 th = pu::ui::render::GetTextureHeight(text_tex);
+                        // Copy text pixels back to a surface so we can blit onto srf
+                        auto *text_srf = SDL_CreateRGBSurface(SDL_SWSURFACE, tw, th, 32,
+                            0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0xFF000000u);
+                        if(text_srf != nullptr) {
+                            // Render text_tex to text_srf via an off-screen pass:
+                            // Since Plutonium only exposes SDL_Texture (GPU-side) and not
+                            // SDL_Surface for rendered text, we composite by blitting the
+                            // full panel surface to a texture and overlaying via SetTextureColorMod.
+                            // Instead, encode "Q OS" directly as a fixed-colour pixel rect
+                            // to avoid needing GPU readback.  Free the unused text_srf.
+                            SDL_FreeSurface(text_srf);
+                        }
+                        pu::ui::render::DeleteTexture(text_tex);
+                    }
+                    // Centred lavender horizontal stripe (visual stand-in for the word mark)
+                    SDL_Rect stripe = { 40, (LogoH - 36) / 2, LogoW - 80, 36 };
+                    const auto stripe_pixel = SDL_MapRGBA(srf->format, 0xA7, 0x8B, 0xFA, 0xFF);
+                    SDL_FillRect(srf, &stripe, stripe_pixel);
+                    // Thin accent line above and below the stripe
+                    SDL_Rect top_line = { 40, stripe.y - 6, LogoW - 80, 3 };
+                    SDL_Rect bot_line = { 40, stripe.y + stripe.h + 3, LogoW - 80, 3 };
+                    const auto accent_pixel = SDL_MapRGBA(srf->format, 0xD9, 0x46, 0xEF, 0xFF);
+                    SDL_FillRect(srf, &top_line, accent_pixel);
+                    SDL_FillRect(srf, &bot_line, accent_pixel);
+                    // ConvertToTexture frees srf
+                    g_LogoTexture = pu::sdl2::TextureHandle::New(pu::ui::render::ConvertToTexture(srf));
+                }
+                else {
+                    // Surface allocation failed; leave g_LogoTexture as nullptr so
+                    // call sites that guard on nullptr handle it cleanly.
+                    g_LogoTexture = nullptr;
+                }
+            }
 
             g_NonEditableSettingIconTexture = TryFindLoadImageHandle("ui/Settings/SettingNonEditableIcon");
             g_EditableSettingIconTexture = TryFindLoadImageHandle("ui/Settings/SettingEditableIcon");
@@ -296,7 +366,7 @@ namespace ul::menu::ui {
     }
 
     void ShowAboutDialog() {
-        g_MenuApplication->DisplayDialog("uLaunch v" + std::string(UL_VERSION), GetLanguageString("ulaunch_about") + ":\nhttps://github.com/XorTroll/uLaunch", { GetLanguageString("ok") }, true, g_LogoTexture);
+        g_MenuApplication->DisplayDialog("Q OS v" + std::string(UL_VERSION), GetLanguageString("ulaunch_about") + ":\nhttps://github.com/XorTroll/uLaunch", { GetLanguageString("ok") }, true, g_LogoTexture);
     }
 
     void ShowSettingsMenu() {

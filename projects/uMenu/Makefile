@@ -19,7 +19,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	source source/ul source/ul/menu source/ul/menu/am source/ul/menu/smi source/ul/menu/smi/sf source/ul/menu/bt source/ul/menu/ui source/ul/menu/ui/menu
+SOURCES		:=	source source/ul source/ul/audio source/ul/menu source/ul/menu/am source/ul/menu/smi source/ul/menu/smi/sf source/ul/menu/bt source/ul/menu/ui source/ul/menu/ui/menu source/ul/menu/qos source/ul/menu/qdesktop
 DATA		:=	data
 INCLUDES	:=	include
 EXEFS_SRC	:=	exefs_src
@@ -30,6 +30,13 @@ EXEFS_SRC	:=	exefs_src
 ARCH	:=	-march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -Wl,-wrap,libappletLaunch -Wl,-wrap,libappletStart
 
 CFLAGS	:=	-g -O2 -ffunction-sections -Wall -Werror $(ARCH) $(DEFINES)
+
+# Q OS desktop mode: replaces upstream uLaunch icon-ring + top menu with the
+# qdesktop layer (wallpaper + icons + dock + cursor + HUD). Defined here so
+# every TU in uMenu sees it consistently; the gate is checked in
+# ui_MainMenuLayout (early-return per method) so the upstream class stays
+# intact and a single-line revert restores stock behaviour.
+CFLAGS	+=	-DQDESKTOP_MODE
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__ $(UL_DEFS)
 

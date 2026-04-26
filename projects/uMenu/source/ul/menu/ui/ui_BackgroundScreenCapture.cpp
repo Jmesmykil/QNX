@@ -35,6 +35,16 @@ namespace ul::menu::ui {
     }
     
     void InitializeScreenCaptures(const smi::MenuStartMode start_mode) {
+#ifdef QDESKTOP_MODE
+        // In QDESKTOP_MODE the wallpaper is the Cold Plasma Cascade texture;
+        // the upstream appletGetLastForegroundCaptureImageEx path is unused and
+        // blocks ~7.8 s synchronously on cold boot.  Skip the entire capture
+        // path and leave g_ScreenCaptureBackground as an empty image.
+        UL_LOG_INFO("InitializeScreenCaptures: QDESKTOP_MODE — skipping applet capture (avoids ~7.8 s cold-boot stall)");
+        g_ScreenCaptureBackground = RawRgbaImage::New(0, 0);
+        g_ScreenCaptureBackgroundMinimumAlpha = (u8)GetRequiredUiValue<u32>("suspended_app_final_alpha");
+        (void)start_mode;
+#else
         g_ScreenCaptureBackground = RawRgbaImage::New(0, 0);
         if(start_mode != smi::MenuStartMode::StartupMenuPostBoot) {
             auto capture_buf = new u8[CaptureBufferSize]();
@@ -57,6 +67,7 @@ namespace ul::menu::ui {
         }
 
         g_ScreenCaptureBackgroundMinimumAlpha = (u8)GetRequiredUiValue<u32>("suspended_app_final_alpha");
+#endif
     }
 
     RawRgbaImage::Ref GetScreenCaptureBackground() {

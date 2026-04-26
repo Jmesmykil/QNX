@@ -10,6 +10,13 @@
 #include <ul/menu/ui/ui_Common.hpp>
 #include <ul/menu/menu_Entries.hpp>
 #include <ul/cfg/cfg_Config.hpp>
+#ifdef QDESKTOP_MODE
+#include <ul/menu/qdesktop/qd_Theme.hpp>
+#include <ul/menu/qdesktop/qd_Wallpaper.hpp>
+#include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
+#include <ul/menu/qdesktop/qd_Cursor.hpp>
+#include <ul/menu/bt/bt_Manager.hpp>
+#endif
 
 namespace ul::menu::ui {
 
@@ -80,6 +87,19 @@ namespace ul::menu::ui {
             pu::audio::Sfx menu_increment_sfx;
             pu::audio::Sfx menu_decrement_sfx;
             bool next_reload_user_changed;
+#ifdef QDESKTOP_MODE
+            qdesktop::QdWallpaperElement::Ref qdesktop_wallpaper;
+            qdesktop::QdDesktopIconsElement::Ref qdesktop_icons;
+            qdesktop::QdCursorElement::Ref qdesktop_cursor;
+            // Cycle D5 (SP4.12): timestamp of the most recent Home-button
+            // press, in nanoseconds (armTicksToNs(armGetSystemTick())).
+            // Two presses within 600 ms open the dev mini-menu; otherwise
+            // single presses are no-ops.  0 = "no prior press recorded".
+            u64 qdesktop_last_home_press_ns = 0ULL;
+            // K-cycle Track B: Bluetooth top-bar icon (hidden when no BT audio device connected)
+            pu::ui::elm::Image::Ref qdesktop_bt_top_icon;
+            bool qdesktop_last_bt_connected = false;
+#endif
 
             void DoMoveTo(const std::string &new_path);
             void menu_EntryInputPressed(const u64 keys_down);
@@ -137,6 +157,17 @@ namespace ul::menu::ui {
             void DisposeSfx() override;
 
             void MoveTo(const std::string &new_path, const bool fade, std::function<void()> action = nullptr);
+
+#ifdef QDESKTOP_MODE
+            // K-cycle Track D: accessor for QdLaunchpad to snapshot the
+            // current desktop icon list.  Returns the live element (NOT a
+            // copy); callers must treat it as read-only.  May return nullptr
+            // pre-construction (qdesktop_icons is created in MainMenuLayout's
+            // ctor under the QDESKTOP_MODE branch).
+            inline qdesktop::QdDesktopIconsElement::Ref GetQdesktopIcons() {
+                return this->qdesktop_icons;
+            }
+#endif
 
             inline void MoveToRoot(const bool fade, std::function<void()> action = nullptr) {
                 this->cur_folder_path = "";

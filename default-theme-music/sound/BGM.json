@@ -1,8 +1,8 @@
 {
     "main_menu": {
         "bgm_loop": true,
-        "bgm_fade_in_ms": 1500,
-        "bgm_fade_out_ms": 500
+        "bgm_fade_in_ms": 400,
+        "bgm_fade_out_ms": 250
     },
     "startup_menu": {
         "bgm_loop": false,
@@ -11,12 +11,12 @@
     },
     "themes_menu": {
         "bgm_loop": true,
-        "bgm_fade_in_ms": 1500,
-        "bgm_fade_out_ms": 500
+        "bgm_fade_in_ms": 400,
+        "bgm_fade_out_ms": 250
     },
     "settings_menu": {
         "bgm_loop": true,
-        "bgm_fade_in_ms": 1500,
-        "bgm_fade_out_ms": 500
+        "bgm_fade_in_ms": 400,
+        "bgm_fade_out_ms": 250
     }
 }

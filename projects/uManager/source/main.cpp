@@ -1,5 +1,6 @@
 #include <ul/man/ui/ui_MainApplication.hpp>
 #include <ul/sf/sf_PublicService.hpp>
+#include <ul/man/man_AppScanner.hpp>
 
 ul::man::ui::MainApplication::Ref g_MainApplication;
 
@@ -10,7 +11,18 @@ namespace {
 
     void Initialize() {
         UL_RC_ASSERT(nsInitialize());
-        
+
+        // Q OS v0.2.3 — scan installed titles and write records.bin + icons to
+        // sdmc:/switch/qos-apps/ so hbloader-hosted mocks can read them.
+        // Runs before the UI loop; failures are non-fatal (summary logged below).
+        const auto scan = ul::man::ScanAndWriteAppList();
+        UL_LOG_INFO("QOS_APP_SCAN: ok=%d count=%u bin=%zu icons=%zu summary=%s",
+                    scan.ok ? 1 : 0,
+                    scan.count,
+                    scan.bin_size,
+                    scan.icons_total_bytes,
+                    scan.summary.c_str());
+
         g_IsAvailable = ul::sf::IsAvailable();
         if(g_IsAvailable) {
             UL_RC_ASSERT(ul::sf::Initialize());

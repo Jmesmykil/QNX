@@ -1,12 +1,15 @@
 #include <ul/fs/fs_Stdio.hpp>
 #include <ul/cfg/cfg_Config.hpp>
 #include <ul/util/util_Json.hpp>
+#include <ul/util/util_Telemetry.hpp>
+#include <cstdlib>
 #include <ul/menu/ui/ui_MenuApplication.hpp>
 #include <ul/util/util_Size.hpp>
 #include <ul/net/net_Service.hpp>
 #include <ul/menu/smi/sf/sf_PrivateService.hpp>
 #include <ul/menu/am/am_LibraryAppletUtils.hpp>
 #include <ul/menu/am/am_LibnxLibappletWrap.hpp>
+#include <ul/audio/audio_SystemVolume.hpp>
 
 using namespace ul::util::size;
 
@@ -60,6 +63,14 @@ extern "C" {
         __libnx_init_time();
 
         ul::InitializeLogging("uMenu");
+        ul::tel::Init("uMenu");
+        // Flush the async SPSC telemetry queue on normal C-library exit (covers
+        // the Home-button-press-from-library-applet path which calls C atexit
+        // handlers before __appExit).  Crashes that skip atexit still get
+        // synchronous WARN/CRIT entries via EmitSync; BOOT markers are already
+        // written synchronously in tel::Init.  This captures best-effort INFO
+        // messages accumulated since the last periodic flush.
+        std::atexit([] { ul::tel::Flush(); });
         UL_LOG_INFO("Alive!");
 
         UL_RC_ASSERT(setsysInitialize());
@@ -85,6 +96,9 @@ extern "C" {
     }
 
     void __appExit() {
+        ul::tel::Shutdown();
+
+        ul::audio::FinalizeSystemVolume();
         ul::menu::smi::sf::FinalizePrivateService();
 
         // Exit RomFs manually, since we also initialized it manually
@@ -260,10 +274,22 @@ namespace {
         renderer_opts.AddDefaultSharedFont(PlSharedFontType_NintendoExt);
         renderer_opts.UseImage(pu::ui::render::ImgAllFlags);
 
+        // Cycle J-fix: register extra small font sizes so RenderTextAutoFit
+        // (in ui_Common.hpp) can shrink long icon labels and account names
+        // below Plutonium's built-in 27 px Small floor before they hit the
+        // ellipsis-truncation branch in render_Renderer.cpp:375. Without
+        // these, "Pokemon Legends: Z-A" can't fit in a 120 px icon cell at
+        // any built-in size and Plutonium chops to "Pokemon Lege..." which
+        // the user reported in the J-cycle test.
+        renderer_opts.AddExtraDefaultFontSize(22);
+        renderer_opts.AddExtraDefaultFontSize(18);
+        renderer_opts.AddExtraDefaultFontSize(14);
+
         auto renderer = pu::ui::render::Renderer::New(renderer_opts);
         g_MenuApplication = ul::menu::ui::MenuApplication::New(renderer);
 
         UL_ASSERT_TRUE(pu::audio::Initialize(MIX_INIT_MP3));
+        ul::audio::InitializeSystemVolume();
 
         g_MenuApplication->Initialize(g_StartMode);
         ul::menu::ui::RegisterMenuOnMessageDetect();

@@ -1,7 +1,8 @@
-// qd_PowerButton.hpp — Single power-action button for the Q OS login screen.
-// Renders a pill-shaped 180×64 element: ASCII glyph + label on a translucent
+// qd_PowerButton.hpp -- Single power-action button for the Q OS login screen.
+// Renders a pill-shaped 180x64 element: PNG glyph icon + label on a translucent
 // panel, focus ring when selected, 50% alpha when disabled.
-// All rendering via SDL2 primitives + Plutonium TTF text cache.
+// Glyph icons load from ui/Main/PowerIcon/<Restart|Shutdown|Sleep|Hekate>.png.
+// All rendering via SDL2 primitives + Plutonium TextureHandle.
 // Owned file: do not edit from other agents.
 #pragma once
 #include <pu/Plutonium>
@@ -46,11 +47,15 @@ public:
     static constexpr s32 BTN_H = 64;
 
 private:
-    // ── Returns the single ASCII glyph character for each Kind ───────────────
-    // Restart='R', Shutdown='P', Sleep='Z', Hekate='H', Custom='*'
-    static char GlyphChar(Kind k);
+    // Returns the PNG asset basename for each Kind (e.g. "Restart", "Hekate").
+    // Custom returns "Custom" but ships no default asset; OnRender skips draw
+    // when the lazy-loaded handle is null, so the panel still renders.
+    static const char *GlyphAssetName(Kind k);
 
-    // ── Lazy-load the glyph texture (MediumLarge font, white) ────────────────
+    // Lazy-load the glyph texture from ui/Main/PowerIcon/<name>.png via
+    // TryFindLoadImageHandle. Sets glyph_tex_handle_ to a wrapping
+    // TextureHandle::Ref; the inner SDL_Texture* may still be nullptr if the
+    // asset is missing (graceful degrade).
     void EnsureGlyphTexture();
 
     // ── Lazy-load the label texture (Medium font, theme.text_primary) ─────────
@@ -71,8 +76,9 @@ private:
 
     OnClickFn     on_click_;
 
-    // Cached text textures (nullptr = not yet rendered).
-    SDL_Texture  *glyph_tex_;   // single ASCII glyph, white, MediumLarge
+    // Cached glyph texture handle (managed; nullptr inner = asset missing).
+    pu::sdl2::TextureHandle::Ref glyph_tex_handle_;
+    // Cached label text texture (nullptr = not yet rendered, raw owned by us).
     SDL_Texture  *label_tex_;   // label string, theme.text_primary, Medium
 
     // Touch click-vs-drag state — same pattern as QdDesktopIconsElement.

@@ -105,11 +105,12 @@ The release bundle is `qos-umenu-v1.2.3.zip` (and `.7z`). It contains exactly th
 | Artifact | Path on SD card | Notes |
 |---|---|---|
 | `exefs.nsp` | `atmosphere/contents/0100000000001000/exefs.nsp` | uSystem, replaces qlaunch |
+| `exefs.nsp` | `ulaunch/bin/uSystem/exefs.nsp` | Same uSystem mirrored under the ulaunch tree |
 | `main` | `ulaunch/bin/uMenu/main` | Q OS menu binary |
 | `main.npdm` | `ulaunch/bin/uMenu/main.npdm` | Access control descriptor |
 | `romfs.bin` | `ulaunch/bin/uMenu/romfs.bin` | Theme assets (29 Q OS original PNGs) |
-| `uManager/` | `ulaunch/bin/uManager/` | Installer NRO assets |
-| `uLoader/` | `ulaunch/bin/uLoader/` | hbloader replacement |
+| `applet/main` + `npdm` | `ulaunch/bin/uLoader/applet/` | hbloader replacement, applet context |
+| `application/main` + `npdm` | `ulaunch/bin/uLoader/application/` | hbloader replacement, application context |
 | `uManager.nro` | `switch/uManager.nro` | Homebrew management app |
 
 The 29 original PNGs in `romfs.bin` are P1 through P4 of the rebrand: 5 hero assets, 8 SpecialEntry icons, 9 defaults and chrome pieces, and 7 status overlays. All generated in the Q OS brand palette and released under GPLv2.
@@ -127,8 +128,9 @@ sdmc:/atmosphere/contents/0100000000001000/exefs.nsp    (uSystem, replaces qlaun
 sdmc:/ulaunch/bin/uMenu/main                             (the Q OS menu binary)
 sdmc:/ulaunch/bin/uMenu/main.npdm
 sdmc:/ulaunch/bin/uMenu/romfs.bin                        (theme assets)
-sdmc:/ulaunch/bin/uManager/                              (the installer NRO assets)
-sdmc:/ulaunch/bin/uLoader/                               (the hbloader replacement)
+sdmc:/ulaunch/bin/uSystem/exefs.nsp                      (uSystem mirror)
+sdmc:/ulaunch/bin/uLoader/applet/                        (hbloader, applet context)
+sdmc:/ulaunch/bin/uLoader/application/                   (hbloader, application context)
 sdmc:/switch/uManager.nro                                (homebrew app for managing things)
 ```
 
@@ -142,23 +144,23 @@ Requirements:
 * macOS or Linux (we develop on macOS)
 * devkitPro with devkitA64 installed at `/opt/devkitpro`
 * The following packages: `switch-sdl2`, `switch-freetype`, `switch-glad`, `switch-libdrm_nouveau`, `switch-sdl2_gfx`, `switch-sdl2_image`, `switch-sdl2_ttf`, `switch-sdl2_mixer`, `build_romfs`
-* Git submodules initialized: `git submodule update --init --recursive` inside `src/`
+* Git submodules initialized at the repo root: `git submodule update --init --recursive`
 
-Build everything:
+Build everything from the repo root:
 ```
-cd src
 make package
 ```
 
-Output goes to `src/SdOut/` and zips up as `qos-umenu-v1.2.3.zip` and `.7z`.
+Output goes to `SdOut/` and zips up as `qos-umenu-v1.2.3.zip` and `.7z`.
 
 Build just the menu without packaging:
 ```
-cd src
 make umenu
 ```
 
-Output: `src/SdOut/ulaunch/bin/uMenu/main` and `romfs.bin`.
+Output: `SdOut/ulaunch/bin/uMenu/main` and `romfs.bin`.
+
+Other handy targets: `make usystem`, `make uloader`, `make umanager`, `make libs`, `make arc`, `make clean`. The CI workflow at `.github/workflows/main.yml` runs `make usystem uloader umenu umanager` against `devkitpro/devkita64:latest`.
 
 ## What is next
 

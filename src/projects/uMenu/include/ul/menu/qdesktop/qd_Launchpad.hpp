@@ -109,13 +109,15 @@ constexpr s32 LP_ICON_W  = 104;  // art width  (slightly smaller than cell — c
 constexpr s32 LP_ICON_H  = 104;  // art height (square; label below)
 
 // ── LpSortKind ────────────────────────────────────────────────────────────────
-// Used during Open() sort pass to group items by kind.
-// Sort order: Applications (alpha) → NROs (alpha) → Builtins (dock_slot order).
-// Mirrors PoC ordering.
+// Used during Open() sort pass to group items by category.
+// Sort order: Nintendo (alpha) -> Homebrew (alpha) -> Extras (alpha) ->
+//             Builtin (dock_slot order).
+// Mapped from NroEntry::icon_category at Open() time.
 enum class LpSortKind : u8 {
-    Application = 0,
-    Nro         = 1,
-    Builtin     = 2,
+    Nintendo    = 0,
+    Homebrew    = 1,
+    Extras      = 2,
+    Builtin     = 3,
 };
 
 // ── LpItem ────────────────────────────────────────────────────────────────────
@@ -141,7 +143,9 @@ struct LpItem {
     bool    is_builtin;
     // Dock slot index (only meaningful when is_builtin == true).
     u8      dock_slot;
-    // Resolved kind for sorting.
+    // Source category (copied from NroEntry::icon_category).
+    IconCategory icon_category;
+    // Resolved kind for sorting (derived from icon_category at Open() time).
     LpSortKind sort_kind;
     // Index of this entry in QdDesktopIconsElement::icons_[].
     // Returned by FocusedDesktopIdx() so the host can dispatch LaunchIcon(idx).
@@ -183,9 +187,11 @@ public:
 
     // ── Open / Close ─────────────────────────────────────────────────────────
     // Open: snapshot desktop icons, sort, reset focus and query.
-    // desktop_icons must not be null; its lifetime must exceed this call.
-    // The pointer is used only within Open() — it is not retained afterwards.
-    void Open(const QdDesktopIconsElement *desktop_icons);
+    // desktop_icons must not be null; its lifetime must exceed both this call
+    // and any subsequent DispatchPendingLaunch() until Close() returns.
+    // The pointer IS retained between Open and Close so that
+    // DispatchPendingLaunch can call desktop_icons_ptr_->LaunchIcon(idx).
+    void Open(QdDesktopIconsElement *desktop_icons);
     void Close();
     bool IsOpen() const { return is_open_; }
 
@@ -205,9 +211,17 @@ public:
     size_t FocusedDesktopIdx() const;
 
     // Returns true when the user pressed A or ZR on a valid item this input
-    // frame.  The host must call LaunchIcon(FocusedDesktopIdx()) then Close().
+    // frame.  The host calls DispatchPendingLaunch() to actually fire the
+    // launch through the desktop icons element, then Close().
     // Cleared on the next call to OnInput.
     bool IsPendingLaunch() const { return pending_launch_; }
+
+    // Forwards to desktop_icons_ptr_->LaunchIcon(FocusedDesktopIdx()) when
+    // the focused index is valid. No-op when desktop_icons_ptr_ is null,
+    // when the focused index is out of range, or when the Launchpad is
+    // closed. The launch path itself owns any subsequent menu transition
+    // (FadeOut for app launches, LoadMenu for builtin specials).
+    void DispatchPendingLaunch();
 
     // ── Frame tick ───────────────────────────────────────────────────────────
     // Advance the caret blink counter.  Call once per frame.
@@ -218,6 +232,11 @@ private:
     QdTheme                 theme_;
     bool                    is_open_;
     bool                    pending_launch_;
+
+    // Non-owning pointer set by Open(); cleared on Close(). Used by
+    // DispatchPendingLaunch to fire LaunchIcon on the focused entry.
+    // Lifetime obligation lives on the caller of Open.
+    QdDesktopIconsElement  *desktop_icons_ptr_;
 
     // Snapshot of all items, sorted as described in LpSortKind.
     std::vector<LpItem>     items_;
@@ -281,8 +300,9 @@ private:
     static const char *SectionLabel(LpSortKind kind);
 
     // Paint the status line at the bottom of the overlay.
-    void PaintStatusLine(SDL_Renderer *r, size_t total_apps,
-                         size_t total_nros, size_t total_builtins) const;
+    void PaintStatusLine(SDL_Renderer *r, size_t total_nintendo,
+                         size_t total_homebrew, size_t total_extras,
+                         size_t total_builtins) const;
 };
 
 } // namespace ul::menu::qdesktop

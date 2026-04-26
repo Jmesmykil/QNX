@@ -37,6 +37,7 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
     : theme_(theme),
       is_open_(false),
       pending_launch_(false),
+      desktop_icons_ptr_(nullptr),
       focus_filtered_(0),
       filter_dirty_(false),
       frame_tick_(0),
@@ -65,7 +66,7 @@ void QdLaunchpadElement::AdvanceTick() {
 // top of this file.  Sort Application entries alpha-first, NROs alpha-second,
 // and Builtins in dock_slot order.
 
-void QdLaunchpadElement::Open(const QdDesktopIconsElement *desktop_icons) {
+void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     if (!desktop_icons) {
         return;
     }
@@ -78,7 +79,8 @@ void QdLaunchpadElement::Open(const QdDesktopIconsElement *desktop_icons) {
     focus_filtered_ = 0;
     pending_launch_  = false;
     filter_dirty_    = false;
-    icon_cache_      = &const_cast<QdDesktopIconsElement *>(desktop_icons)->cache_;
+    desktop_icons_ptr_ = desktop_icons;  // retained until Close() so DispatchPendingLaunch can fire
+    icon_cache_      = &desktop_icons->cache_;
 
     // Deep-copy every icon entry into items_.
     // Uses the friend-declared access to icons_[] and icon_count_.
@@ -104,42 +106,39 @@ void QdLaunchpadElement::Open(const QdDesktopIconsElement *desktop_icons) {
         strncpy(it.icon_path, src.icon_path, sizeof(it.icon_path) - 1u);
         it.icon_path[sizeof(it.icon_path) - 1u] = '\0';
 
-        it.app_id     = src.app_id;
-        it.is_builtin = src.is_builtin;
-        it.dock_slot  = src.dock_slot;
+        it.app_id       = src.app_id;
+        it.is_builtin   = src.is_builtin;
+        it.dock_slot    = src.dock_slot;
+        it.icon_category = src.icon_category;
 
-        // Classify into LpSortKind for the grid ordering pass.
-        switch (src.kind) {
-            case IconKind::Application:
-                it.sort_kind = LpSortKind::Application;
-                break;
-            case IconKind::Nro:
-                it.sort_kind = LpSortKind::Nro;
-                break;
-            case IconKind::Builtin:
-            case IconKind::Special:
-                it.sort_kind = LpSortKind::Builtin;
-                break;
+        // Map IconCategory to LpSortKind for the grid ordering pass.
+        switch (src.icon_category) {
+            case IconCategory::Nintendo:  it.sort_kind = LpSortKind::Nintendo;  break;
+            case IconCategory::Homebrew:  it.sort_kind = LpSortKind::Homebrew;  break;
+            case IconCategory::Extras:    it.sort_kind = LpSortKind::Extras;    break;
+            case IconCategory::Payloads:  it.sort_kind = LpSortKind::Extras;    break;
+            case IconCategory::Builtin:   it.sort_kind = LpSortKind::Builtin;   break;
         }
 
         it.desktop_idx = i;  // preserve back-reference for FocusedDesktopIdx()
         items_.push_back(it);
     }
 
-    // Sort: Application (alpha) → Nro (alpha) → Builtin (dock_slot order).
+    // Sort: Nintendo (alpha) -> Homebrew (alpha) -> Extras (alpha) ->
+    //       Builtin (dock_slot order).
     // std::stable_sort preserves original order within equal-key groups, so
     // builtins retain their dock_slot ordering from the construction pass.
     std::stable_sort(items_.begin(), items_.end(),
         [](const LpItem &a, const LpItem &b) -> bool {
-            // Primary: LpSortKind ascending.
+            // Primary: LpSortKind ascending (Nintendo=0, Homebrew=1, Extras=2, Builtin=3).
             if (a.sort_kind != b.sort_kind) {
                 return static_cast<u8>(a.sort_kind) < static_cast<u8>(b.sort_kind);
             }
-            // Secondary: within Builtin kind, order by dock_slot.
+            // Secondary: within Builtin, order by dock_slot.
             if (a.sort_kind == LpSortKind::Builtin) {
                 return a.dock_slot < b.dock_slot;
             }
-            // Secondary: within Application/Nro, sort alpha by name (case-insensitive).
+            // Secondary: within Nintendo/Homebrew/Extras, sort alpha (case-insensitive).
             const char *na = a.name;
             const char *nb = b.name;
             while (*na && *nb) {
@@ -166,17 +165,19 @@ void QdLaunchpadElement::Open(const QdDesktopIconsElement *desktop_icons) {
 
     is_open_ = true;
 
-    // Count by kind for the log line.
-    size_t app_count = 0u, nro_count = 0u, builtin_count = 0u;
+    // Count by category for the log line.
+    size_t nintendo_count = 0u, homebrew_count = 0u,
+           extras_count = 0u, builtin_count = 0u;
     for (const LpItem &it : items_) {
         switch (it.sort_kind) {
-            case LpSortKind::Application: ++app_count;  break;
-            case LpSortKind::Nro:         ++nro_count;  break;
-            case LpSortKind::Builtin:     ++builtin_count; break;
+            case LpSortKind::Nintendo:  ++nintendo_count;  break;
+            case LpSortKind::Homebrew:  ++homebrew_count;  break;
+            case LpSortKind::Extras:    ++extras_count;    break;
+            case LpSortKind::Builtin:   ++builtin_count;   break;
         }
     }
-    UL_LOG_INFO("qdesktop: Launchpad opened — apps=%zu nros=%zu builtins=%zu total=%zu",
-                app_count, nro_count, builtin_count, sz);
+    UL_LOG_INFO("qdesktop: Launchpad opened -- nintendo=%zu homebrew=%zu extras=%zu builtins=%zu total=%zu",
+                nintendo_count, homebrew_count, extras_count, builtin_count, sz);
 }
 
 // ── Close ─────────────────────────────────────────────────────────────────────
@@ -189,13 +190,41 @@ void QdLaunchpadElement::Close() {
     items_.clear();
     filtered_idxs_.clear();
     query_.clear();
-    focus_filtered_  = 0;
-    pending_launch_  = false;
-    filter_dirty_    = false;
-    icon_cache_      = nullptr;
-    is_open_         = false;
+    focus_filtered_    = 0;
+    pending_launch_    = false;
+    filter_dirty_      = false;
+    icon_cache_        = nullptr;
+    desktop_icons_ptr_ = nullptr;
+    is_open_           = false;
 
     UL_LOG_INFO("qdesktop: Launchpad closed");
+}
+
+// ── DispatchPendingLaunch ────────────────────────────────────────────────────
+//
+// Fires the launch for the currently focused item by forwarding to
+// QdDesktopIconsElement::LaunchIcon. The friend declaration on
+// QdDesktopIconsElement (see qd_DesktopIcons.hpp) grants access to the private
+// LaunchIcon entry point; no public widening of the desktop icons API is
+// required.
+//
+// Safe to call when the Launchpad is closed, when the focused index is
+// invalid, or when desktop_icons_ptr_ is null. In any of those cases the
+// function is a no-op so the host can call it unconditionally after seeing
+// IsPendingLaunch() return true.
+
+void QdLaunchpadElement::DispatchPendingLaunch() {
+    if (desktop_icons_ptr_ == nullptr) {
+        UL_LOG_WARN("qdesktop: Launchpad DispatchPendingLaunch: desktop_icons_ptr_ is null");
+        return;
+    }
+    const size_t idx = FocusedDesktopIdx();
+    if (idx == SIZE_MAX) {
+        UL_LOG_WARN("qdesktop: Launchpad DispatchPendingLaunch: no valid focused idx");
+        return;
+    }
+    UL_LOG_INFO("qdesktop: Launchpad DispatchPendingLaunch idx=%zu", idx);
+    desktop_icons_ptr_->LaunchIcon(idx);
 }
 
 // ── PushQueryChar / PopQueryChar / ClearQuery ─────────────────────────────────
@@ -516,15 +545,17 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     }
 
     // ── 6. Status line ────────────────────────────────────────────────────────
-    size_t app_count = 0u, nro_count = 0u, builtin_count = 0u;
+    size_t nintendo_count = 0u, homebrew_count = 0u,
+           extras_count = 0u, builtin_count = 0u;
     for (const LpItem &it : items_) {
         switch (it.sort_kind) {
-            case LpSortKind::Application: ++app_count;    break;
-            case LpSortKind::Nro:         ++nro_count;    break;
-            case LpSortKind::Builtin:     ++builtin_count; break;
+            case LpSortKind::Nintendo:  ++nintendo_count;  break;
+            case LpSortKind::Homebrew:  ++homebrew_count;  break;
+            case LpSortKind::Extras:    ++extras_count;    break;
+            case LpSortKind::Builtin:   ++builtin_count;   break;
         }
     }
-    PaintStatusLine(r, app_count, nro_count, builtin_count);
+    PaintStatusLine(r, nintendo_count, homebrew_count, extras_count, builtin_count);
 }
 
 // ── RebuildFilter ─────────────────────────────────────────────────────────────
@@ -771,27 +802,28 @@ void QdLaunchpadElement::FreeAllTextures() {
 // static
 const char *QdLaunchpadElement::SectionLabel(LpSortKind kind) {
     switch (kind) {
-        case LpSortKind::Application: return "Applications";
-        case LpSortKind::Nro:         return "Homebrew";
-        case LpSortKind::Builtin:     return "Built-in";
+        case LpSortKind::Nintendo:  return "Nintendo";
+        case LpSortKind::Homebrew:  return "Homebrew";
+        case LpSortKind::Extras:    return "Extras";
+        case LpSortKind::Builtin:   return "Built-in";
     }
     return "Other";
 }
 
 // ── PaintStatusLine ───────────────────────────────────────────────────────────
-// Renders a status string at the bottom of the overlay (y ≈ 1048).
-// Format:  "N apps  N NROs  N built-in  |  press B to close"
-// Mirrors the "N apps" count in the Rust PoC (paint_launchpad bottom line).
+// Renders a status string at the bottom of the overlay (y ~= 1048).
+// Format: "N nintendo  N homebrew  N extras  N built-in  |  B to close"
 
 void QdLaunchpadElement::PaintStatusLine(SDL_Renderer *r,
-                                          size_t total_apps,
-                                          size_t total_nros,
+                                          size_t total_nintendo,
+                                          size_t total_homebrew,
+                                          size_t total_extras,
                                           size_t total_builtins) const
 {
-    char buf[128];
+    char buf[160];
     snprintf(buf, sizeof(buf),
-             "%zu apps  %zu homebrew  %zu built-in  |  B to close",
-             total_apps, total_nros, total_builtins);
+             "%zu nintendo  %zu homebrew  %zu extras  %zu built-in  |  B to close",
+             total_nintendo, total_homebrew, total_extras, total_builtins);
 
     const pu::ui::Color sc { theme_.text_secondary.r, theme_.text_secondary.g,
                               theme_.text_secondary.b, 0xFFu };

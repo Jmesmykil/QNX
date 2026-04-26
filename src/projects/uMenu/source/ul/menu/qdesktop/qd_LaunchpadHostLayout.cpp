@@ -40,19 +40,17 @@ namespace ul::menu::qdesktop {
             return;
         }
         // Pending-launch dispatch: when the Element flagged a launch via
-        // A/ZR, dispatch it through the desktop_icons (which owns the launch
-        // pipeline) and then close + return.
+        // A/ZR, fire the launch through the desktop icons element it
+        // captured at Open() time. The launch path itself owns the menu
+        // transition (FadeOut for app launches, LoadMenu for builtins),
+        // so we close the Launchpad after dispatching but do NOT call
+        // LoadMenu(Main) here.
         if(this->launchpad_element_ && this->launchpad_element_->IsPendingLaunch()) {
             const size_t desktop_idx = this->launchpad_element_->FocusedDesktopIdx();
             UL_LOG_INFO("launchpad: pending launch dispatch desktop_idx=%zu", desktop_idx);
-            // The launch path runs through MainMenu's existing icon-launch
-            // logic; for now we just navigate back to MainMenu so the user
-            // can launch from there.  Full A/ZR-from-Launchpad launch wiring
-            // lives in the K+1 cycle once MainMenu exposes a public launcher
-            // method.
+            this->launchpad_element_->DispatchPendingLaunch();
             this->launchpad_element_->Close();
             this->launchpad_element_->SetVisible(true);
-            g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Main);
         }
     }
 

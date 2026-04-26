@@ -1,8 +1,10 @@
-// qd_PowerButton.cpp — QdPowerButtonElement implementation.
+// qd_PowerButton.cpp -- QdPowerButtonElement implementation.
 // Part of the Q OS qdesktop login screen power-action row.
+// Glyph icons: ui/Main/PowerIcon/<Restart|Shutdown|Sleep|Hekate>.png.
 // Owned file: do not edit from other agents.
 
 #include <ul/menu/qdesktop/qd_PowerButton.hpp>
+#include <ul/menu/ui/ui_Common.hpp>
 #include <pu/ui/render/render_Renderer.hpp>
 #include <pu/ui/ui_Types.hpp>
 #include <ul/ul_Result.hpp>
@@ -12,20 +14,21 @@
 
 namespace ul::menu::qdesktop {
 
-// ── Glyph table ────────────────────────────────────────────────────────────────
-// Maps Kind → single ASCII character rendered as the icon body.
-// Uses unambiguous ASCII so it works on any TTF font that covers Basic Latin.
-// Restart='R', Shutdown='P', Sleep='Z', Hekate='H', Custom='*'
+// Glyph asset table.
+// Maps Kind to PNG basename under ui/Main/PowerIcon/.
+// Each PNG is white-on-transparent, ~96x96, downscaled to fit the 56x64 zone.
+// Custom returns "Custom" but ships no default asset; OnRender skips draw
+// when the lazy-loaded handle is null, so the panel still renders.
 /*static*/
-char QdPowerButtonElement::GlyphChar(Kind k) {
+const char *QdPowerButtonElement::GlyphAssetName(Kind k) {
     switch (k) {
-        case Kind::Restart:  return 'R';
-        case Kind::Shutdown: return 'P';
-        case Kind::Sleep:    return 'Z';
-        case Kind::Hekate:   return 'H';
-        case Kind::Custom:   return '*';
+        case Kind::Restart:  return "Restart";
+        case Kind::Shutdown: return "Shutdown";
+        case Kind::Sleep:    return "Sleep";
+        case Kind::Hekate:   return "Hekate";
+        case Kind::Custom:   return "Custom";
     }
-    return '*'; // unreachable but satisfies -Wreturn-type
+    return "Custom";
 }
 
 // ── Factory ────────────────────────────────────────────────────────────────────
@@ -45,7 +48,7 @@ QdPowerButtonElement::QdPowerButtonElement(const QdTheme &theme,
     : theme_(theme), kind_(kind), label_(label),
       x_(0), y_(0), enabled_(true), focused_(false),
       on_click_(nullptr),
-      glyph_tex_(nullptr), label_tex_(nullptr),
+      glyph_tex_handle_(nullptr), label_tex_(nullptr),
       press_inside_(false), down_x_(0), down_y_(0)
 {
     UL_LOG_INFO("qdesktop: QdPowerButtonElement ctor kind=%d label='%s'",
@@ -78,10 +81,9 @@ void QdPowerButtonElement::SetFocused(bool f) {
 // ── Texture lifecycle ──────────────────────────────────────────────────────────
 
 void QdPowerButtonElement::FreeTextures() {
-    if (glyph_tex_ != nullptr) {
-        SDL_DestroyTexture(glyph_tex_);
-        glyph_tex_ = nullptr;
-    }
+    // glyph_tex_handle_ is a shared_ptr to TextureHandle; reset releases
+    // the inner SDL_Texture via the wrapper's destructor.
+    glyph_tex_handle_.reset();
     if (label_tex_ != nullptr) {
         SDL_DestroyTexture(label_tex_);
         label_tex_ = nullptr;
@@ -89,17 +91,17 @@ void QdPowerButtonElement::FreeTextures() {
 }
 
 void QdPowerButtonElement::EnsureGlyphTexture() {
-    if (glyph_tex_ != nullptr) {
+    if (glyph_tex_handle_) {
         return;
     }
-    const char ch = GlyphChar(kind_);
-    const std::string glyph_str(1, ch);
-    // White glyph; the dark panel already provides contrast.
-    const pu::ui::Color white { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-    glyph_tex_ = pu::ui::render::RenderText(
-        pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::MediumLarge),
-        glyph_str, white);
-    // glyph_tex_ may be nullptr if the font is not available; OnRender guards below.
+    // Lazy-load the white-on-transparent PNG glyph from the active theme.
+    // TryFindLoadImageHandle takes a path WITHOUT extension and falls back
+    // through theme overrides to default-theme. The Custom kind ships no
+    // default asset, so the handle may resolve to a wrapper whose Get() is
+    // nullptr; OnRender guards on that below.
+    const std::string asset_path =
+        "ui/Main/PowerIcon/" + std::string(GlyphAssetName(kind_));
+    glyph_tex_handle_ = ul::menu::ui::TryFindLoadImageHandle(asset_path);
 }
 
 void QdPowerButtonElement::EnsureLabelTexture() {
@@ -164,15 +166,19 @@ void QdPowerButtonElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     EnsureLabelTexture();
 
     // ── 3. Glyph (left zone: x_abs .. x_abs+56) ──────────────────────────────
+    // Source PNGs ship at 96x96 white-on-transparent; downscale to 32x32
+    // inside the 56-wide glyph zone for visual parity with the spec.
     static constexpr s32 GLYPH_ZONE_W = 56;  // left block reserved for glyph
-    if (glyph_tex_ != nullptr) {
-        int gw = 0, gh = 0;
-        SDL_QueryTexture(glyph_tex_, nullptr, nullptr, &gw, &gh);
-        // Centre the glyph inside the 56×64 glyph zone.
-        const s32 gx = abs_x + (GLYPH_ZONE_W - gw) / 2;
-        const s32 gy = abs_y + (BTN_H - gh) / 2;
-        SDL_Rect gdst { gx, gy, gw, gh };
-        SDL_RenderCopy(r, glyph_tex_, nullptr, &gdst);
+    static constexpr s32 GLYPH_DRAW_W = 32;
+    static constexpr s32 GLYPH_DRAW_H = 32;
+    SDL_Texture *glyph_raw = (glyph_tex_handle_ != nullptr)
+                                 ? glyph_tex_handle_->Get()
+                                 : nullptr;
+    if (glyph_raw != nullptr) {
+        const s32 gx = abs_x + (GLYPH_ZONE_W - GLYPH_DRAW_W) / 2;
+        const s32 gy = abs_y + (BTN_H - GLYPH_DRAW_H) / 2;
+        SDL_Rect gdst { gx, gy, GLYPH_DRAW_W, GLYPH_DRAW_H };
+        SDL_RenderCopy(r, glyph_raw, nullptr, &gdst);
     }
 
     // ── 4. Label (right zone: x_abs+56 .. x_abs+BTN_W-8) ────────────────────

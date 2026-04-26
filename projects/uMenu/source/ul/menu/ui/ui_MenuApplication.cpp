@@ -696,7 +696,7 @@ namespace ul::menu::ui {
     int MenuApplication::DisplayDialog(const std::string &title, const std::string &content, const std::vector<std::string> &opts, const bool use_last_opt_as_cancel, pu::sdl2::TextureHandle::Ref icon) {
         return this->CreateShowDialog(title, content, opts, use_last_opt_as_cancel, icon, [&](pu::ui::Dialog::Ref &dialog) {
             dialog->SetTitleColor(this->dialog_title_clr);
-            dialog->SetContentColor(this->dialog_title_clr);
+            dialog->SetContentColor(this->dialog_cnt_clr);
             dialog->SetOptionColor(this->dialog_opt_clr);
             dialog->SetDialogColor(this->dialog_clr);
             dialog->SetOverColor(this->dialog_over_clr);

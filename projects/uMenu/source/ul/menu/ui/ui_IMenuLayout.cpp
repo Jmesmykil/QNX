@@ -1,6 +1,7 @@
 #include <ul/menu/ui/ui_IMenuLayout.hpp>
 #include <ul/menu/ui/ui_Common.hpp>
 #include <ul/menu/ui/ui_MenuApplication.hpp>
+#include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
 #include <ul/net/net_Service.hpp>
 
 extern ul::menu::ui::GlobalSettings g_GlobalSettings;
@@ -212,6 +213,12 @@ namespace ul::menu::ui {
                         break;
                     }
                     case smi::MenuMessage::ApplicationRecordsChanged: {
+                        // K+1 Phase 1: invalidate the Nintendo-classify cache so
+                        // the next SetApplicationEntries call reclassifies with the
+                        // updated catalog.  Safe to call even when records only
+                        // changed attributes (not added/deleted) because the classify
+                        // result depends on app_id, not on content.
+                        ul::menu::qdesktop::QdDesktopIconsElement::InvalidateNintendoClassifyCache();
                         g_MenuApplication->NotifyApplicationRecordReloadNeeded();
                         if(first_msg.app_records_changed.records_added_or_deleted) {
                             // Need to also reload entries as well

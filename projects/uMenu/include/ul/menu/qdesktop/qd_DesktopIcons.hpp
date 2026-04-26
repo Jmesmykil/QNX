@@ -28,6 +28,24 @@ enum class IconKind : u8 {
     Special     = 3,   // Switch system applet shortcut (Settings, Album, Themes, etc.)
 };
 
+// ── Launchpad display category ─────────────────────────────────────────────
+// Groups entries for Launchpad section headers.  Distinct from NroCategory
+// (the 7-value glyph/colour classifier); this 5-value enum drives grouping.
+// K+1 Phase 1: used by LpSortKind mapping in qd_Launchpad.cpp.
+// K+1 Phase 2+ (deferred): Folders, Payloads scanner.
+enum class IconCategory : u8 {
+    Nintendo  = 0,  // Installed application whose title-id high byte falls in
+                    // 0x01 (Nintendo first-party range, e.g. 0x0100XXXXXXXXXXXX).
+                    // Result is cached at sdmc:/ulaunch/cache/nintendo-classify.bin.
+    Homebrew  = 1,  // Any IconKind::Nro from sdmc:/switch/.
+    Extras    = 2,  // Third-party installed applications, IconKind::Special (Album etc.),
+                    // and any application whose title-id does not match the Nintendo range.
+    Payloads  = 3,  // Reserved for future Hekate-payload integration. No entries match
+                    // this value in Phase 1; the enum value exists so the mapping is complete.
+    Builtin   = 4,  // Q OS dock built-ins (Vault, Monitor, Control, About, AllPrograms).
+                    // Always rendered last in the Launchpad; never in the desktop grid alone.
+};
+
 // ── Icon grid constants (×1.5 from Rust 1280×720) ─────────────────────────
 // Cycle J-tweak2: 5 rows to absorb installed homebrew + Specials overflow.
 // User reported icons going off-screen at 4 rows × 9 cols = 36 slots when SD
@@ -90,8 +108,10 @@ struct NroEntry {
     bool     is_builtin;
     // Dock slot index (only meaningful when is_builtin == true).
     u8       dock_slot;
-    // NRO category badge.
+    // NRO category badge (glyph/colour classifier, 7 values).
     NroCategory category;
+    // Launchpad display category (grouping classifier, 5 values, K+1 Phase 1).
+    IconCategory icon_category;
     // True after the icon pixel data has been loaded into cache on first paint.
     bool     icon_loaded;
     // Discriminant: Builtin, Nro, Application, or Special.
@@ -173,6 +193,12 @@ public:
     void SetCursorRef(QdCursorElement::Ref cursor_ref) {
         cursor_ref_ = cursor_ref;
     }
+
+    // K+1 Phase 1: Delete the Nintendo-classify cache file and clear the
+    // in-process map.  Called when MenuMessage::ApplicationRecordsChanged is
+    // received so the next IsNintendoPublisher call recomputes results against
+    // the updated catalog.
+    static void InvalidateNintendoClassifyCache();
 
 private:
     QdTheme theme_;
@@ -309,6 +335,19 @@ private:
     // Hit-test: returns index of icon whose cell contains (tx, ty).
     // Returns MAX_ICONS if no cell matches.
     size_t HitTest(s32 tx, s32 ty) const;
+
+    // K+1 Phase 1: Classify one NroEntry into its Launchpad display category.
+    // Called from PopulateBuiltins, ScanNros, SetApplicationEntries, SetSpecialEntries.
+    static IconCategory ClassifyEntry(const NroEntry &e);
+
+    // K+1 Phase 1: Return true if app_id belongs to a Nintendo first-party title.
+    // Heuristic: the high byte of the title-id (bits 56..63) is 0x01, which covers
+    // the 0x0100xxxxxxxxxxxx range used by Nintendo's own published titles.
+    // Result is cached in sdmc:/ulaunch/cache/nintendo-classify.bin as a flat array
+    // of 12-byte records { u64 app_id, u8 result, u8[3] pad }.
+    // Cache is read at first call; written back when new entries are classified.
+    // Invalidated (file deleted) by InvalidateNintendoClassifyCache().
+    static bool IsNintendoPublisher(u64 app_id);
 
     // Cycle K-TrackD: QdLaunchpadElement reads icons_[], icon_count_, and
     // cache_ directly when building its snapshot in Open().  Grant friend

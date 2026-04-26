@@ -15,6 +15,7 @@
 #include <ul/ul_Result.hpp>
 #include <pu/ui/render/render_Renderer.hpp>
 #include <dirent.h>
+#include <sys/stat.h>
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
@@ -41,6 +42,119 @@ extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
 extern ul::menu::ui::GlobalSettings g_GlobalSettings;
 
 namespace ul::menu::qdesktop {
+
+// ── Nintendo-classify cache ───────────────────────────────────────────────────
+// Persistent flat binary at CLASSIFY_CACHE_PATH.
+// Each record is 12 bytes: { u64 app_id, u8 is_nintendo, u8[3] pad }
+// The cache is loaded once into a static map on first use and flushed to disk
+// whenever a new entry is added.  InvalidateNintendoClassifyCache() removes the
+// file so the next IsNintendoPublisher call starts from an empty map.
+
+static constexpr const char *CLASSIFY_CACHE_PATH =
+    "sdmc:/ulaunch/cache/nintendo-classify.bin";
+
+// Record layout must match the binary format exactly.
+#pragma pack(push, 1)
+struct NintendoClassifyRecord {
+    u64 app_id;
+    u8  is_nintendo;
+    u8  pad[3];
+};
+#pragma pack(pop)
+static_assert(sizeof(NintendoClassifyRecord) == 12,
+              "NintendoClassifyRecord must be 12 bytes");
+
+// Static in-process cache: app_id -> is_nintendo bool.
+// Loaded lazily from disk, written back on new entries.
+static std::unordered_map<u64, bool> s_nintendo_classify_map;
+static bool s_classify_map_loaded = false;
+
+// Load the cache file into s_nintendo_classify_map (once per process).
+static void LoadNintendoClassifyCache() {
+    if (s_classify_map_loaded) {
+        return;
+    }
+    s_classify_map_loaded = true; // mark loaded even if file absent
+
+    FILE *f = fopen(CLASSIFY_CACHE_PATH, "rb");
+    if (!f) {
+        return; // File absent on first boot; starts empty.
+    }
+
+    NintendoClassifyRecord rec;
+    while (fread(&rec, sizeof(rec), 1, f) == 1) {
+        s_nintendo_classify_map[rec.app_id] = (rec.is_nintendo != 0u);
+    }
+    fclose(f);
+}
+
+// Append one new record to the cache file and update the in-process map.
+static void PersistNintendoClassifyEntry(u64 app_id, bool is_nintendo) {
+    s_nintendo_classify_map[app_id] = is_nintendo;
+
+    // Ensure the cache directory exists (mirrors QdIconCache::EnsureDir pattern).
+    // sdmc:/ulaunch/cache/ is already created by QdIconCache::EnsureDir, but we
+    // create it explicitly here in case the classify path differs.
+    mkdir("sdmc:/ulaunch", 0755);
+    mkdir("sdmc:/ulaunch/cache", 0755);
+
+    FILE *f = fopen(CLASSIFY_CACHE_PATH, "ab");
+    if (!f) {
+        UL_LOG_WARN("qdesktop: cannot open nintendo-classify cache for append: %s",
+                    CLASSIFY_CACHE_PATH);
+        return;
+    }
+    NintendoClassifyRecord rec;
+    rec.app_id      = app_id;
+    rec.is_nintendo = is_nintendo ? 1u : 0u;
+    rec.pad[0] = rec.pad[1] = rec.pad[2] = 0u;
+    fwrite(&rec, sizeof(rec), 1, f);
+    fclose(f);
+}
+
+// static
+void QdDesktopIconsElement::InvalidateNintendoClassifyCache() {
+    s_nintendo_classify_map.clear();
+    s_classify_map_loaded = false;
+    remove(CLASSIFY_CACHE_PATH);
+    UL_LOG_INFO("qdesktop: nintendo-classify cache invalidated");
+}
+
+// static
+bool QdDesktopIconsElement::IsNintendoPublisher(u64 app_id) {
+    LoadNintendoClassifyCache();
+
+    auto it = s_nintendo_classify_map.find(app_id);
+    if (it != s_nintendo_classify_map.end()) {
+        return it->second;
+    }
+
+    // Not in cache: apply the title-id heuristic.
+    // Nintendo first-party titles have their top byte (bits 56..63) equal to 0x01.
+    // This covers the 0x0100xxxxxxxxxxxx range (e.g. Zelda BOTW = 0x01007EF00011E000).
+    const u8 top_byte = static_cast<u8>((app_id >> 56u) & 0xFFu);
+    const bool result = (top_byte == 0x01u);
+
+    PersistNintendoClassifyEntry(app_id, result);
+    return result;
+}
+
+// static
+IconCategory QdDesktopIconsElement::ClassifyEntry(const NroEntry &e) {
+    switch (e.kind) {
+        case IconKind::Builtin:
+            return IconCategory::Builtin;
+        case IconKind::Nro:
+            return IconCategory::Homebrew;
+        case IconKind::Special:
+            return IconCategory::Extras;
+        case IconKind::Application:
+            return IsNintendoPublisher(e.app_id)
+                ? IconCategory::Nintendo
+                : IconCategory::Extras;
+    }
+    return IconCategory::Extras;
+}
 
 // ── Click tolerance ───────────────────────────────────────────────────────────
 // Maximum Euclidean pixel displacement (squared comparison to avoid sqrt) from
@@ -286,6 +400,7 @@ void QdDesktopIconsElement::PopulateBuiltins() {
         e.is_builtin   = true;
         e.dock_slot    = static_cast<u8>(i);
         e.category     = NroCategory::QosApp;
+        e.icon_category = IconCategory::Builtin;
         e.icon_loaded  = false;
         e.kind         = IconKind::Builtin;
         e.app_id       = 0;
@@ -354,6 +469,7 @@ void QdDesktopIconsElement::ScanNros() {
         e.is_builtin   = false;
         e.dock_slot    = 0;
         e.category     = cat.category;
+        e.icon_category = IconCategory::Homebrew;
         e.icon_loaded  = false;
         e.kind         = IconKind::Nro;
         e.app_id       = 0;
@@ -1624,10 +1740,13 @@ void QdDesktopIconsElement::SetApplicationEntries(
         e.is_builtin  = false;
         e.dock_slot   = 0;
         e.category    = NroCategory::Unknown;
-        e.icon_loaded = false; // forces lazy load on first OnRender pass
         e.kind        = IconKind::Application;
         e.app_id      = entry.app_info.app_id;
         e.special_subtype = 0;
+        // K+1 Phase 1: classify after app_id is set so IsNintendoPublisher
+        // can apply the title-id heuristic.
+        e.icon_category = ClassifyEntry(e);
+        e.icon_loaded = false; // forces lazy load on first OnRender pass
 
         ++icon_count_;
         ++added;
@@ -1712,6 +1831,7 @@ void QdDesktopIconsElement::SetSpecialEntries(
         e.is_builtin   = false;
         e.dock_slot    = 0;
         e.category     = NroCategory::Unknown;
+        e.icon_category = IconCategory::Extras;
         e.icon_loaded  = false;
         e.kind         = IconKind::Special;
         e.app_id       = 0;

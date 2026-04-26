@@ -6,7 +6,7 @@ export VERSION	:=	$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)
 export UL_DEFS	:=	-DUL_MAJOR=$(VERSION_MAJOR) -DUL_MINOR=$(VERSION_MINOR) -DUL_MICRO=$(VERSION_MICRO) -DUL_VERSION=\"$(VERSION)\"
 
 OUT_DIR				:=	SdOut
-OUT_DIR_ZIP			:=	uLaunch-v$(VERSION)
+OUT_DIR_ZIP			:=	qos-umenu-v$(VERSION)
 
 OUT_THEME_MUSIC		:=	default-theme-music-v$(VERSION).ultheme
 THEME_MUSIC_TEMP	:=	default-theme-music-tmp
@@ -92,8 +92,24 @@ default-theme-music:
 	@rm -rf $(THEME_MUSIC_TEMP)
 	@echo "Created default-theme-music: $(OUT_THEME_MUSIC)!"
 
-package: arc usystem uloader umenu umanager uscreen default-theme-music
+# Note: `uscreen` (upstream Java/JavaFX desktop screen-mirror app) was removed
+# from the `package:` target on 2026-04-25 per creator directive. Reason:
+# pom.xml hardcodes `<classifier>linux</classifier>` for JavaFX 12 — won't run
+# on creator's macOS without classifier patches. Was shipping in the zip but
+# never actually invoked. Source preserved on disk as the behavioral spec for
+# the future native Swift `QOS Mirror.app` (post-1.0; see ROADMAP.md +
+# docs/UPSTREAM-COMPANION-APPS-STRATEGY.md). To re-enable Java uScreen for
+# Linux users, re-add `uscreen` to the deps below and run `make uscreen`.
+package: arc usystem uloader umenu umanager default-theme-music
 	@rm -rf $(OUT_DIR_ZIP).7z $(OUT_DIR_ZIP).zip
 	@cd $(OUT_DIR) && 7z a ../$(OUT_DIR_ZIP).7z atmosphere ulaunch switch
 	@cd $(OUT_DIR) && zip -r ../$(OUT_DIR_ZIP).zip atmosphere ulaunch switch
 	@echo "Packaged $(OUT_DIR) into $(OUT_DIR_ZIP).7z & $(OUT_DIR_ZIP).zip!"
+
+# Legacy companion-app source archives. Run on demand to snapshot the upstream
+# Java sources for the future Swift rebuilds. Outputs go to ../archive/.
+legacy-companion-archive:
+	@mkdir -p ../archive/legacy-companion-apps
+	@cd projects && zip -qr ../../archive/legacy-companion-apps/uScreen-source-$(VERSION).zip uScreen
+	@cd projects && zip -qr ../../archive/legacy-companion-apps/uDesigner-source-$(VERSION).zip uDesigner
+	@echo "Legacy companion sources archived to archive/legacy-companion-apps/"

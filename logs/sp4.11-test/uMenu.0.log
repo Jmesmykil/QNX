@@ -1,0 +1,74 @@
+[1777091529][BOOT ][BOOT] seq=1 proc=uMenu
+[1777092908][BOOT ][BOOT] seq=2 proc=uMenu
+[1777094292][BOOT ][BOOT] seq=3 proc=uMenu
+[1777094322][BOOT ][BOOT] seq=4 proc=uMenu
+[1777095583][BOOT ][BOOT] seq=5 proc=uMenu
+[1777095635][BOOT ][BOOT] seq=6 proc=uMenu
+[1777095687][BOOT ][BOOT] seq=7 proc=uMenu
+[1777096047][BOOT ][BOOT] seq=8 proc=uMenu
+[1777096085][BOOT ][BOOT] seq=9 proc=uMenu
+[1777096869][BOOT ][BOOT] seq=10 proc=uMenu
+[1777096988][BOOT ][BOOT] seq=11 proc=uMenu
+[1777097104][BOOT ][BOOT] seq=12 proc=uMenu
+[1777097201][BOOT ][BOOT] seq=13 proc=uMenu
+[1777097296][BOOT ][BOOT] seq=14 proc=uMenu
+[1777097469][BOOT ][BOOT] seq=15 proc=uMenu
+[1777097505][BOOT ][BOOT] seq=16 proc=uMenu
+[1777097536][BOOT ][BOOT] seq=17 proc=uMenu
+[1777105369][BOOT ][BOOT] seq=18 proc=uMenu
+[1777107391][BOOT ][BOOT] seq=19 proc=uMenu
+[1777107391][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777107391][INFO ][GENR] Alive!
+[1777107763][BOOT ][BOOT] seq=20 proc=uMenu
+[1777107763][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777107763][INFO ][GENR] Alive!
+[1777108621][BOOT ][BOOT] seq=21 proc=uMenu
+[1777108621][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777108621][INFO ][GENR] Alive!
+[1777108621][INFO ][GENR] [bt] Bluetooth thread alive!
+[1777138329][BOOT ][BOOT] seq=22 proc=uMenu
+[1777138329][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777138329][INFO ][GENR] Alive!
+[1777140736][BOOT ][BOOT] seq=23 proc=uMenu
+[1777140736][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777140736][INFO ][GENR] Alive!
+[1777140768][BOOT ][BOOT] seq=24 proc=uMenu
+[1777140768][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777140768][INFO ][GENR] Alive!
+[1777140826][BOOT ][BOOT] seq=25 proc=uMenu
+[1777140826][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777140826][INFO ][GENR] Alive!
+[1777140826][INFO ][GENR] [bt] Connected device changed: no connected audio device
+[1777140826][INFO ][GENR] [bt] Bluetooth thread alive!
+[1777140873][BOOT ][BOOT] seq=26 proc=uMenu
+[1777140873][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777140873][INFO ][GENR] Alive!
+[1777140962][BOOT ][BOOT] seq=27 proc=uMenu
+[1777140962][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777140962][INFO ][GENR] Alive!
+[1777140962][INFO ][GENR] [bt] Connected device changed: no connected audio device
+[1777140962][INFO ][GENR] [bt] Bluetooth thread alive!
+[1777142603][BOOT ][BOOT] seq=28 proc=uMenu
+[1777142603][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777142603][INFO ][GENR] Alive!
+[1777142654][BOOT ][BOOT] seq=29 proc=uMenu
+[1777142654][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777142654][INFO ][GENR] Alive!
+[1777142715][BOOT ][BOOT] seq=30 proc=uMenu
+[1777142715][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777142715][INFO ][GENR] Alive!
+[1777142789][BOOT ][BOOT] seq=31 proc=uMenu
+[1777142789][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777142789][INFO ][GENR] Alive!
+[1777142854][BOOT ][BOOT] seq=32 proc=uMenu
+[1777142854][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777142854][INFO ][GENR] Alive!
+[1777142854][INFO ][GENR] [bt] Connected device changed: no connected audio device
+[1777142854][INFO ][GENR] [bt] Bluetooth thread alive!
+[1777142882][BOOT ][BOOT] seq=33 proc=uMenu
+[1777142882][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777142882][INFO ][GENR] Alive!
+[1777142882][INFO ][GENR] [bt] Bluetooth thread alive!
+[1777142916][BOOT ][BOOT] seq=34 proc=uMenu
+[1777142916][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777142916][INFO ][GENR] Alive!

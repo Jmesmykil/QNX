@@ -40,6 +40,13 @@
 | `v0.9.0` | 📋 PLANNED | Polish + stress mode (hold ZL+ZR 3s = 60s synthetic-input sweep) + interop test: `mock-nro-desktop-gui-v1.0.0.nro` launchable from Dispatch | All UX primitives landed; now exercise them under stress. Interop confirms the NRO-launch path (ns:am2 chainload) that TUI v0.10.0 also needs. |
 | `v1.0.0` | 📋 GOAL | hw-proven Q OS qlaunch replacement — every boot on Switch OG (Erista / Tegra X1) starts Q OS home screen. Log `sdmc:/switch/qos-ulaunch-v1.0.0.log` must show 0 errors + stress mode pass. | Ships as Atmosphère sysmodule bundle under `atmosphere/contents/<titleID>/exefs.nsp`. Non-destructive: remove the bundle to restore stock qlaunch. |
 
+### Post-1.0 native Mac companions (Swift SwiftUI per all-apps-Swift mandate)
+
+| Ver | Status | Feature | Why |
+|---|---|---|---|
+| `companion-v0.1` | 🗺️ PLANNED | **QOS Mirror.app** — native macOS Swift app that displays the Switch's framebuffer over USB. Reads the existing Switch-side `usbScreenCapture` protocol already implemented in uSystem (`UsbMode::Jpeg` + `UsbMode::Rgba`, VID 0x057E PID 0x3000). | Replaces dead Java uScreen with real Swift app per all-apps-Swift mandate. Unblocks: K+5 test rig visual channel, headless dev, demo recording. See `docs/UPSTREAM-COMPANION-APPS-STRATEGY.md`. |
+| `companion-v0.2` | 🗺️ PLANNED | **QOS Theme Designer.app** — native macOS Swift app that lets users build `.qtheme` packs (renamed `.zip` containing `manifest.json` + `ui/` tree). uMenu's existing theme loader already reads from the cache layout this writes. | Replaces dead Java uDesigner. Creator directive 2026-04-25T17:55Z: "let them theme Q OS themselves later down the road." See `docs/UPSTREAM-COMPANION-APPS-STRATEGY.md`. |
+
 ---
 
 ## Process rules (non-negotiable)

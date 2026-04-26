@@ -88,6 +88,9 @@ static constexpr std::array<DkVtxBufferState, 1> VERTEX_BUFFER_STATE = {{
 namespace {
 
 struct Deko3dState {
+    // NWindow managed by the backend
+    NWindow*           nwin = nullptr;
+
     // Core deko3d objects
     dk::UniqueDevice   device;
     dk::UniqueQueue    queue;
@@ -219,7 +222,7 @@ bool ImGui_ImplDeko3d_Init() {
     // ---- Create two framebuffer images ----
     dk::ImageLayout fbLayout;
     dk::ImageLayoutMaker{g_dk.device}
-        .setFlags(DkImageFlags_UsagePresent | DkImageFlags_HwCompression)
+        .setFlags(DkImageFlags_UsageRender | DkImageFlags_UsagePresent)
         .setFormat(DkImageFormat_RGBA8_Unorm)
         .setDimensions(FB_WIDTH, FB_HEIGHT)
         .initialize(fbLayout);
@@ -232,26 +235,21 @@ bool ImGui_ImplDeko3d_Init() {
         fbPtrs[i] = &g_dk.framebuffers[i];
     }
 
-    // ---- Obtain default NWindow (populated by __nx_win_init in __appInit) ----
-    // __nx_win_init() runs at CRT startup and is explicitly called at the end of
-    // __appInit in main.cpp, which calls viInitialize → viOpenDefaultDisplay →
-    // viCreateLayer → nwindowCreateFromLayer → nwindowSetDimensions(1280,720) and
-    // stores the result in libnx's global g_defaultWin.  nwindowGetDefault() returns
-    // a pointer to that global — it is never NULL in our LibraryApplet context.
-    // libnx __nx_win_exit() (called from __appExit) tears it down; we do not own it.
-    NWindow *win = nwindowGetDefault();
-    if (!win) {
+    // ---- Obtain default NWindow ----
+    NWindow *win = nullptr;
+    if (R_FAILED(appletCreateManagedDisplayLayer(&win))) {
         FILE *log = fopen("sdmc:/switch/qos-menu-init.log", "a");
         if (log) {
-            fprintf(log, "[v0.7.0-beta6] FATAL: nwindowGetDefault() returned NULL\n");
+            fprintf(log, "[v0.7.0-beta6] FATAL: appletCreateManagedDisplayLayer() failed\n");
             fclose(log);
         }
         return false;
     }
+    g_dk.nwin = win;
     {
         FILE *log = fopen("sdmc:/switch/qos-menu-init.log", "a");
         if (log) {
-            fprintf(log, "[v0.7.0-beta6] nwindowGetDefault OK dim=%ux%u\n",
+            fprintf(log, "[v0.7.0-beta6] appletCreateManagedDisplayLayer OK dim=%ux%u\n",
                     (unsigned)win->width, (unsigned)win->height);
             fclose(log);
         }
@@ -410,9 +408,11 @@ void ImGui_ImplDeko3d_Shutdown() {
     g_dk.cmdMemBlock = nullptr;
     g_dk.uboMemBlock  = nullptr;
     g_dk.codeMemBlock = nullptr;
-    // Destroy swapchain before the NWindow it references is torn down.
-    // The NWindow is owned by libnx (__nx_win_exit in __appExit tears it down).
     g_dk.swapchain    = nullptr;
+    if (g_dk.nwin) {
+        nwindowClose(g_dk.nwin);
+        g_dk.nwin = nullptr;
+    }
     g_dk.imageMemBlock = nullptr;
     g_dk.cmdBuf       = nullptr;
     g_dk.queue        = nullptr;
@@ -429,7 +429,7 @@ void ImGui_ImplDeko3d_NewFrame() {
 
 void ImGui_ImplDeko3d_RenderDrawData(ImDrawData *drawData) {
     if (!g_dk.initialized) return;
-    if (!drawData || drawData->CmdListsCount <= 0) return;
+    if (!drawData) return;
 
     const unsigned width  = (unsigned)(drawData->DisplaySize.x * drawData->FramebufferScale.x);
     const unsigned height = (unsigned)(drawData->DisplaySize.y * drawData->FramebufferScale.y);
@@ -512,69 +512,81 @@ void ImGui_ImplDeko3d_RenderDrawData(ImDrawData *drawData) {
 
     size_t offsetVtx = 0;
     size_t offsetIdx = 0;
-    for (int n = 0; n < drawData->CmdListsCount; n++) {
-        const auto &cl = *drawData->CmdLists[n];
+    if (drawData->CmdListsCount > 0) {
+        for (int n = 0; n < drawData->CmdListsCount; n++) {
+            const auto &cl = *drawData->CmdLists[n];
 
-        const size_t vtxSize = (size_t)cl.VtxBuffer.Size * sizeof(ImDrawVert);
-        const size_t idxSize = (size_t)cl.IdxBuffer.Size * sizeof(ImDrawIdx);
+            const size_t vtxSize = (size_t)cl.VtxBuffer.Size * sizeof(ImDrawVert);
+            const size_t idxSize = (size_t)cl.IdxBuffer.Size * sizeof(ImDrawIdx);
 
-        memcpy(cpuVtx + offsetVtx, cl.VtxBuffer.Data, vtxSize);
-        memcpy(cpuIdx + offsetIdx, cl.IdxBuffer.Data, idxSize);
+            memcpy(cpuVtx + offsetVtx, cl.VtxBuffer.Data, vtxSize);
+            memcpy(cpuIdx + offsetIdx, cl.IdxBuffer.Data, idxSize);
 
-        for (const auto &cmd : cl.CmdBuffer) {
-            if (cmd.UserCallback) {
-                g_dk.queue.submitCommands(g_dk.cmdBuf.finishList());
-                if (cmd.UserCallback == ImDrawCallback_ResetRenderState) {
-                    // re-submit setup omitted for skeleton; Week 2 will wire this
-                } else {
-                    cmd.UserCallback(&cl, &cmd);
+            for (const auto &cmd : cl.CmdBuffer) {
+                if (cmd.UserCallback) {
+                    g_dk.queue.submitCommands(g_dk.cmdBuf.finishList());
+                    if (cmd.UserCallback == ImDrawCallback_ResetRenderState) {
+                        // re-submit setup omitted for skeleton; Week 2 will wire this
+                    } else {
+                        cmd.UserCallback(&cl, &cmd);
+                    }
+                    continue;
                 }
-                continue;
+
+                // Scissor
+                ImVec4 clip{
+                    (cmd.ClipRect.x - clipOff.x) * clipScale.x,
+                    (cmd.ClipRect.y - clipOff.y) * clipScale.y,
+                    (cmd.ClipRect.z - clipOff.x) * clipScale.x,
+                    (cmd.ClipRect.w - clipOff.y) * clipScale.y,
+                };
+                if (clip.x >= (float)width || clip.y >= (float)height ||
+                    clip.z < 0.0f || clip.w < 0.0f) continue;
+                if (clip.x < 0.0f) clip.x = 0.0f;
+                if (clip.y < 0.0f) clip.y = 0.0f;
+                if (clip.z > (float)width)  clip.z = (float)width;
+                if (clip.w > (float)height) clip.w = (float)height;
+
+                g_dk.cmdBuf.setScissors(0, {DkScissor{
+                    (unsigned)clip.x, (unsigned)clip.y,
+                    (unsigned)(clip.z - clip.x), (unsigned)(clip.w - clip.y)}});
+
+                // Texture binding
+                const DkResHandle texHandle = (DkResHandle)(ImU64)cmd.GetTexID();
+                if (!boundTex || texHandle != *boundTex) {
+                    const bool isFont = (texHandle == g_dk.fontHandle);
+                    FragUBO fragUBO{isFont ? 1u : 0u, {0, 0, 0}};
+                    g_dk.cmdBuf.pushConstants(
+                        g_dk.uboMemBlock.getGpuAddr() + vertUBOAligned, fragUBOAligned,
+                        0, sizeof(FragUBO), &fragUBO);
+                    boundTex = texHandle;
+                    g_dk.cmdBuf.bindTextures(DkStage_Fragment, 0, {texHandle});
+                }
+
+                g_dk.cmdBuf.drawIndexed(DkPrimitive_Triangles,
+                    cmd.ElemCount, 1,
+                    (uint32_t)(cmd.IdxOffset + offsetIdx / sizeof(ImDrawIdx)),
+                    (int32_t)(cmd.VtxOffset  + offsetVtx / sizeof(ImDrawVert)),
+                    0);
             }
 
-            // Scissor
-            ImVec4 clip{
-                (cmd.ClipRect.x - clipOff.x) * clipScale.x,
-                (cmd.ClipRect.y - clipOff.y) * clipScale.y,
-                (cmd.ClipRect.z - clipOff.x) * clipScale.x,
-                (cmd.ClipRect.w - clipOff.y) * clipScale.y,
-            };
-            if (clip.x >= (float)width || clip.y >= (float)height ||
-                clip.z < 0.0f || clip.w < 0.0f) continue;
-            if (clip.x < 0.0f) clip.x = 0.0f;
-            if (clip.y < 0.0f) clip.y = 0.0f;
-            if (clip.z > (float)width)  clip.z = (float)width;
-            if (clip.w > (float)height) clip.w = (float)height;
-
-            g_dk.cmdBuf.setScissors(0, {DkScissor{
-                (unsigned)clip.x, (unsigned)clip.y,
-                (unsigned)(clip.z - clip.x), (unsigned)(clip.w - clip.y)}});
-
-            // Texture binding
-            const DkResHandle texHandle = (DkResHandle)(ImU64)cmd.GetTexID();
-            if (!boundTex || texHandle != *boundTex) {
-                const bool isFont = (texHandle == g_dk.fontHandle);
-                FragUBO fragUBO{isFont ? 1u : 0u, {0, 0, 0}};
-                g_dk.cmdBuf.pushConstants(
-                    g_dk.uboMemBlock.getGpuAddr() + vertUBOAligned, fragUBOAligned,
-                    0, sizeof(FragUBO), &fragUBO);
-                boundTex = texHandle;
-                g_dk.cmdBuf.bindTextures(DkStage_Fragment, 0, {texHandle});
-            }
-
-            g_dk.cmdBuf.drawIndexed(DkPrimitive_Triangles,
-                cmd.ElemCount, 1,
-                (uint32_t)(cmd.IdxOffset + offsetIdx / sizeof(ImDrawIdx)),
-                (int32_t)(cmd.VtxOffset  + offsetVtx / sizeof(ImDrawVert)),
-                0);
+            offsetVtx += vtxSize;
+            offsetIdx += idxSize;
         }
-
-        offsetVtx += vtxSize;
-        offsetIdx += idxSize;
     }
 
     g_dk.queue.submitCommands(g_dk.cmdBuf.finishList());
     g_dk.queue.presentImage(g_dk.swapchain, slot);
+    static bool s_logged_first_present = false;
+    if (!s_logged_first_present) {
+        s_logged_first_present = true;
+        FILE *log = fopen("sdmc:/switch/qos-menu-init.log", "a");
+        if (log) {
+            fprintf(log, "[v0.7] first_present slot=%d cmdlists=%d size=%ux%u\n",
+                slot, drawData->CmdListsCount, width, height);
+            fclose(log);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -583,9 +595,9 @@ void ImGui_ImplDeko3d_RenderDrawData(ImDrawData *drawData) {
 
 bool ImGui_ImplDeko3d_GetHandles(ImplDeko3dHandles *out) {
     if (!out || !g_dk.initialized) return false;
-    out->dk_device           = static_cast<void *>(&g_dk.device);
-    out->dk_queue            = static_cast<void *>(&g_dk.queue);
-    out->image_memblock      = static_cast<void *>(&g_dk.imageMemBlock);
+    out->dk_device           = static_cast<void *>(static_cast<DkDevice>(g_dk.device));
+    out->dk_queue            = static_cast<void *>(static_cast<DkQueue>(g_dk.queue));
+    out->image_memblock      = static_cast<void *>(static_cast<DkMemBlock>(g_dk.imageMemBlock));
     out->image_memblock_size = IMAGE_POOL_SIZE;
     return true;
 }

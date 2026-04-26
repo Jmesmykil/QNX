@@ -1,0 +1,53 @@
+[INFO] [EventManager] alive!
+[INFO] Hello World from uSystem! Launching uMenu...
+[INFO] [EventManager] registered ApplicationRecordUpdateSystemEvent
+[INFO] Launching uMenu with start mode 2...
+[INFO] [EventManager] registered GameCardMountFailureEvent
+[INFO] Got AppletMessage: ChangeIntoBackground
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Action queue has 2 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Failed to handle action in queue
+[INFO] Trying to handle action of type 11 in queue
+[INFO] Terminating uMenu...
+[INFO] Got AppletMessage: ChangeIntoForeground
+[INFO] Action queue has 1 actions
+[INFO] Trying to handle action of type 0 in queue
+[INFO] Launching application 0x0542D221947D6000...
+[INFO] [EventManager] Application records changed!
+[INFO] Got AppletMessage: ChangeIntoBackground
+[INFO] Got AppletMessage: ChangeIntoForeground
+[INFO] No application or library applet is active, checking for application launch failure...
+[WARN] Application 0x0542D221947D6000 terminated with result 2000-0000/0x0
+[INFO] Launching uMenu with start mode 3...
+[INFO] Got AppletMessage: ApplicationExited
+[INFO] Got AppletMessage: ChangeIntoBackground

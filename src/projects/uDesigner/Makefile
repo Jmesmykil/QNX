@@ -1,3 +1,26 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# LEGACY UPSTREAM REFERENCE — DO NOT MAINTAIN
+#
+# This is upstream XorTroll's uLaunch theme designer (C++ + Dear ImGui + GLFW
+# compiled to WebAssembly via Emscripten). It is preserved on disk as the
+# behavioral spec for the future Q OS-native rebuild — `QOS Theme Designer.app`
+# (Swift SwiftUI, native macOS, post-1.0).
+#
+# Per creator directive 2026-04-25T17:55Z:
+#   "Udesigner could be rebuilt from the ground up because we will let them
+#    theme Q OS themselves later down the road."
+#
+# Per creator memory `feedback_all_apps_must_be_swift`:
+#   All Mac UI apps must be Swift SwiftUI; this WebAssembly build is being
+#   replaced, not maintained.
+#
+# Do NOT modify. Do NOT add to the `package:` target in src/Makefile. Do NOT
+# build in CI. The `legacy-companion-archive` target in src/Makefile zips this
+# tree to archive/legacy-companion-apps/ for posterity.
+#
+# See docs/UPSTREAM-COMPANION-APPS-STRATEGY.md for the rebuild plan.
+# See docs/ROADMAP.md "Post-1.0 native Mac companions" for the version chain.
+# ─────────────────────────────────────────────────────────────────────────────
 
 NAME			:=	udesigner
 OUTPUT_DIR		:=	../../docs

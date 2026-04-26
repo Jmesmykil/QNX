@@ -56,13 +56,18 @@ struct BuiltinIconDef {
     u8          r, g, b;
 };
 
+// Cycle K-noextras: Terminal AND VaultSplit dropped per creator decision —
+// VaultSplit was a duplicate Vault dispatcher with no unique behavior; gone.
+// Cycle K-TrackD: AllPrograms (QdLaunchpad) added as slot 4.
+// PopulateBuiltins assigns dock_slot = i, so the 5 slots are:
+// Vault=0, Monitor=1, Control=2, About=3, AllPrograms=4.
+// Dispatch switch mirrors this.
 static constexpr BuiltinIconDef BUILTIN_ICON_DEFS[BUILTIN_ICON_COUNT] = {
-    { "Vault",      'V', 0x7D, 0xD3, 0xFC },
-    { "Terminal",   'T', 0xE0, 0xE0, 0xF0 },
-    { "Monitor",    'M', 0x4A, 0xDE, 0x80 },
-    { "Control",    'C', 0x4A, 0xDE, 0x80 },
-    { "About",      'A', 0xF8, 0x71, 0x71 },
-    { "VaultSplit", 'S', 0xFB, 0xBF, 0x24 },
+    { "Vault",       'V', 0x7D, 0xD3, 0xFC },
+    { "Monitor",     'M', 0x4A, 0xDE, 0x80 },
+    { "Control",     'C', 0x4A, 0xDE, 0x80 },
+    { "About",       'A', 0xF8, 0x71, 0x71 },
+    { "AllPrograms", 'P', 0xA7, 0x8B, 0xFA },
 };
 
 // ── Constructor / Destructor ──────────────────────────────────────────────────
@@ -78,12 +83,36 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
 {
     UL_LOG_INFO("qdesktop: QdDesktopIconsElement ctor entry");
 
+    // Initialise dock-slot hit-test rect cache with neutral (no-magnify) positions
+    // so HitTest returns correct results even before the first OnRender call.
+    // Neutral positions mirror the OnRender two-pass layout with scale=100 (ICON_BG_W):
+    //   total_expanded_w = BUILTIN_ICON_COUNT * ICON_BG_W + (BUILTIN_ICON_COUNT-1) * ICON_GRID_GAP_X
+    //                    = 5*140 + 4*28 = 812  (K-TrackD: 5 slots)
+    //   expanded_start_x = (1920 - 812) / 2 = 554
+    //   slot i x = 554 + i * (ICON_BG_W + ICON_GRID_GAP_X)
+    {
+        static constexpr s32 kNeutralTotalW =
+            static_cast<s32>(BUILTIN_ICON_COUNT) * ICON_BG_W
+            + (static_cast<s32>(BUILTIN_ICON_COUNT) - 1) * ICON_GRID_GAP_X;
+        static constexpr s32 kNeutralStartX = (1920 - kNeutralTotalW) / 2;
+        for (size_t i = 0u; i < BUILTIN_ICON_COUNT; ++i) {
+            dock_slot_x_[i] = kNeutralStartX
+                + static_cast<s32>(i) * (ICON_BG_W + ICON_GRID_GAP_X);
+            dock_slot_w_[i] = ICON_BG_W;
+        }
+    }
+
     // Initialise per-slot cached textures.  std::array<T*, N> default-
     // constructs to indeterminate pointer values, so we explicitly null them.
     for (size_t i = 0; i < MAX_ICONS; ++i) {
         name_text_tex_[i]  = nullptr;
         glyph_text_tex_[i] = nullptr;
         icon_tex_[i]        = nullptr;
+        // Dimension cache — zeroed until lazy-create writes real values.
+        name_text_w_[i]   = 0;
+        name_text_h_[i]   = 0;
+        glyph_text_w_[i]  = 0;
+        glyph_text_h_[i]  = 0;
     }
 
     // Ensure icon cache dir exists before any icon I/O.
@@ -111,6 +140,11 @@ QdDesktopIconsElement::~QdDesktopIconsElement() {
     for (size_t i = 0; i < MAX_ICONS; ++i) {
         FreeCachedText(i);
     }
+    // Cycle I: free the rounded-bg mask texture (built lazily in PaintIconCell).
+    if (round_bg_tex_ != nullptr) {
+        SDL_DestroyTexture(round_bg_tex_);
+        round_bg_tex_ = nullptr;
+    }
 }
 
 // ── FreeCachedText ─────────────────────────────────────────────────────────────
@@ -123,10 +157,14 @@ void QdDesktopIconsElement::FreeCachedText(size_t entry_idx) {
     if (name_text_tex_[entry_idx] != nullptr) {
         SDL_DestroyTexture(name_text_tex_[entry_idx]);
         name_text_tex_[entry_idx] = nullptr;
+        name_text_w_[entry_idx]   = 0;
+        name_text_h_[entry_idx]   = 0;
     }
     if (glyph_text_tex_[entry_idx] != nullptr) {
         SDL_DestroyTexture(glyph_text_tex_[entry_idx]);
         glyph_text_tex_[entry_idx] = nullptr;
+        glyph_text_w_[entry_idx]   = 0;
+        glyph_text_h_[entry_idx]   = 0;
     }
     // Also free the cached icon BGRA texture for this slot.
     // This is the texture that was previously allocated every frame; it is
@@ -162,18 +200,28 @@ void QdDesktopIconsElement::AdvanceTick() {
 // Magnify scale table (×100 fixed-point, mirrors wm.rs):
 //   dist 0 → 140, dist 1 → 120, dist 2 → 105, dist ≥3 → 100
 
-static constexpr int32_t DOCK_H           = 108;    // ×1.5 from Rust 72
-static constexpr int32_t DOCK_NOMINAL_TOP = 1080 - DOCK_H;  // 972
-static constexpr int32_t DOCK_SLOT_SIZE   = 84;     // ×1.5 from Rust 56
-static constexpr int32_t DOCK_SLOT_GAP    = 18;     // ×1.5 from Rust 12
-static constexpr int32_t DOCK_PROX_ZONE   = 30;     // SP2-F12: ×1.5 from Rust 20
-static constexpr int32_t DOCK_PROX_THRESH = DOCK_SLOT_SIZE + DOCK_SLOT_GAP; // 102
+// Cycle J-tweak2: trimmed 168 → 148 so a 5th icon row fits above the dock.
+// Dock backdrop now occupies y=932..1080. Dock slot icons (84 px after the
+// auto-centering math) still sit comfortably inside the 148-px band, and
+// horizontal rebalancing is unaffected because it scales off ICON_BG_W.
+//
+// These file-local constants shadow the qd_WmConstants.hpp values (which
+// describe the *visual* dock band, 108 px) because this TU uses an expanded
+// hit / render band of 148 px.  They are prefixed kDock to avoid the ODR
+// conflict that occurs when qd_WmConstants.hpp is pulled in transitively
+// through ui_MenuApplication.hpp → qd_AboutLayout.hpp.
+static constexpr int32_t kDockH           = 148;
+static constexpr int32_t kDockNominalTop  = 1080 - kDockH;  // 932
+static constexpr int32_t kDockSlotSize    = 84;     // ×1.5 from Rust 56
+static constexpr int32_t kDockSlotGap     = 18;     // ×1.5 from Rust 12
+static constexpr int32_t kDockProxZone    = 30;     // SP2-F12: ×1.5 from Rust 20
+static constexpr int32_t kDockProxThresh  = kDockSlotSize + kDockSlotGap; // 102
 
 void QdDesktopIconsElement::UpdateDockMagnify(int32_t cursor_y) {
     prev_magnify_center_ = magnify_center_;
 
     // Cursor must be in or near the dock zone.
-    if (cursor_y < DOCK_NOMINAL_TOP - DOCK_PROX_ZONE) {
+    if (cursor_y < kDockNominalTop - kDockProxZone) {
         magnify_center_ = -1;
         return;
     }
@@ -356,15 +404,117 @@ bool QdDesktopIconsElement::CellRect(size_t i, s32 &out_x, s32 &out_y) const {
 
 size_t QdDesktopIconsElement::HitTest(s32 tx, s32 ty) const {
     for (size_t i = 0u; i < icon_count_; ++i) {
-        s32 cx, cy;
-        if (!CellRect(i, cx, cy)) {
-            continue;
+        const auto &entry = icons_[i];
+        s32 cx, cy, cw, ch;
+        if (entry.is_builtin && i < BUILTIN_ICON_COUNT) {
+            // Dock slot — use the per-frame cached rect that matches the
+            // current magnify state.  dock_slot_x_[]/dock_slot_w_[] are
+            // written by OnRender each frame before OnInput is called.
+            cx = dock_slot_x_[i];
+            cy = kDockNominalTop;
+            cw = dock_slot_w_[i];
+            ch = kDockH;
+        } else {
+            // Grid icon — use the nominal CellRect.
+            if (!CellRect(i, cx, cy)) {
+                continue;
+            }
+            cw = ICON_CELL_W;
+            ch = ICON_CELL_H;
         }
-        if (tx >= cx && ty >= cy && tx < cx + ICON_CELL_W && ty < cy + ICON_CELL_H) {
+        if (tx >= cx && ty >= cy && tx < cx + cw && ty < cy + ch) {
             return i;
         }
     }
     return MAX_ICONS; // sentinel: no hit
+}
+
+// ── FillRoundRect ─────────────────────────────────────────────────────────────
+// Software-rasterised rounded-corner filled rectangle.
+//
+// Algorithm — horizontal span fill, zero libm, no background-colour dependency:
+//
+//   The rect is divided into three bands:
+//     [top arc band]   rows 0 .. radius-1   — width varies with arc
+//     [middle band]    rows radius .. h-radius-1 — full width
+//     [bottom arc band] rows h-radius .. h-1 — symmetric to top
+//
+//   For each row in an arc band we compute the half-width of the inscribed
+//   circle at that row using the integer identity:
+//     dy  = distance from the row to the nearest corner-centre row
+//     span_half = floor(sqrt(r² - dy²))
+//   We avoid sqrt by iterating dx from radius down to 0 and testing
+//   dx*dx + dy*dy <= r*r (one comparison per candidate column, at most
+//   radius iterations per row, O(radius²) total for both arc bands).
+//
+//   SDL_RenderFillRect is called once per scanline — ~2*radius + inner_height
+//   rects total.  At radius=12, ICON_BG_H=144px, that is 12+120+12 = 144 rects,
+//   well under 1 ms on Tegra X1.
+//
+// Parameters:
+//   r          — SDL renderer
+//   rect       — destination rectangle (includes rounded corners)
+//   radius     — corner radius, pixels (auto-clamped to half of shorter side)
+//   cr,cg,cb,ca — fill colour RGBA
+static void FillRoundRect(SDL_Renderer *r, SDL_Rect rect, int radius,
+                           u8 cr, u8 cg, u8 cb, u8 ca)
+{
+    // Clamp.
+    const int half_w = rect.w / 2;
+    const int half_h = rect.h / 2;
+    if (radius > half_w) { radius = half_w; }
+    if (radius > half_h) { radius = half_h; }
+
+    SDL_SetRenderDrawColor(r, cr, cg, cb, ca);
+
+    if (radius <= 0) {
+        SDL_RenderFillRect(r, &rect);
+        return;
+    }
+
+    const int r2 = radius * radius;
+
+    // Top arc band: row indices 0 .. radius-1 (relative to rect.y).
+    for (int row = 0; row < radius; ++row) {
+        // dy = distance from this row to the corner-centre row (= radius-1).
+        const int dy = radius - 1 - row;
+        // Find largest dx such that dx*dx + dy*dy <= r2.
+        // Start from dx=radius and walk down until the condition holds.
+        int dx = radius;
+        while (dx > 0 && (dx * dx + dy * dy) > r2) {
+            --dx;
+        }
+        // Span: from (rect.x + radius - dx) to (rect.x + rect.w - radius + dx - 1)
+        const int span_x = rect.x + radius - dx;
+        const int span_w = rect.w - 2 * (radius - dx);
+        if (span_w > 0) {
+            SDL_Rect span { span_x, rect.y + row, span_w, 1 };
+            SDL_RenderFillRect(r, &span);
+        }
+    }
+
+    // Middle band (full width, all rows between the two arc bands).
+    const int mid_y = rect.y + radius;
+    const int mid_h = rect.h - 2 * radius;
+    if (mid_h > 0) {
+        SDL_Rect mid { rect.x, mid_y, rect.w, mid_h };
+        SDL_RenderFillRect(r, &mid);
+    }
+
+    // Bottom arc band: symmetric to top.
+    for (int row = 0; row < radius; ++row) {
+        const int dy = row;  // distance from corner-centre row (= rect.h - radius)
+        int dx = radius;
+        while (dx > 0 && (dx * dx + dy * dy) > r2) {
+            --dx;
+        }
+        const int span_x = rect.x + radius - dx;
+        const int span_w = rect.w - 2 * (radius - dx);
+        if (span_w > 0) {
+            SDL_Rect span { span_x, rect.y + rect.h - radius + row, span_w, 1 };
+            SDL_RenderFillRect(r, &span);
+        }
+    }
 }
 
 // ── PaintIconCell ─────────────────────────────────────────────────────────────
@@ -410,15 +560,101 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
         ? static_cast<u8>(std::min(255, static_cast<int>(base_b) + 40))
         : base_b;
 
-    // ── 1. Background filled rectangle ────────────────────────────────────
-    SDL_SetRenderDrawColor(r, fill_r, fill_g, fill_b, 0xFFu);
+    // ── 1. Background rounded rectangle ───────────────────────────────────
+    // Cycle I (boot-speed fix): use cached white rounded-rect mask texture
+    // tinted via SDL_SetTextureColorMod. Replaces the per-frame FillRoundRect
+    // call which issued 144 SDL_RenderFillRect ops per icon (17 icons × 144
+    // × 60 Hz ≈ 147 K fills/sec ≈ 440 ms/sec on Tegra X1 — the boot
+    // slowdown the user reported in the H-cycle).
+    //
+    // Lazy-build the mask texture on first paint; once cached, paint cost
+    // collapses to: 1 × SDL_SetTextureColorMod + 1 × SDL_RenderCopy per icon
+    // (17 icons × 60 Hz = ~1 020 calls/sec, about 0.7 ms/sec total).
     SDL_Rect bg_rect { bg_x, bg_y, ICON_BG_W, ICON_BG_H };
-    SDL_RenderFillRect(r, &bg_rect);
+    if (round_bg_tex_ == nullptr) {
+        round_bg_tex_ = SDL_CreateTexture(r, SDL_PIXELFORMAT_ARGB8888,
+                                          SDL_TEXTUREACCESS_TARGET,
+                                          ICON_BG_W, ICON_BG_H);
+        if (round_bg_tex_ != nullptr) {
+            SDL_SetTextureBlendMode(round_bg_tex_, SDL_BLENDMODE_BLEND);
+            SDL_Texture *prev_target = SDL_GetRenderTarget(r);
+            if (SDL_SetRenderTarget(r, round_bg_tex_) == 0) {
+                // Clear to fully transparent so the corner triangles stay
+                // alpha=0 — that's what makes the icon edges round.
+                SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+                SDL_SetRenderDrawColor(r, 0x00u, 0x00u, 0x00u, 0x00u);
+                SDL_RenderClear(r);
+                // Render rounded shape in WHITE so SDL_SetTextureColorMod
+                // can tint it to any fill colour at no additional cost.
+                SDL_Rect mask_rect { 0, 0, ICON_BG_W, ICON_BG_H };
+                FillRoundRect(r, mask_rect, 12, 0xFFu, 0xFFu, 0xFFu, 0xFFu);
+                SDL_SetRenderTarget(r, prev_target);
+                UL_LOG_INFO("qdesktop: round_bg_tex built %dx%d radius=12",
+                            ICON_BG_W, ICON_BG_H);
+            } else {
+                // Render-target unsupported on this backend — drop the texture
+                // and fall back to per-frame FillRoundRect (still correct,
+                // just slower). Next paint will not retry.
+                SDL_DestroyTexture(round_bg_tex_);
+                round_bg_tex_ = nullptr;
+                UL_LOG_WARN("qdesktop: round_bg_tex SetRenderTarget failed,"
+                            " falling back to per-frame FillRoundRect");
+            }
+        }
+    }
+    if (round_bg_tex_ != nullptr) {
+        SDL_SetTextureColorMod(round_bg_tex_, fill_r, fill_g, fill_b);
+        SDL_RenderCopy(r, round_bg_tex_, nullptr, &bg_rect);
+    } else {
+        // Fallback path: per-frame software fill (only fires if render-target
+        // creation failed once at boot — fail open rather than blank icons).
+        FillRoundRect(r, bg_rect, 12, fill_r, fill_g, fill_b, 0xFFu);
+    }
 
-    // ── 2. Cached icon texture blit ───────────────────────────────────────
+    // ── 2a. Cycle J: Special-icon PNG lazy-load ──────────────────────────
+    // The 8 SpecialEntry kinds (Settings/Album/Themes/Controllers/MiiEdit/
+    // WebBrowser/UserPage/Amiibo) each have a PNG asset already shipped in
+    // romfs at default/ui/Main/EntryIcon/<Name>.png. Previously these slots
+    // rendered as colored squares because SetSpecialEntries left icon_path
+    // empty and PaintIconCell only loaded textures for Application/NRO kinds.
+    // This branch runs BEFORE the BGRA cache lookup so the existing render
+    // block (lines below) blits whichever icon_tex_ we populate.
+    if (entry.kind == IconKind::Special && entry_idx < MAX_ICONS
+            && icon_tex_[entry_idx] == nullptr) {
+        using ET = ::ul::menu::EntryType;
+        const char *asset_path = nullptr;
+        switch (static_cast<ET>(entry.special_subtype)) {
+            case ET::SpecialEntrySettings:    asset_path = "ui/Main/EntryIcon/Settings";    break;
+            case ET::SpecialEntryAlbum:       asset_path = "ui/Main/EntryIcon/Album";       break;
+            case ET::SpecialEntryThemes:      asset_path = "ui/Main/EntryIcon/Themes";      break;
+            case ET::SpecialEntryControllers: asset_path = "ui/Main/EntryIcon/Controllers"; break;
+            case ET::SpecialEntryMiiEdit:     asset_path = "ui/Main/EntryIcon/MiiEdit";     break;
+            case ET::SpecialEntryWebBrowser:  asset_path = "ui/Main/EntryIcon/WebBrowser";  break;
+            case ET::SpecialEntryAmiibo:      asset_path = "ui/Main/EntryIcon/Amiibo";      break;
+            // SpecialEntryUserPage has no static asset (account avatar comes
+            // from acc:: at runtime — defer until UserCard-style handling).
+            default: break;
+        }
+        if (asset_path != nullptr) {
+            icon_tex_[entry_idx] = ::ul::menu::ui::TryFindLoadImage(asset_path);
+            if (icon_tex_[entry_idx] != nullptr) {
+                UL_LOG_INFO("qdesktop: Special icon loaded subtype=%u path=%s",
+                            static_cast<unsigned>(entry.special_subtype),
+                            asset_path);
+            } else {
+                UL_LOG_WARN("qdesktop: Special icon load FAILED subtype=%u path=%s"
+                            " (active theme resource missing) — will fall back to glyph",
+                            static_cast<unsigned>(entry.special_subtype),
+                            asset_path);
+            }
+        }
+    }
+
+    // ── 2b. Cached icon texture blit ───────────────────────────────────────
     // Determine which path string to use as the cache key:
     //   - NRO entries    → nro_path  (ASET JPEG encoded per NRO spec)
     //   - Application    → icon_path (SD-card JPEG, may be empty)
+    //   - Special        → already loaded into icon_tex_[entry_idx] above
     //   - Builtin        → no icon (nro_path and icon_path are both empty)
     const u8 *bgra = nullptr;
     if (entry.kind == IconKind::Application && entry.icon_path[0] != '\0') {
@@ -427,7 +663,94 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
         bgra = cache_.Get(entry.nro_path);
     }
 
-    if (bgra != nullptr && entry_idx < MAX_ICONS) {
+    // Cycle J: also render when Special branch above populated icon_tex_
+    // (bgra is nullptr for Special since they don't go through QdIconCache).
+    const bool special_tex_ready = (entry.kind == IconKind::Special
+                                    && entry_idx < MAX_ICONS
+                                    && icon_tex_[entry_idx] != nullptr);
+
+    // ── 2c. Default-icon fallback (Cycle K-defaulticons) ──────────────────
+    // When a non-Special entry has no BGRA in the cache (NRO with no embedded
+    // icon, Application whose NS/JPEG load failed, or Builtin dock icon),
+    // load a default PNG into icon_tex_[entry_idx] exactly once — so EVERY
+    // entry displays a real image instead of a colored square + ASCII glyph.
+    //
+    // Priority chain:
+    //   Nro          → DefaultHomebrew.png
+    //   Application  → DefaultApplication.png
+    //   Builtin      → DefaultApplication.png  (dock shortcuts look like apps)
+    //   catch-all    → Empty.png
+    //
+    // This branch fires only when:
+    //   (a) no BGRA is in the icon cache for this slot, AND
+    //   (b) no Special PNG was already loaded (Special is handled in 2a), AND
+    //   (c) icon_tex_[entry_idx] has not yet been populated (lazy, runs once).
+    if (bgra == nullptr && !special_tex_ready
+            && entry_idx < MAX_ICONS
+            && icon_tex_[entry_idx] == nullptr) {
+        // Cycle K-iconsfix: Builtin entries get a per-name Dock<Name>.png lookup
+        // (e.g., "Vault" → "ui/Main/EntryIcon/DockVault") generated by the asset
+        // pass.  If that PNG is missing on disk, drop through to the generic
+        // DefaultApplication fallback so the icon is still rendered as art —
+        // never a colored-square + ASCII glyph (creator directive: "EVERYTHING
+        // uses Icons").  Application/Nro/* keep their per-kind fallbacks.
+        bool builtin_handled = false;
+        const char *fallback_path = nullptr;
+        switch (entry.kind) {
+            case IconKind::Nro:
+                fallback_path = "ui/Main/EntryIcon/DefaultHomebrew";
+                break;
+            case IconKind::Application:
+                fallback_path = "ui/Main/EntryIcon/DefaultApplication";
+                break;
+            case IconKind::Builtin: {
+                // First try the slot-specific PNG: Dock<Name>.png.  This loop
+                // is single-threaded UI render, so a function-static buffer is
+                // safe and avoids a per-paint heap alloc.
+                static char dock_path[128];
+                snprintf(dock_path, sizeof(dock_path),
+                         "ui/Main/EntryIcon/Dock%s", entry.name);
+                icon_tex_[entry_idx] = ::ul::menu::ui::TryFindLoadImage(dock_path);
+                if (icon_tex_[entry_idx] != nullptr) {
+                    UL_LOG_INFO("qdesktop: dock icon loaded for '%s' path=%s",
+                                entry.name, dock_path);
+                    builtin_handled = true;
+                } else {
+                    UL_LOG_WARN("qdesktop: Dock%s.png missing — falling back"
+                                " to DefaultApplication.png", entry.name);
+                    fallback_path = "ui/Main/EntryIcon/DefaultApplication";
+                }
+                break;
+            }
+            default:
+                fallback_path = "ui/Main/EntryIcon/Empty";
+                break;
+        }
+        if (!builtin_handled) {
+            icon_tex_[entry_idx] = ::ul::menu::ui::TryFindLoadImage(fallback_path);
+            if (icon_tex_[entry_idx] != nullptr) {
+                UL_LOG_INFO("qdesktop: default icon loaded for '%s' kind=%u path=%s",
+                            entry.name,
+                            static_cast<unsigned>(entry.kind),
+                            fallback_path);
+            } else {
+                // No PNG asset on disk — colored-square fallback will fire below.
+                UL_LOG_WARN("qdesktop: default icon MISSING for '%s' kind=%u path=%s"
+                            " (romfs asset absent — check default-theme packaging)",
+                             entry.name,
+                             static_cast<unsigned>(entry.kind),
+                             fallback_path);
+            }
+        }
+    }
+
+    // Combine: either a BGRA cache entry, a Special PNG, or the default fallback
+    // PNG loaded in 2c — all three paths populate icon_tex_[entry_idx].
+    const bool default_tex_ready = (bgra == nullptr && !special_tex_ready
+                                    && entry_idx < MAX_ICONS
+                                    && icon_tex_[entry_idx] != nullptr);
+
+    if ((bgra != nullptr || special_tex_ready || default_tex_ready) && entry_idx < MAX_ICONS) {
         // Lazily build the per-slot icon texture on first paint; reuse every
         // subsequent frame.  Previously the code created and destroyed a new
         // SDL_Texture here each frame (~1 200 GPU allocs/sec at 20 icons × 60 fps),
@@ -437,7 +760,11 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
         // Invalidation (when icon_loaded flips to false and FreeCachedText is
         // called on slot reset) already sets icon_tex_[entry_idx] = nullptr, so
         // the condition below will re-create the texture on the next render.
-        if (icon_tex_[entry_idx] == nullptr) {
+        // Cycle J: only build a streaming texture from BGRA when we're on the
+        // App/NRO path. Special icons populated icon_tex_ above via
+        // TryFindLoadImage and must NOT be overwritten with a wrong-format
+        // streaming texture.
+        if (icon_tex_[entry_idx] == nullptr && bgra != nullptr) {
             // The cache buffer is BGRA byte-order in memory: bytes [B,G,R,A]
             // (qd_IconCache::ScaleToBgra64 explicitly writes dst[0]=B, dst[1]=G,
             // dst[2]=R, dst[3]=A — see qd_IconCache.cpp:146-149).
@@ -464,15 +791,30 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
             }
         }
         if (icon_tex_[entry_idx] != nullptr) {
-            SDL_Rect dst { bg_x, bg_y, ICON_BG_W, ICON_BG_H };
+            // Cycle I: 4px inset on all sides so the icon JPEG's square corners
+            // don't poke out past the rounded background. This loses 8px of
+            // detail (about 5% of icon area) but eliminates the visible sharp
+            // outline at the rounded corners — the user-reported regression
+            // after FillRoundRect landed in the H-cycle.
+            constexpr s32 ICON_INSET_PX = 4;
+            SDL_Rect dst {
+                bg_x + ICON_INSET_PX,
+                bg_y + ICON_INSET_PX,
+                ICON_BG_W - 2 * ICON_INSET_PX,
+                ICON_BG_H - 2 * ICON_INSET_PX
+            };
             SDL_RenderCopy(r, icon_tex_[entry_idx], nullptr, &dst);
         }
     }
 
-    // ── 3. Glyph (only when no JPEG art was blitted) ─────────────────────
+    // ── 3. Glyph (only when no JPEG art AND no Special/default PNG was blitted) ──
     // Lazy-render once per slot, then reuse the cached SDL_Texture every
     // frame.  Glyph uses Medium font for visibility on the colored block.
-    if (bgra == nullptr && entry_idx < MAX_ICONS) {
+    // Cycle J: also skip glyph if Special PNG was loaded above.
+    // Cycle K-defaulticons: also skip if a default fallback PNG was loaded in 2c.
+    // The glyph + colored-square path is now the absolute last resort for when
+    // no PNG asset exists at all on disk — a UL_LOG_ERROR fires in 2c in that case.
+    if (bgra == nullptr && !special_tex_ready && !default_tex_ready && entry_idx < MAX_ICONS) {
         if (glyph_text_tex_[entry_idx] == nullptr && entry.glyph != '\0') {
             const std::string glyph_str(1, entry.glyph);
             // Render in white; the background block already provides contrast.
@@ -480,10 +822,15 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
             glyph_text_tex_[entry_idx] = pu::ui::render::RenderText(
                 pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Medium),
                 glyph_str, glyph_color);
+            // Cache dimensions once — texture size is immutable after creation.
+            if (glyph_text_tex_[entry_idx] != nullptr) {
+                SDL_QueryTexture(glyph_text_tex_[entry_idx], nullptr, nullptr,
+                                 &glyph_text_w_[entry_idx], &glyph_text_h_[entry_idx]);
+            }
         }
         if (glyph_text_tex_[entry_idx] != nullptr) {
-            int gw = 0, gh = 0;
-            SDL_QueryTexture(glyph_text_tex_[entry_idx], nullptr, nullptr, &gw, &gh);
+            const int gw = glyph_text_w_[entry_idx];
+            const int gh = glyph_text_h_[entry_idx];
             SDL_Rect gdst {
                 bg_x + (ICON_BG_W - gw) / 2,
                 bg_y + (ICON_BG_H - gh) / 2,
@@ -494,30 +841,37 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     }
 
     // ── 4. Name label (below the icon block) ──────────────────────────────
-    // Truncate to a max display length (16 chars) so we don't blow out the
-    // cell horizontally; longer NACP names render with an ellipsis suffix.
-    if (entry_idx < MAX_ICONS && entry.name[0] != '\0') {
+    // Cycle I: auto-fit text via system-wide RenderTextAutoFit helper. Replaces
+    // the previous "truncate at 16 chars + ellipsis" path. Shrinks font size
+    // (Small -> falls through smaller variants) until the rasterised width
+    // fits within ICON_BG_W. Long names show fully with smaller font instead
+    // of being mutilated by ellipsis.
+    // Cycle K-docktext: skip name text rendering entirely for dock builtins.
+    // Dock icons live in the bottom dock band (DOCK_NOMINAL_TOP=932, DOCK_H=148);
+    // their bg_y is 932+6=938 and ICON_BG_H is 130, so a label at bg_y +
+    // ICON_BG_H + 4 = 1072 starts only 8 px above the screen bottom (1080) and
+    // its glyph height (~30 px) clips below the screen. The dock is a tight
+    // bottom strip with no room for under-icon labels — and per creator
+    // directive ("EVERYTHING uses Icons") the dock is icon-only by design.
+    // Grid icons keep their labels (they sit in the spacious icon grid above).
+    if (entry_idx < MAX_ICONS && entry.name[0] != '\0' && !entry.is_builtin) {
         if (name_text_tex_[entry_idx] == nullptr) {
-            // Build the displayed string (truncate + ellipsis).
-            char display[24];
-            const size_t name_len = strnlen(entry.name, sizeof(entry.name));
-            if (name_len > 16) {
-                memcpy(display, entry.name, 13);
-                display[13] = '.'; display[14] = '.'; display[15] = '.';
-                display[16] = '\0';
-            } else {
-                memcpy(display, entry.name, name_len);
-                display[name_len] = '\0';
-            }
             const pu::ui::Color name_color { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-            name_text_tex_[entry_idx] = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-                std::string(display), name_color,
-                static_cast<u32>(ICON_BG_W));  // soft-cap width
+            const std::string name_str(entry.name,
+                                       strnlen(entry.name, sizeof(entry.name)));
+            name_text_tex_[entry_idx] = ::ul::menu::ui::RenderTextAutoFit(
+                name_str, name_color,
+                static_cast<u32>(ICON_BG_W),
+                pu::ui::DefaultFontSize::Small);
+            // Cache dimensions once — texture size is immutable after creation.
+            if (name_text_tex_[entry_idx] != nullptr) {
+                SDL_QueryTexture(name_text_tex_[entry_idx], nullptr, nullptr,
+                                 &name_text_w_[entry_idx], &name_text_h_[entry_idx]);
+            }
         }
         if (name_text_tex_[entry_idx] != nullptr) {
-            int nw = 0, nh = 0;
-            SDL_QueryTexture(name_text_tex_[entry_idx], nullptr, nullptr, &nw, &nh);
+            const int nw = name_text_w_[entry_idx];
+            const int nh = name_text_h_[entry_idx];
             // Centre horizontally under the bg rect; pad 4 px below.
             SDL_Rect ndst {
                 bg_x + (ICON_BG_W - nw) / 2,
@@ -625,6 +979,13 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         }
     }
 
+    // Cache the live dock-slot rects so HitTest matches the visual exactly.
+    // Updated every frame because magnify_w[] changes when cursor enters the dock.
+    for (size_t i = 0u; i < BUILTIN_ICON_COUNT; ++i) {
+        dock_slot_x_[i] = builtin_slot_x[i];
+        dock_slot_w_[i] = magnify_w[i];
+    }
+
     // ── Dock panel (translucent backdrop behind builtin slots) ───────────────
     // Visually delineates the dock zone (y = DOCK_NOMINAL_TOP..1080) from the
     // icon grid above it.  Drawn BEFORE the icon loop so dock builtins paint
@@ -640,11 +1001,11 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     if (dev_dock_on) {
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(r, 0x00u, 0x00u, 0x00u, 0x60u);
-        SDL_Rect dock_panel { 0, DOCK_NOMINAL_TOP + y, 1920, DOCK_H };
+        SDL_Rect dock_panel { 0, kDockNominalTop + y, 1920, kDockH };
         SDL_RenderFillRect(r, &dock_panel);
         // Thin top border line for definition (1px white at 25% alpha).
         SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0x40u);
-        SDL_Rect dock_border { 0, DOCK_NOMINAL_TOP + y, 1920, 1 };
+        SDL_Rect dock_border { 0, kDockNominalTop + y, 1920, 1 };
         SDL_RenderFillRect(r, &dock_border);
         // Restore opaque draw colour for downstream filled rects.
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
@@ -661,7 +1022,7 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
             // Dock slot: use two-pass magnify position.
             // cell_y: dock is placed at DOCK_NOMINAL_TOP row.
             cell_x = builtin_slot_x[i] + x;
-            cell_y = DOCK_NOMINAL_TOP + y;
+            cell_y = kDockNominalTop + y;
         } else {
             // Cycle D5 dev toggle: skip NRO/Application grid icons when
             // desktop-icons is disabled.
@@ -1001,14 +1362,48 @@ void QdDesktopIconsElement::LaunchIcon(size_t i) {
 
     switch (entry.kind) {
         case IconKind::Builtin:
-            // dock_slot 0 = Vault file browser.
-            // dock_slot 3 = Control (Settings) panel.
-            if (entry.dock_slot == 0) {
-                if (g_MenuApplication) {
-                    g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Vault);
-                }
-            } else {
-                UL_LOG_WARN("qdesktop: LaunchIcon: unhandled builtin dock_slot=%u", (unsigned)entry.dock_slot);
+            // Cycle J: wire each dock slot to its existing handler.
+            // Cycle K-noterminal: dock_slot auto-renumbered after Terminal
+            // removal — Vault=0, Monitor=1, Control=2, About=3.
+            // Cycle K-TrackD: AllPrograms (QdLaunchpad) promoted as slot 4.
+            switch (entry.dock_slot) {
+                case 0: // Vault — uMenu's native file browser
+                    if (g_MenuApplication) {
+                        g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Vault);
+                    }
+                    break;
+                case 1: // Monitor — K-cycle promoted QdMonitorHostLayout
+                    if (g_MenuApplication) {
+                        UL_LOG_INFO("qdesktop: Builtin Monitor tapped -> LoadMenu(Monitor)");
+                        g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Monitor);
+                    }
+                    break;
+                case 2: // Control — opens existing Dev menu (qd_HomeMiniMenu)
+                    UL_LOG_INFO("qdesktop: Builtin Control tapped → ShowDevMenu");
+                    ::ul::menu::qdesktop::ShowDevMenu();
+                    break;
+                case 3: // About — K-cycle promoted QdAboutLayout (direct IMenuLayout)
+                    if (g_MenuApplication) {
+                        UL_LOG_INFO("qdesktop: Builtin About tapped -> LoadMenu(About)");
+                        g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::About);
+                    }
+                    break;
+                case 4: // AllPrograms — K-TrackD promoted QdLaunchpadHostLayout
+                    if (g_MenuApplication) {
+                        UL_LOG_INFO("qdesktop: Builtin AllPrograms tapped -> LoadMenu(Launchpad)");
+                        g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Launchpad);
+                    }
+                    break;
+                case 5: // VaultSplit — opens regular Vault for now
+                    if (g_MenuApplication) {
+                        g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Vault);
+                    }
+                    UL_LOG_INFO("qdesktop: Builtin VaultSplit tapped → Vault (split-mode TBD)");
+                    break;
+                default:
+                    UL_LOG_WARN("qdesktop: LaunchIcon: unknown dock_slot=%u",
+                                static_cast<unsigned>(entry.dock_slot));
+                    break;
             }
             return;
 

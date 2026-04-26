@@ -8,6 +8,13 @@
 #include <ul/menu/ui/ui_BackgroundScreenCapture.hpp>
 #include <ul/menu/smi/smi_Commands.hpp>
 #include <ul/menu/qdesktop/qd_VaultLayout.hpp>
+#include <ul/menu/qdesktop/qd_VaultHostLayout.hpp>
+#include <ul/menu/qdesktop/qd_MonitorLayout.hpp>
+#include <ul/menu/qdesktop/qd_MonitorHostLayout.hpp>
+#include <ul/menu/qdesktop/qd_AboutLayout.hpp>
+#include <ul/menu/qdesktop/qd_SettingsLayout.hpp>
+#include <ul/menu/qdesktop/qd_LockscreenLayout.hpp>
+#include <ul/menu/qdesktop/qd_LaunchpadHostLayout.hpp>
 
 namespace ul::menu::ui {
 
@@ -17,9 +24,24 @@ namespace ul::menu::ui {
         Main,
         Startup,
         Themes,
+        // Upstream ulaunch settings/lockscreen layouts (thin wrappers around NX
+        // system applets).  Still used for the upstream ulaunch Settings/Lockscreen
+        // paths; the qdesktop-promoted surfaces use QSettings/QLockscreen below.
         Settings,
         Lockscreen,
+        // Q OS qdesktop-native surfaces (K-cycle promoted from quarantine).
+        // MUST be IMenuLayout subclasses — see qd_VaultHostLayout.hpp for the
+        // crash chain that any bare pu::ui::Layout here would trigger.
         Vault,
+        // Cycle K-noterminal: Terminal MenuType removed — feature dropped per
+        // creator decision; the dock no longer has a terminal slot.
+        Monitor,
+        About,
+        // qdesktop-native settings + lockscreen (replace upstream once stable).
+        QSettings,
+        QLockscreen,
+        // K-cycle Track D: QdLaunchpad — full-screen app-grid "All Programs".
+        Launchpad,
     };
 
     void OnMessage(const smi::MenuMessageContext &msg_ctx);
@@ -39,7 +61,29 @@ namespace ul::menu::ui {
             SettingsMenuLayout::Ref settings_menu_lyt;
             LockscreenMenuLayout::Ref lockscreen_menu_lyt;
             qdesktop::QdVaultLayout::Ref vault_lyt;
-            pu::ui::Layout::Ref vault_host_lyt_;
+            // Vault host layout. MUST be a real IMenuLayout subclass — NOT a bare
+            // pu::ui::Layout. Plutonium's GetLayout<L>() is a static_pointer_cast,
+            // so the OnMessage dispatcher will reinterpret whatever lives here as
+            // an IMenuLayout. A bare Layout here causes a Data Abort at 0x0 the
+            // moment any smi::MenuMessage arrives. See qd_VaultHostLayout.hpp.
+            qdesktop::QdVaultHostLayout::Ref vault_host_lyt_;
+            // K-cycle promoted qdesktop surfaces. The Element (*Layout in name
+            // only) + host wrapper pairs follow the same pattern as Vault above:
+            // the host MUST be a real IMenuLayout for the same static_pointer_cast
+            // reason. The *Layout elements are heap-allocated once and reused.
+            // Cycle K-noterminal: terminal_lyt_/terminal_host_lyt_ Refs removed;
+            // QdTerminalLayout + QdTerminalHostLayout source files deleted.
+            qdesktop::QdMonitorLayout::Ref monitor_lyt_;
+            qdesktop::QdMonitorHostLayout::Ref monitor_host_lyt_;
+            // About, QSettings, QLockscreen are direct IMenuLayout subclasses
+            // (no separate element wrapper needed — the *Layout IS the host).
+            qdesktop::QdAboutLayout::Ref about_lyt_;
+            qdesktop::QdSettingsLayout::Ref qsettings_lyt_;
+            qdesktop::QdLockscreenLayout::Ref qlockscreen_lyt_;
+            // K-cycle Track D: Launchpad element + host wrapper pair.
+            // Same Element+IMenuLayout host pattern as Vault/Monitor.
+            qdesktop::QdLaunchpadElement::Ref launchpad_lyt_;
+            qdesktop::QdLaunchpadHostLayout::Ref launchpad_host_lyt_;
             pu::ui::extras::Toast::Ref notif_toast;
             bool launch_failed;
             Result pending_gc_mount_rc;

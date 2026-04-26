@@ -9,6 +9,7 @@
 //   and hint_tex_; freed in destructor.
 
 #include <ul/menu/qdesktop/qd_UserCard.hpp>
+#include <ul/menu/ui/ui_Common.hpp>   // Cycle I: RenderTextAutoFit (system-wide text auto-fit)
 #include <ul/ul_Result.hpp>
 #include <pu/ui/render/render_Renderer.hpp>
 #include <pu/ui/ui_Types.hpp>
@@ -227,13 +228,15 @@ bool QdUserCardElement::DecodeAvatar(const u8 *jpeg, size_t jpeg_len) {
 // Safe to call every frame — no-op once all required textures are allocated.
 
 void QdUserCardElement::EnsureTextTextures(SDL_Renderer * /*r*/) {
-    // name label — Large white text (matches spec: "account name (white, large)").
+    // name label — Cycle I auto-fit: shrinks font from Large -> Small until the
+    // rasterised width fits in CARD_W - 16. Long account names like
+    // "Jamesmykil" no longer truncate to "Jamesm..." per user feedback.
     if (name_tex_ == nullptr && !name_.empty()) {
         const pu::ui::Color white { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-        name_tex_ = pu::ui::render::RenderText(
-            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large),
+        name_tex_ = ::ul::menu::ui::RenderTextAutoFit(
             name_, white,
-            static_cast<u32>(CARD_W - 16));  // 8px margin each side
+            static_cast<u32>(CARD_W - 16),
+            pu::ui::DefaultFontSize::Large);
     }
 
     // hint label — Small text_secondary ("Tap to log in").
@@ -370,9 +373,17 @@ void QdUserCardElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // Lazy-rasterise text textures (no-op if already done).
     EnsureTextTextures(r);
 
-    // Absolute card origin.
-    const s32 abs_x = x_ + origin_x;
-    const s32 abs_y = y_ + origin_y;
+    // Cycle H1 (touch+position fix): SetPos() stores absolute 1920x1080 layout
+    // coords. OnInput's HitsRegion compares touch_pos (also absolute layout
+    // coords per QdCursor::OnInput note) directly against x_/y_. Adding
+    // origin_x/origin_y here would render at a different position than the
+    // hit-test box, breaking touch and visibly mis-positioning the card when
+    // any non-zero origin is passed. Render at bare x_/y_ so render and
+    // hit-test agree exactly.
+    (void)origin_x;
+    (void)origin_y;
+    const s32 abs_x = x_;
+    const s32 abs_y = y_;
 
     // Hover state: treat as hovered if touch was active inside card last frame.
     // (focused_ is set externally by the layout for D-pad navigation.)

@@ -274,6 +274,17 @@ namespace {
         renderer_opts.AddDefaultSharedFont(PlSharedFontType_NintendoExt);
         renderer_opts.UseImage(pu::ui::render::ImgAllFlags);
 
+        // Cycle J-fix: register extra small font sizes so RenderTextAutoFit
+        // (in ui_Common.hpp) can shrink long icon labels and account names
+        // below Plutonium's built-in 27 px Small floor before they hit the
+        // ellipsis-truncation branch in render_Renderer.cpp:375. Without
+        // these, "Pokemon Legends: Z-A" can't fit in a 120 px icon cell at
+        // any built-in size and Plutonium chops to "Pokemon Lege..." which
+        // the user reported in the J-cycle test.
+        renderer_opts.AddExtraDefaultFontSize(22);
+        renderer_opts.AddExtraDefaultFontSize(18);
+        renderer_opts.AddExtraDefaultFontSize(14);
+
         auto renderer = pu::ui::render::Renderer::New(renderer_opts);
         g_MenuApplication = ul::menu::ui::MenuApplication::New(renderer);
 

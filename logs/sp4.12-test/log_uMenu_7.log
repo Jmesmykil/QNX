@@ -1,0 +1,226 @@
+[10:11:42] [INFO] Alive!
+[10:11:42] [INFO] [bt] Bluetooth thread alive!
+[10:11:42] [INFO] Initializing settings...
+[10:11:42] [INFO] Start mode: 3, last path: '', last fs path: 'sdmc:/ulaunch/emu_49a240e2-0000-1000-fbbd-46f21d1a47b9', last menu index: 0
+[10:11:42] [INFO] Added app count: 0
+[10:11:42] [INFO] Deleted app count: 0
+[10:11:42] [INFO] In verify app count: 0
+[10:11:42] [INFO] [SystemVolume] audctl opened successfully
+[10:11:42] [INFO] [PrivateService] Received message of type 4
+[10:11:42] [INFO] [PrivateService] Dispatching to 3 callbacks...
+[10:11:42] [WARN] [MenuApplication] Layout not ready, queuing message of type 4 for later processing...
+[10:11:42] [INFO] MenuApplication::OnLoad start...
+[10:11:42] [INFO] MenuApplication::OnLoad -> done initializing resources, so far took 187 ms
+[10:11:42] [INFO] InitializeScreenCaptures: QDESKTOP_MODE — skipping applet capture (avoids ~7.8 s cold-boot stall)
+[10:11:42] [INFO] MenuApplication::OnLoad -> done screen capture buffers, so far took 202 ms
+[10:11:42] [INFO] MenuApplication::OnLoad -> done loading bgm, so far took 210 ms
+[10:11:42] [INFO] MenuApplication::OnLoad -> done loading ui, so far took 225 ms
+[10:11:42] [INFO] Creating MainMenuLayout...
+[10:11:42] [INFO] qdesktop: QdDesktopIconsElement ctor entry
+[10:11:42] [INFO] qdesktop: IconCache EnsureDir rc=0x402 ok=1
+[10:11:42] [INFO] qdesktop: icon cache dir ensure result = 1
+[10:11:42] [INFO] qdesktop: builtins=6 scan_added=4 app_slot_start=10 total_static=10
+[10:11:42] [INFO] [QDESKTOP topbar] time_mtext: x=12 y=12 w=88 h=31 (formula TIME_X/Y_LARGE)
+[10:11:42] [INFO] [QDESKTOP topbar] date_text: x=200 y=18 w=30 h=38 (formula DATE_X/Y_SMALL=18)
+[10:11:42] [INFO] [QDESKTOP topbar] connection_top_icon: x=1768 y=8 w=32 h=32 (resized 100→32)
+[10:11:42] [INFO] [QDESKTOP topbar] battery_top_icon: x=1808 y=8 w=32 h=32 (resized 100→32)
+[10:11:42] [INFO] [QDESKTOP topbar] battery_charging_top_icon: x=1808 y=8 w=32 h=32 (resized 100→32)
+[10:11:42] [INFO] [QDESKTOP topbar] battery_text: x=1848 y=12 w=30 h=38 (formula BATT_TEXT_X/Y_LARGE)
+[10:11:42] [INFO] qdesktop: Cursor programmatic texture built (44x44, Liquid Glass Bubble v3, radius=18)
+[10:11:43] [INFO] qdesktop: ui_MainMenuLayout: LoadEntries returned 27
+[10:11:43] [INFO] qdesktop: SetApplicationEntries: in=27 added=15 total=25
+[10:11:43] [INFO] qdesktop: SetSpecialEntries: in=27 added=8 total=33
+[10:11:43] [INFO] qdesktop: ListAccounts rc=0x00000000 count=1
+[10:11:43] [INFO] qdesktop: building 1 card(s) start_x=840 card_y=380
+[10:11:43] [INFO] qdesktop: card[0] name='Jamesmykil' x=840 y=380 icon_sz=30508
+[10:11:43] [INFO] qdesktop: QdUserCardElement ctor uid=1000000049a240e2 name=Jamesmykil
+[10:11:43] [INFO] qdesktop: DecodeAvatar: ok avatar_tex_=0x22ddef4010
+[10:11:43] [INFO] qdesktop: QdPowerButtonElement ctor kind=0 label='Restart'
+[10:11:43] [INFO] qdesktop: QdPowerButtonElement ctor kind=1 label='Shutdown'
+[10:11:43] [INFO] qdesktop: QdPowerButtonElement ctor kind=2 label='Sleep'
+[10:11:43] [INFO] qdesktop: QdPowerButtonElement ctor kind=3 label='Hekate'
+[10:11:43] [INFO] qdesktop: QdPowerButtonElement ctor kind=4 label='Nxlink'
+[10:11:43] [INFO] qdesktop: QdPowerButtonElement ctor kind=4 label='USB Serial'
+[10:11:43] [INFO] qdesktop: QdPowerButtonElement ctor kind=4 label='Flush Logs'
+[10:11:43] [INFO] [MenuApplication] Forwarding initial queued message of type 4 to layout...
+[10:11:43] [INFO] MenuApplication::OnLoad -> done everything, so far took 781 ms
+[10:11:43] [INFO] qdesktop: AdvanceTick first call (F-06 tick site active)
+[10:11:43] [INFO] qdesktop: Wallpaper OnRender first call renderer=0x22da2ed020 rendered=0
+[10:11:43] [INFO] qdesktop: Wallpaper render-once block entry
+[10:11:43] [INFO] qdesktop: SDL_CreateTexture 1280x720 ABGR8888 STREAMING
+[10:11:43] [INFO] qdesktop: SDL_CreateTexture returned 0x22de1b6010
+[10:11:43] [INFO] qdesktop: SDL_LockTexture rc=0 pixels=0x22df425010 pitch=5120
+[10:11:43] [INFO] qdesktop: GeneratePixelsInto entry W=1280 H=720 pitch=5120 buf=0x22df425010
+[10:11:43] [INFO] qdesktop: Wallpaper texture written 1280x720 (streaming)
+[10:11:43] [INFO] qdesktop: DesktopIcons OnRender first call renderer=0x22da2ed020 icons=33 at x=0 y=0
+[10:11:54] [INFO] qdesktop: touch_down x=94 y=397 hit=22
+[10:11:54] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:54] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:54] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:54] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:54] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:54] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:54] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:54] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:54] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:54] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:54] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:54] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:54] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:54] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:54] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:54] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:54] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:54] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:54] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:54] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:54] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:54] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:54] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:55] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:55] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:55] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:55] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:55] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:55] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:55] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:55] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:55] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:55] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:55] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:55] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:55] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:55] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:55] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:55] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:55] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:55] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:56] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:56] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:56] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:56] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:56] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:56] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:56] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:56] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:56] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:56] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:56] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:56] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:57] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:57] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:57] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:57] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:57] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:57] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:57] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:57] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:57] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:58] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:58] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:58] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:58] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:58] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:58] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:58] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:58] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:58] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:59] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:59] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:59] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:59] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:59] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:59] [INFO] qdesktop: launch idx=22 (touch click)
+[10:11:59] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:11:59] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:11:59] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:00] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:00] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:00] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:00] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:00] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:00] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:01] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:01] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:01] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:01] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:01] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:01] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:01] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:01] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:01] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:02] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:02] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:02] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:02] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:02] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:03] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:03] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:03] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:03] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:04] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:04] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:04] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:04] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:04] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:04] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:05] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:05] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:05] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:05] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:05] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:05] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:06] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:06] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:06] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:07] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:07] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:07] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:07] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:07] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:07] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:11] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:11] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:11] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:12] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:12] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:12] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:12] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:12] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:13] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:13] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:13] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:13] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:14] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:14] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:14] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:14] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:14] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:14] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:15] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:15] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:15] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:16] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:16] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:16] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:17] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:17] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:17] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:17] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:17] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:17] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:18] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:18] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:18] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:19] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:19] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:19] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:19] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:19] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:19] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:20] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:20] [INFO] qdesktop: touch_up x=94 y=400 down_idx=22 pressed=1
+[10:12:20] [INFO] qdesktop: launch idx=22 (touch click)
+[10:12:21] [INFO] qdesktop: LaunchApplication ok 0x01009d901bc56000 — fade + Finalize
+[10:12:21] [INFO] qdesktop: touch_up x=288 y=253 down_idx=22 pressed=1
+[10:12:22] [INFO] Finalizing...

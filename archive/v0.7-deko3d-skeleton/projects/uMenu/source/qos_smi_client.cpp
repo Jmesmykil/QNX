@@ -149,7 +149,9 @@ bool NotifyLayoutReady() {
     char empty[FS_MAX_PATH] = {};
     const Result rc = ul::menu::smi::UpdateMenuPaths(empty, empty);
     if(R_FAILED(rc)) {
-        LogSd("[SMI] NotifyLayoutReady (UpdateMenuPaths) failed");
+        char buf[96];
+        snprintf(buf, sizeof(buf), "[SMI] NotifyLayoutReady (UpdateMenuPaths) failed rc=0x%X", rc);
+        LogSd(buf);
         return false;
     }
     LogSd("[SMI] NotifyLayoutReady OK");

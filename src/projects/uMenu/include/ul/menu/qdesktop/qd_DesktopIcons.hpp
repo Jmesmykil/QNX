@@ -29,31 +29,44 @@ enum class IconKind : u8 {
 };
 
 // ── Icon grid constants (×1.5 from Rust 1280×720) ─────────────────────────
-// Rust: ICON_CELL_W=96  → C++: 144
-static constexpr s32 ICON_CELL_W     = 144;
-// Rust: ICON_CELL_H=88  → C++: 132
-static constexpr s32 ICON_CELL_H     = 132;
-// Rust: ICON_BG_INSET=8 → C++: 12
-static constexpr s32 ICON_BG_INSET   = 12;
-// Rust: ICON_BG_W = ICON_CELL_W - ICON_BG_INSET*2 = 80 → C++: 120
-static constexpr s32 ICON_BG_W       = 120;
-// Rust: ICON_BG_H=52 → C++: 78
-static constexpr s32 ICON_BG_H       = 78;
-// Rust: ICON_GRID_GAP_X=16 → C++: 24
-static constexpr s32 ICON_GRID_GAP_X = 24;
+// Cycle J-tweak2: 5 rows to absorb installed homebrew + Specials overflow.
+// User reported icons going off-screen at 4 rows × 9 cols = 36 slots when SD
+// has 40-50+ entries. Now: slightly shorter cells (168 vs 200) + slightly
+// shorter bg (130 vs 140 — still mostly square at 140w × 130h) → fits 5 rows
+// without colliding the dock band (which also shrinks to 148 → grid-bottom
+// gap = 20 px).
+// Math horiz: LEFT(74) + 9*CELL_W(172) + 8*GAP_X(28) = 1846 px ≤ 1920 ✓
+// Math vert:  TOP(72)  + 5*CELL_H(168) = 912 px, dock at 932 (DOCK_H=148) ✓
+// Total grid slots: 9 × 5 = 45 (was 36). Dock has 4 builtins → 49 visible.
+static constexpr s32 ICON_CELL_W     = 172;
+static constexpr s32 ICON_CELL_H     = 168;
+static constexpr s32 ICON_BG_INSET   = 16;
+static constexpr s32 ICON_BG_W       = 140;
+static constexpr s32 ICON_BG_H       = 130;
+static constexpr s32 ICON_GRID_GAP_X = 28;
 // Rust: ICON_GRID_TOP=48 → C++: 72
 static constexpr s32 ICON_GRID_TOP   = 72;
-// Rust: ICON_GRID_LEFT=24 → C++: 36
-static constexpr s32 ICON_GRID_LEFT  = 36;
+// Centered grid: (1920 - 9*172 - 8*28) / 2 = (1920 - 1772) / 2 = 74
+static constexpr s32 ICON_GRID_LEFT  = 74;
 // Same column count — 11 fits within 1920 px
-static constexpr s32 ICON_GRID_COLS  = 11;
-// Same max row count — 6 rows stay above the dock area
-static constexpr s32 ICON_GRID_MAX_ROWS = 6;
+static constexpr s32 ICON_GRID_COLS  = 9;
+// Cycle J-tweak2: bumped 4 → 5 rows to absorb installed homebrew + Specials
+// without clipping past the dock. With CELL_H=168 and TOP=72,
+// 5 rows = 912 px; dock starts at 932 (DOCK_H=148); 20 px gap.
+// 9 cols × 5 rows = 45 grid slots, vs 36 before — kills off-screen overflow.
+static constexpr s32 ICON_GRID_MAX_ROWS = 5;
 // Same icon cap as Rust MAX_ICONS
 static constexpr size_t MAX_ICONS    = 48;
 
 // Number of Q OS built-in dock icons pre-populated at construction.
-static constexpr size_t BUILTIN_ICON_COUNT = 6;
+// Cycle K-noextras: dropped 6 → 4 across two passes — Terminal removed first,
+// then VaultSplit (a no-op duplicate of Vault) dropped.
+// Cycle K-TrackD: bumped 4 → 5 — AllPrograms (QdLaunchpad) added as slot 4.
+// Neutral dock hit-test math uses this constant directly so total_expanded_w
+// (5*140 + 4*28 = 812) and expanded_start_x ((1920-812)/2 = 554) recompute
+// automatically. Keep this constant authoritative — single source for both the
+// visual centering and the HitTest cache size.
+static constexpr size_t BUILTIN_ICON_COUNT = 5;
 
 // ── NroEntry ──────────────────────────────────────────────────────────────
 
@@ -194,6 +207,16 @@ private:
     // Optional cursor reference for A-button-as-click (injected by layout).
     QdCursorElement::Ref cursor_ref_;
 
+    // Dock-slot hit-test rects, refreshed every OnRender so HitTest matches the
+    // dock's current magnify state.  Visual at lines 882-888 of the .cpp uses
+    // builtin_slot_x[i] + kDockNominalTop; we mirror those values here so a tap
+    // at the visual rect actually hits the icon.
+    // Updated by OnRender (non-const); read by HitTest (const).  No mutable needed
+    // because both methods operate on the same non-const object in the render path,
+    // and HitTest is called from OnInput which runs after OnRender in the frame loop.
+    s32 dock_slot_x_[BUILTIN_ICON_COUNT];
+    s32 dock_slot_w_[BUILTIN_ICON_COUNT];
+
     // ── Cached text textures (rendered once, reused every frame) ─────────────
     // Plutonium's RenderText is expensive (TTF rasterisation + GPU upload).
     // Re-running it for every icon every frame costs ~5760 texture creates/sec
@@ -204,6 +227,14 @@ private:
     std::array<SDL_Texture *, MAX_ICONS> name_text_tex_;
     std::array<SDL_Texture *, MAX_ICONS> glyph_text_tex_;
 
+    // ── Cached text-texture dimensions (immutable after lazy-create) ──────────
+    // Eliminates one SDL_QueryTexture driver round-trip per texture per frame.
+    // Written once alongside *_tex_ creation; never cleared independently.
+    std::array<int, MAX_ICONS> name_text_w_;
+    std::array<int, MAX_ICONS> name_text_h_;
+    std::array<int, MAX_ICONS> glyph_text_w_;
+    std::array<int, MAX_ICONS> glyph_text_h_;
+
     // ── Cached icon BGRA textures (created once per slot, reused every frame) ─
     // The BGRA pixel data from QdIconCache is uploaded to a streaming
     // SDL_Texture once and reused.  Previously the code created and destroyed
@@ -212,6 +243,15 @@ private:
     // Freed alongside name_text_tex_/glyph_text_tex_ in FreeCachedText() so the
     // same icon-reload reset path invalidates all three per-slot textures atomically.
     std::array<SDL_Texture *, MAX_ICONS> icon_tex_;
+
+    // Cycle I (boot speed): cached white rounded-rect mask texture rendered ONCE
+    // per Element. PaintIconCell uses SDL_SetTextureColorMod + SDL_RenderCopy
+    // to tint and blit this in 2 calls instead of the 144 SDL_RenderFillRect
+    // calls FillRoundRect would otherwise issue per icon per frame
+    // (17 icons × 144 fills × 60 Hz = ~147 K fills/sec ≈ 440 ms/sec on Tegra X1).
+    // Built lazily on first PaintIconCell call so the SDL renderer is ready.
+    // Freed in destructor.
+    SDL_Texture *round_bg_tex_ = nullptr;
 
     // Scan sdmc:/switch/ for *.nro files and append entries to icons_.
     // Skips hidden files (starting with '.').
@@ -269,6 +309,12 @@ private:
     // Hit-test: returns index of icon whose cell contains (tx, ty).
     // Returns MAX_ICONS if no cell matches.
     size_t HitTest(s32 tx, s32 ty) const;
+
+    // Cycle K-TrackD: QdLaunchpadElement reads icons_[], icon_count_, and
+    // cache_ directly when building its snapshot in Open().  Grant friend
+    // access here so no public accessors (which would widen the API surface
+    // for all callers) are needed.
+    friend class QdLaunchpadElement;
 };
 
 } // namespace ul::menu::qdesktop

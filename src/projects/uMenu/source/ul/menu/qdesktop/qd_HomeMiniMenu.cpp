@@ -69,9 +69,7 @@ namespace ul::menu::qdesktop {
             const auto opts = BuildOptions();
             const auto opt = g_MenuApplication->CreateShowDialog(
                 "Q OS — Dev Menu",
-                "Press a toggle to flip ON ↔ OFF. Some changes apply on next "
-                "render frame; others (e.g. icons) require Restart uMenu to "
-                "fully take effect.",
+                "Tap to flip ON/OFF. Icon and dock changes need Restart uMenu.",
                 opts,
                 /*use_last_opt_as_cancel=*/true,
                 /*icon=*/{}

@@ -39,12 +39,17 @@ namespace ul::menu::ui {
         //   Lockscr  → 15 % (subtle)
         constexpr s32 BgmPctForMenu(const MenuType menu) {
             switch(menu) {
-                case MenuType::Startup:    return 75;
-                case MenuType::Themes:     return 25;
-                case MenuType::Settings:   return 25;
-                case MenuType::Lockscreen: return 15;
-                case MenuType::Main:       return 15;
-                case MenuType::Vault:      return 15;
+                case MenuType::Startup:     return 75;
+                case MenuType::Themes:      return 25;
+                case MenuType::Settings:    return 25;
+                case MenuType::Lockscreen:  return 15;
+                case MenuType::Main:        return 15;
+                case MenuType::Vault:       return 15;
+                case MenuType::Monitor:     return 15;
+                case MenuType::About:       return 15;
+                case MenuType::QSettings:   return 25;
+                case MenuType::QLockscreen: return 15;
+                case MenuType::Launchpad:   return 15;
             }
             return 15;
         }
@@ -66,6 +71,17 @@ namespace ul::menu::ui {
     }
 
     void OnMessage(const smi::MenuMessageContext &msg_ctx) {
+        // ⚠ ARCHITECTURAL CONTRACT — every `pu::ui::Layout::Ref` that
+        // MenuApplication can have ACTIVE at the moment a message arrives MUST
+        // be an `IMenuLayout` subclass.  Plutonium's GetLayout<L>() is an
+        // UNCHECKED `std::static_pointer_cast<L>(this->lyt)` and the build
+        // disables RTTI (`-fno-rtti`), so we cannot dynamic-cast as a runtime
+        // safety net.  If you add a new menu surface (Vault, Folders, About,
+        // etc.) and wrap it in a bare `pu::ui::Layout::New()`, ANY incoming
+        // smi::MenuMessage (e.g. HOME) reinterprets the layout's vtable and
+        // Data-Aborts at 0x0.  Crashed exactly this way in
+        // atmosphere/crash_reports/01777163509_010000000000100d.log (Vault →
+        // HOME).  See qd_VaultHostLayout.hpp for the canonical wrapper pattern.
         auto ptr = g_MenuApplication->GetLayout<IMenuLayout>();
         if(ptr == nullptr) {
             UL_LOG_WARN("[MenuApplication] Layout not ready, queuing message of type %d for later processing...", (u32)msg_ctx.msg);
@@ -73,8 +89,8 @@ namespace ul::menu::ui {
         }
         else {
             UL_LOG_INFO("[MenuApplication] Forwarding message of type %d to layout...", (u32)msg_ctx.msg);
-            ptr->NotifyMessageContext(msg_ctx);    
-        }        
+            ptr->NotifyMessageContext(msg_ctx);
+        }
     }
 
     MenuBgmEntry &MenuApplication::GetCurrentMenuBgm() {
@@ -90,7 +106,14 @@ namespace ul::menu::ui {
             case MenuType::Lockscreen:
                 return g_GlobalSettings.lockscreen_menu_bgm;
             case MenuType::Vault:
+            case MenuType::Monitor:
+            case MenuType::About:
+            case MenuType::Launchpad:
                 return g_GlobalSettings.main_menu_bgm;
+            case MenuType::QSettings:
+                return g_GlobalSettings.settings_menu_bgm;
+            case MenuType::QLockscreen:
+                return g_GlobalSettings.lockscreen_menu_bgm;
         }
 
         UL_ASSERT_FAIL("Invalid current menu?");
@@ -138,11 +161,61 @@ namespace ul::menu::ui {
                 if(this->vault_lyt == nullptr) {
                     const qdesktop::QdTheme qdt = qdesktop::QdTheme::DarkLiquidGlass();
                     this->vault_lyt = qdesktop::QdVaultLayout::New(qdt);
-                    this->vault_host_lyt_ = pu::ui::Layout::New();
-                    this->vault_host_lyt_->SetBackgroundColor({ 0, 0, 0, 255 });
-                    this->vault_host_lyt_->Add(this->vault_lyt);
+                    // Cycle K-vaultfix: host MUST be a real IMenuLayout to satisfy
+                    // OnMessage()'s static_pointer_cast<IMenuLayout> contract.  See
+                    // qd_VaultHostLayout.hpp for the crash chain this fixes.
+                    this->vault_host_lyt_ = qdesktop::QdVaultHostLayout::New(this->vault_lyt);
                 }
                 this->vault_lyt->Navigate("sdmc:/switch/");
+                break;
+            // K-cycle promoted qdesktop surfaces — all hosts MUST be IMenuLayout
+            // subclasses for the same static_pointer_cast<IMenuLayout> reason as
+            // Vault above (see qd_VaultHostLayout.hpp crash chain description).
+            //
+            // Cycle K-noterminal: MenuType::Terminal case removed — feature
+            // dropped per creator decision; QdTerminalLayout +
+            // QdTerminalHostLayout source files deleted.
+            case MenuType::Monitor:
+                if(this->monitor_lyt_ == nullptr) {
+                    const qdesktop::QdTheme qdt = qdesktop::QdTheme::DarkLiquidGlass();
+                    this->monitor_lyt_ = qdesktop::QdMonitorLayout::New(qdt);
+                    this->monitor_host_lyt_ = qdesktop::QdMonitorHostLayout::New(this->monitor_lyt_);
+                    this->monitor_host_lyt_->LoadSfx();
+                }
+                break;
+            case MenuType::About:
+                if(this->about_lyt_ == nullptr) {
+                    const qdesktop::QdTheme qdt = qdesktop::QdTheme::DarkLiquidGlass();
+                    this->about_lyt_ = qdesktop::QdAboutLayout::New(qdt);
+                    this->about_lyt_->LoadSfx();
+                }
+                break;
+            case MenuType::QSettings:
+                if(this->qsettings_lyt_ == nullptr) {
+                    const qdesktop::QdTheme qdt_s = qdesktop::QdTheme::DarkLiquidGlass();
+                    this->qsettings_lyt_ = qdesktop::QdSettingsLayout::New(qdt_s);
+                    this->qsettings_lyt_->LoadSfx();
+                    TryParseBgmEntry("settings_menu", "QSettings", g_GlobalSettings.settings_menu_bgm);
+                }
+                break;
+            case MenuType::QLockscreen:
+                if(this->qlockscreen_lyt_ == nullptr) {
+                    const qdesktop::QdTheme qdt_l = qdesktop::QdTheme::DarkLiquidGlass();
+                    this->qlockscreen_lyt_ = qdesktop::QdLockscreenLayout::New(qdt_l);
+                    this->qlockscreen_lyt_->LoadSfx();
+                    TryParseBgmEntry("lockscreen_menu", "QLockscreen", g_GlobalSettings.lockscreen_menu_bgm);
+                }
+                break;
+            // K-cycle Track D: Launchpad — full-screen app-grid (Element + IMenuLayout host).
+            // Same pattern as Monitor: host MUST be IMenuLayout for the
+            // static_pointer_cast<IMenuLayout> contract in OnMessage().
+            case MenuType::Launchpad:
+                if(this->launchpad_lyt_ == nullptr) {
+                    const qdesktop::QdTheme qdt = qdesktop::QdTheme::DarkLiquidGlass();
+                    this->launchpad_lyt_ = qdesktop::QdLaunchpadElement::New(qdt);
+                    this->launchpad_host_lyt_ = qdesktop::QdLaunchpadHostLayout::New(this->launchpad_lyt_);
+                    this->launchpad_host_lyt_->LoadSfx();
+                }
                 break;
         }
     }
@@ -171,6 +244,15 @@ namespace ul::menu::ui {
         this->lockscreen_menu_lyt = nullptr;
         this->vault_lyt = nullptr;
         this->vault_host_lyt_ = nullptr;
+        // Cycle K-noterminal: terminal_lyt_/terminal_host_lyt_ removed.
+        this->monitor_lyt_ = nullptr;
+        this->monitor_host_lyt_ = nullptr;
+        this->about_lyt_ = nullptr;
+        this->qsettings_lyt_ = nullptr;
+        this->qlockscreen_lyt_ = nullptr;
+        // K-cycle Track D: Launchpad element + host wrapper.
+        this->launchpad_lyt_ = nullptr;
+        this->launchpad_host_lyt_ = nullptr;
 
         // FastFadeAlphaIncrementSteps = 12 → ~200ms at 60fps.  Verified correct.
         this->SetFadeAlphaIncrementStepCount(FastFadeAlphaIncrementSteps);
@@ -458,6 +540,45 @@ namespace ul::menu::ui {
             case MenuType::Vault: {
                 this->vault_lyt->Navigate("sdmc:/switch/");
                 this->LoadLayout(this->vault_host_lyt_);
+                break;
+            }
+            // K-cycle promoted qdesktop surfaces. Monitor is an Element+Host
+            // pair; About/QSettings/QLockscreen are direct IMenuLayout
+            // subclasses that act as their own host.
+            // Cycle K-noterminal: MenuType::Terminal LoadLayout case removed.
+            case MenuType::Monitor: {
+                this->LoadLayout(this->monitor_host_lyt_);
+                break;
+            }
+            case MenuType::About: {
+                this->LoadLayout(this->about_lyt_);
+                break;
+            }
+            case MenuType::QSettings: {
+                this->LoadLayout(this->qsettings_lyt_);
+                break;
+            }
+            case MenuType::QLockscreen: {
+                this->LoadLayout(this->qlockscreen_lyt_);
+                break;
+            }
+            // K-cycle Track D: Launchpad — Element+Host pair, same as Monitor.
+            // The Element holds is_open_ = false until Open() is called with a
+            // QdDesktopIconsElement to snapshot.  Without that call OnRender
+            // early-returns (line 326 in qd_Launchpad.cpp) and the surface
+            // shows nothing — the "question mark just shows a black screen"
+            // bug from the K-iconsfit cycle.  Snapshot the live MainMenu
+            // desktop_icons (creating MainMenu first if it somehow wasn't
+            // built — defensive; in practice MainMenu is the boot menu).
+            case MenuType::Launchpad: {
+#ifdef QDESKTOP_MODE
+                this->EnsureLayoutCreated(MenuType::Main);
+                if(this->main_menu_lyt && this->launchpad_lyt_) {
+                    auto icons = this->main_menu_lyt->GetQdesktopIcons();
+                    this->launchpad_lyt_->Open(icons.get());
+                }
+#endif
+                this->LoadLayout(this->launchpad_host_lyt_);
                 break;
             }
         }

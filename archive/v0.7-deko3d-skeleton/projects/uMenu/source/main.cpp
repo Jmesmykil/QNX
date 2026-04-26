@@ -135,7 +135,7 @@ extern "C" {
     void __appInit() {
         // v0.7.0-alpha: first marker written before any init succeeds.
         // sdmc not mounted yet — written into g_InitLog ring; flushed after mount.
-        InitLogAppend("[INIT] uMenu v0.7.0-beta6 (nwindowGetDefault, fw_compat INVALID_HANDLE, icon upload deferred) starting\n");
+        InitLogAppend("[INIT] uMenu v0.7.0-beta6-fbflag (deko3d/ImGui isolate, SMI disabled, no hw compression) starting\n");
 
         // --- Mandatory: sm, fs, sdmc ---
         INIT_LOG_ASSERT("smInitialize",     smInitialize());
@@ -151,8 +151,8 @@ extern "C" {
         __libnx_init_time();
 
         ul::InitializeLogging("qos-menu");
-        UL_LOG_INFO("[INIT] uMenu v0.7.0-beta6 (nwindowGetDefault, fw_compat INVALID_HANDLE, icon upload deferred) starting");
-        UL_LOG_INFO("Alive! (uMenu v0.7.0-beta6)");
+        UL_LOG_INFO("[INIT] uMenu v0.7.0-beta6-fbflag (deko3d/ImGui isolate, SMI disabled, no hw compression) starting");
+        UL_LOG_INFO("Alive! (uMenu v0.7.0-beta6-fbflag)");
 
         // --- Non-critical: settings services ---
         INIT_LOG_OPTIONAL("setsysInitialize",           setsysInitialize());
@@ -276,8 +276,8 @@ namespace {
         // Load config — required for SMI message dispatch even in skeleton mode.
         g_GlobalSettings.config = ul::cfg::LoadConfig();
 
-        // SMI private service — stays on its own thread, unchanged from v0.6.x.
-        UL_RC_ASSERT(ul::menu::smi::sf::InitializePrivateService());
+        // Render-only diagnostic build: keep the beta6 renderer isolated from the
+        // legacy private-service/SMI path until the first visible frame is proven.
 
         CHECKPOINT("v0.7 skeleton: initializing ImGui + deko3d");
 
@@ -362,27 +362,20 @@ namespace {
         //   - Fix image_memblock ABI: expose DkMemBlock (not &UniqueMemBlock).
         //   - Re-enable InitIconUploader once both issues are resolved.
         //
-        // qos::IconUploadInitParams iup{};
-        // {
-        //     ImplDeko3dHandles dkh{};
-        //     if(ImGui_ImplDeko3d_GetHandles(&dkh)) {
-        //         iup.dk_device            = dkh.dk_device;
-        //         iup.dk_queue             = dkh.dk_queue;
-        //         iup.image_memblock       = dkh.image_memblock;
-        //         iup.image_memblock_size  = dkh.image_memblock_size;
-        //     }
-        // }
-        // iup.register_image_cb = ImGui_ImplDeko3d_RegisterImage;
-        // qos::InitIconUploader(iup);
-        TELEM("icon uploader DEFERRED (v0.7.0-beta5, BUG4 ImGui1.92+ABI mismatch)");
-        V7LOG("icon uploader DEFERRED — placeholder tiles only (see BUG 4 comment)");
+        qos::IconUploadInitParams iup{};
+        {
+            ImplDeko3dHandles dkh{};
+            if(ImGui_ImplDeko3d_GetHandles(&dkh)) {
+                iup.dk_device            = dkh.dk_device;
+                iup.dk_queue             = dkh.dk_queue;
+                iup.image_memblock       = dkh.image_memblock;
+                iup.image_memblock_size  = dkh.image_memblock_size;
+            }
+        }
+        iup.register_image_cb = ImGui_ImplDeko3d_RegisterImage;
+        qos::InitIconUploader(iup);
 
         // ── SMI client + title enumeration ───────────────────────────────────
-        {
-            const bool smi_ok = qos::smi::Init();
-            V7LOG("smi::Init %s", smi_ok ? "OK" : "FAILED (continuing)");
-            TELEM("smi::Init = %d", (int)smi_ok);
-        }
         {
             const bool te_ok = qos::InitTitleEnum();
             V7LOG("InitTitleEnum %s", te_ok ? "OK" : "FAILED (continuing)");
@@ -401,45 +394,40 @@ namespace {
 
             std::vector<qos::TileEntry> tiles;
             tiles.reserve(titles.size());
-            // v0.7.0-beta5: icon upload deferred to beta6 (BUG 4 — see comment above).
-            // TileGrid falls back to placeholder rendering when icon == 0.
             for(const auto &t : titles) {
                 qos::TileEntry e;
                 e.app_id = t.application_id;
                 e.label  = t.name;
-                e.icon   = 0;   // placeholder (first letter of label)
+                if (!t.icon_jpeg.empty()) {
+                    e.icon = qos::GetOrUpload(t.application_id, t.icon_jpeg.data(), t.icon_jpeg.size());
+                    if (e.icon) telem_icon_ok++;
+                    else telem_icon_fail++;
+                } else {
+                    e.icon = 0;   // placeholder (first letter of label)
+                    telem_icon_fail++;
+                }
                 tiles.push_back(e);
             }
-            grid.SetTiles(std::move(tiles));
 
             FILE *_f = fopen("sdmc:/switch/qos-menu-init.log", "a");
-            if(_f) { fprintf(_f, "[V7INIT] tile grid built with %zu placeholder tiles (icons skipped)\n", tiles.size()); fflush(_f); fclose(_f); }
+            if(_f) { fprintf(_f, "[V7INIT] tile grid built with %zu tiles (%u icons uploaded, %u failed/skipped)\n", tiles.size(), telem_icon_ok, telem_icon_fail); fflush(_f); fclose(_f); }
 
-            V7LOG("tile grid loaded: %u placeholder tiles (icons skipped)", (unsigned)titles.size());
-            TELEM("Icon uploads: 0 attempted (v0.7.0-beta5 deferred, BUG4)");
-            TELEM("TileGrid created with %u placeholder tiles", (unsigned)titles.size());
-            telem_icon_ok   = 0;
-            telem_icon_fail = 0;
+            V7LOG("tile grid loaded: %u tiles (%u icons uploaded)", (unsigned)titles.size(), telem_icon_ok);
+            TELEM("Icon uploads: %u OK, %u FAILED", telem_icon_ok, telem_icon_fail);
+            TELEM("TileGrid created with %u tiles", (unsigned)titles.size());
         }
 
-        // Activate callback: log + SMI launch
+        // Activate callback: render-only diagnostic build, so keep A-presses
+        // local and log them instead of routing through the legacy SMI path.
         grid.SetActivateCallback([](const qos::TileEntry &e) {
             FILE *f = fopen("sdmc:/switch/qos-menu-init.log", "a");
             if(f) {
-                fprintf(f, "[V7LAUNCH] LaunchApplication(0x%016lX) label=%s\n",
+                fprintf(f, "[V7LAUNCH] render-only build pressed A on 0x%016lX label=%s\n",
                         (unsigned long)e.app_id, e.label.c_str());
                 fflush(f);
                 fclose(f);
             }
-            qos::smi::LaunchApplication(e.app_id);
         });
-
-        // Notify uSystem that layout is ready
-        {
-            const bool nr_ok = qos::smi::NotifyLayoutReady();
-            V7LOG("NotifyLayoutReady %s", nr_ok ? "OK" : "FAILED (continuing)");
-            TELEM("smi::NotifyLayoutReady = %d", (int)nr_ok);
-        }
 
         CHECKPOINT("v0.7.0-beta3: entering render loop");
         V7LOG("entering render loop (tile grid live)");
@@ -520,9 +508,6 @@ namespace {
             grid.Render();
             ImGui::End();
 
-            // ── Pump SMI messages ─────────────────────────────────────────────
-            qos::smi::ProcessPendingMessages();
-
             ImGui::Render();
             ImDrawData *draw_data = ImGui::GetDrawData();
             ImGui_ImplDeko3d_RenderDrawData(draw_data);
@@ -586,8 +571,7 @@ namespace {
               g_frame, (unsigned)g_last_present_rc);
 
         // ── Teardown ──────────────────────────────────────────────────────────
-        TELEM("teardown: smi::Shutdown, Title enum shutdown (icon uploader skipped in beta4)");
-        qos::smi::Shutdown();
+        TELEM("teardown: Title enum shutdown (render-only diagnostic build)");
         qos::ShutdownTitleEnum();
         // qos::ShutdownIconUploader() — skipped; uploader was never initialized in v0.7.0-beta4
         TELEM("teardown: ImGui_ImplDeko3d_Shutdown, ImGui::DestroyContext");
@@ -597,7 +581,6 @@ namespace {
         TELEM("teardown: deko3d queues and device destroyed by backend");
         TELEM("boot exit: clean");
 
-        ul::menu::smi::sf::FinalizePrivateService();
     }
 
 }
@@ -691,9 +674,6 @@ int main() {
             fclose(sf);
         }
     }
-
-    // Register HOME button press detection (libnx libapplet wrapper, no Plutonium needed)
-    ul::menu::am::RegisterLibnxLibappletHomeButtonDetection();
 
     MainLoop();
 

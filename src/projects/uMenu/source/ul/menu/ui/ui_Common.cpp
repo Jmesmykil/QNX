@@ -117,6 +117,25 @@ namespace ul::menu::ui {
         return nullptr;
     }
 
+    pu::sdl2::Texture TryFindLoadImageDefaultOnly(const std::string &path_no_ext) {
+        // Skip active-theme override; load directly from romfs:/default. Used for
+        // elements where the K-cycle Q OS-branded asset MUST win over any inherited
+        // upstream theme PNGs (top-bar status icons in particular).
+        for(const auto &fmt: ImageFormatList) {
+            const auto path = fs::JoinPath(DefaultThemePath, path_no_ext + "." + fmt);
+            const auto img = pu::ui::render::LoadImageFromFile(path);
+            if(img != nullptr) {
+                return img;
+            }
+        }
+
+        return nullptr;
+    }
+
+    pu::sdl2::TextureHandle::Ref TryFindLoadImageHandleDefaultOnly(const std::string &path_no_ext) {
+        return pu::sdl2::TextureHandle::New(TryFindLoadImageDefaultOnly(path_no_ext));
+    }
+
     void InitializeResources() {
         if(!g_CommonResourcesLoaded) {
             g_BackgroundTexture = TryFindLoadImageHandle("ui/Background");

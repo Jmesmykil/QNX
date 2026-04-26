@@ -8,9 +8,6 @@
 namespace ul::menu::ui {
 
     class IMenuLayout : public pu::ui::Layout {
-        public:
-            static constexpr u32 TimeDotsAnimStepCount = 60;
-
         private:
             RecursiveMutex msg_queue_lock;
             std::queue<ul::smi::MenuMessageContext> msg_queue;
@@ -23,9 +20,6 @@ namespace ul::menu::ui {
 
             os::Time last_time;
             os::Date last_date;
-
-            u32 time_anim_frame;
-            bool time_anim_dots;
 
         protected:
             void UpdateConnectionTopIcon(pu::ui::elm::Image::Ref &icon);

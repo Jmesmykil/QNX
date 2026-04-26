@@ -1,0 +1,28 @@
+[1777091529][BOOT ][BOOT] seq=1 proc=uMenu
+[1777092908][BOOT ][BOOT] seq=2 proc=uMenu
+[1777094292][BOOT ][BOOT] seq=3 proc=uMenu
+[1777094322][BOOT ][BOOT] seq=4 proc=uMenu
+[1777095583][BOOT ][BOOT] seq=5 proc=uMenu
+[1777095635][BOOT ][BOOT] seq=6 proc=uMenu
+[1777095687][BOOT ][BOOT] seq=7 proc=uMenu
+[1777096047][BOOT ][BOOT] seq=8 proc=uMenu
+[1777096085][BOOT ][BOOT] seq=9 proc=uMenu
+[1777096869][BOOT ][BOOT] seq=10 proc=uMenu
+[1777096988][BOOT ][BOOT] seq=11 proc=uMenu
+[1777097104][BOOT ][BOOT] seq=12 proc=uMenu
+[1777097201][BOOT ][BOOT] seq=13 proc=uMenu
+[1777097296][BOOT ][BOOT] seq=14 proc=uMenu
+[1777097469][BOOT ][BOOT] seq=15 proc=uMenu
+[1777097505][BOOT ][BOOT] seq=16 proc=uMenu
+[1777097536][BOOT ][BOOT] seq=17 proc=uMenu
+[1777105369][BOOT ][BOOT] seq=18 proc=uMenu
+[1777107391][BOOT ][BOOT] seq=19 proc=uMenu
+[1777107391][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777107391][INFO ][GENR] Alive!
+[1777107763][BOOT ][BOOT] seq=20 proc=uMenu
+[1777107763][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777107763][INFO ][GENR] Alive!
+[1777108621][BOOT ][BOOT] seq=21 proc=uMenu
+[1777108621][INFO ][GENR] tel::Init: post-init marker proc=uMenu
+[1777108621][INFO ][GENR] Alive!
+[1777108621][INFO ][GENR] [bt] Bluetooth thread alive!

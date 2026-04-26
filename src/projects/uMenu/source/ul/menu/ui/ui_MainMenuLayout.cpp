@@ -14,6 +14,8 @@
 #include <ul/menu/qdesktop/qd_Curve.hpp>
 #include <ul/menu/qdesktop/qd_RecordsBin.hpp>
 #include <ul/menu/qdesktop/qd_HomeMiniMenu.hpp>
+#include <ul/menu/bt/bt_Manager.hpp>
+#include <unordered_map>
 #endif
 
 extern ul::menu::ui::GlobalSettings g_GlobalSettings;
@@ -743,7 +745,7 @@ namespace ul::menu::ui {
             // re-bake the children at the correct position.
             //
             // InitializeTimeText also calls this->Add(time_mtext) and
-            // this->Add(time_mtext->Get(0/1/2)) internally — do NOT call Add
+            // this->Add(time_mtext->Get(0/1)) internally — do NOT call Add
             // again for time_mtext or you get a double-add.
             //
             // ── Top-bar layout — formula-derived, NOT cargo-culted ──────────
@@ -757,7 +759,7 @@ namespace ul::menu::ui {
             //   SAFE_LEFT = 12  (Rust 8  × 1.5)           // left-most element x
             //   SAFE_RIGHT= 24  (Rust 16 × 1.5)           // right margin from screen edge
             //   ICON_W    = ICON_H = 32                   // top-bar icons (TOPBAR_H − 16)
-            //   GUTTER    = 8                             // gap between adjacent icons / text
+            //   GUTTER    = 16                            // K-cycle Track B: 16 px spec
             //
             // Vertical centering (text height = font size × 1.5):
             //   Y_LARGE = (TOPBAR_H − 24) / 2 = 12        // Medium font (~16×1.5)
@@ -765,18 +767,20 @@ namespace ul::menu::ui {
             //   ICON_Y  = (TOPBAR_H − 32) / 2 = 8
             //
             // Horizontal anchoring (left → right and right → left):
-            //   TIME_X      = SAFE_LEFT                       = 12
-            //   DATE_X      = SAFE_LEFT + 188                 = 200  (≈ 12-char Medium block)
-            //   BATT_TEXT_W ≈ 4 chars × 12 px/char            = 48   ("100%" Medium width)
+            //   TIME_X      = SAFE_LEFT                           = 12
+            //   DATE_X      = SAFE_LEFT + 188                     = 200  (≈ 12-char Medium block)
+            //   BATT_TEXT_W ≈ 4 chars × 12 px/char               = 48   ("100%" Medium width)
             //   BATT_TEXT_X = SCREEN_W − SAFE_RIGHT − BATT_TEXT_W
-            //                                                 = 1920 − 24 − 48 = 1848
-            //   BATT_ICON_X = BATT_TEXT_X − GUTTER − ICON_W   = 1808
-            //   CONN_ICON_X = BATT_ICON_X − GUTTER − ICON_W   = 1768
+            //                                                     = 1920 − 24 − 48 = 1848
+            //   BATT_ICON_X = BATT_TEXT_X − GUTTER − ICON_W       = 1848 − 16 − 32 = 1800
+            //   CONN_ICON_X = BATT_ICON_X − GUTTER − ICON_W       = 1800 − 16 − 32 = 1752
+            //   BT_ICON_X   = CONN_ICON_X − GUTTER − ICON_W       = 1752 − 16 − 32 = 1704
+            //                 (hidden when no BT audio device connected)
             //
-            //  ┌───────────────────────────────────────────────────────────┐ y=0
-            //  │ [time]  [date]                   [conn] [batt_icon][batt%]│ Y_LARGE
-            //  └───────────────────────────────────────────────────────────┘ y=48
-            //   12     200                          1768   1808       1848
+            //  ┌────────────────────────────────────────────────────────────────────┐ y=0
+            //  │ [time]  [date]               [bt?] [conn] [batt_icon] [batt%]     │ Y_LARGE
+            //  └────────────────────────────────────────────────────────────────────┘ y=48
+            //   12     200                    1704   1752    1800         1848
             //
             // CRITICAL: the connection / battery PNG assets are 100×100 px. Without
             // explicit SetWidth(32)/SetHeight(32) they overflow the 48 px strip
@@ -789,14 +793,14 @@ namespace ul::menu::ui {
             // which bakes child block positions at those wrong coords. After SetX/
             // SetY we MUST call UpdatePositionsSizes() again to re-bake the
             // children at the correct position. InitializeTimeText also calls
-            // this->Add(time_mtext) and this->Add(time_mtext->Get(0/1/2)) internally
+            // this->Add(time_mtext) and this->Add(time_mtext->Get(0/1)) internally
             // — do NOT call Add again for time_mtext or you get a double-add.
 
             constexpr s32 TOPBAR_SAFE_LEFT  = 12;
             constexpr s32 TOPBAR_SAFE_RIGHT = 24;
             constexpr s32 TOPBAR_ICON_W     = 32;   // square — width == height
             constexpr s32 TOPBAR_ICON_H     = 32;
-            constexpr s32 TOPBAR_GUTTER     = 8;
+            constexpr s32 TOPBAR_GUTTER     = 16;   // K-cycle Track B: 16 px inter-element padding
             constexpr s32 TOPBAR_Y_LARGE    = 12;   // (48 − 24) / 2
             constexpr s32 TOPBAR_Y_SMALL    = 18;   // (48 − 12) / 2
             constexpr s32 TOPBAR_ICON_Y     = 8;    // (48 − 32) / 2
@@ -806,8 +810,9 @@ namespace ul::menu::ui {
             constexpr s32 TOPBAR_BATT_TEXT_W = 48;  // ~"100%" in Medium font
             constexpr s32 SCREEN_W           = 1920;
             constexpr s32 BATT_TEXT_X        = SCREEN_W - TOPBAR_SAFE_RIGHT - TOPBAR_BATT_TEXT_W; // 1848
-            constexpr s32 BATT_ICON_X        = BATT_TEXT_X - TOPBAR_GUTTER - TOPBAR_ICON_W;       // 1808
-            constexpr s32 CONN_ICON_X        = BATT_ICON_X - TOPBAR_GUTTER - TOPBAR_ICON_W;       // 1768
+            constexpr s32 BATT_ICON_X        = BATT_TEXT_X - TOPBAR_GUTTER - TOPBAR_ICON_W;       // 1800
+            constexpr s32 CONN_ICON_X        = BATT_ICON_X - TOPBAR_GUTTER - TOPBAR_ICON_W;       // 1752
+            constexpr s32 BT_ICON_X          = CONN_ICON_X - TOPBAR_GUTTER - TOPBAR_ICON_W;       // 1704
             constexpr s32 TOPBAR_TIME_X      = TOPBAR_SAFE_LEFT;        // 12
             constexpr s32 TOPBAR_DATE_X      = TOPBAR_SAFE_LEFT + 188;  // 200 (12-char Medium block)
 
@@ -832,7 +837,7 @@ namespace ul::menu::ui {
                 TOPBAR_Y_SMALL);
 
             // ── connection icon (right, resized 100→32) ──────────────────────
-            this->connection_top_icon = pu::ui::elm::Image::New(CONN_ICON_X, TOPBAR_ICON_Y, TryFindLoadImageHandle("ui/Main/TopIcon/Connection/None"));
+            this->connection_top_icon = pu::ui::elm::Image::New(CONN_ICON_X, TOPBAR_ICON_Y, TryFindLoadImageHandleDefaultOnly("ui/Main/TopIcon/Connection/None"));
             this->Add(this->connection_top_icon);
             this->connection_top_icon->SetX(CONN_ICON_X);
             this->connection_top_icon->SetY(TOPBAR_ICON_Y);
@@ -843,8 +848,8 @@ namespace ul::menu::ui {
                 this->connection_top_icon->GetWidth(), this->connection_top_icon->GetHeight());
 
             // ── battery icon (right, resized 100→32) ─────────────────────────
-            this->battery_top_icon = pu::ui::elm::Image::New(BATT_ICON_X, TOPBAR_ICON_Y, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/100"));
-            this->battery_charging_top_icon = pu::ui::elm::Image::New(BATT_ICON_X, TOPBAR_ICON_Y, TryFindLoadImageHandle("ui/Main/TopIcon/Battery/Charging"));
+            this->battery_top_icon = pu::ui::elm::Image::New(BATT_ICON_X, TOPBAR_ICON_Y, TryFindLoadImageHandleDefaultOnly("ui/Main/TopIcon/Battery/100"));
+            this->battery_charging_top_icon = pu::ui::elm::Image::New(BATT_ICON_X, TOPBAR_ICON_Y, TryFindLoadImageHandleDefaultOnly("ui/Main/TopIcon/Battery/Charging"));
             this->battery_charging_top_icon->SetVisible(false);
             this->Add(this->battery_top_icon);
             this->battery_top_icon->SetX(BATT_ICON_X);
@@ -872,6 +877,24 @@ namespace ul::menu::ui {
             UL_LOG_INFO("[QDESKTOP topbar] battery_text: x=%d y=%d w=%d h=%d (formula BATT_TEXT_X/Y_LARGE)",
                 this->battery_text->GetX(), this->battery_text->GetY(),
                 this->battery_text->GetWidth(), this->battery_text->GetHeight());
+
+            // ── Bluetooth icon (right of CONN, hidden until device connects) ──
+            // Asset: ui/Main/TopIcon/Bluetooth.png (100×100 RGBA, resized to 32×32).
+            // Visibility is driven by OnMenuUpdate via bt::GetConnectedAudioDevice().
+            // Initial state = hidden; the first OnMenuUpdate call will show it if a
+            // BT audio device is already paired.
+            this->qdesktop_bt_top_icon = pu::ui::elm::Image::New(BT_ICON_X, TOPBAR_ICON_Y, TryFindLoadImageHandleDefaultOnly("ui/Main/TopIcon/Bluetooth"));
+            this->qdesktop_bt_top_icon->SetX(BT_ICON_X);
+            this->qdesktop_bt_top_icon->SetY(TOPBAR_ICON_Y);
+            this->qdesktop_bt_top_icon->SetWidth(TOPBAR_ICON_W);
+            this->qdesktop_bt_top_icon->SetHeight(TOPBAR_ICON_H);
+            this->qdesktop_bt_top_icon->SetVisible(false);
+            this->Add(this->qdesktop_bt_top_icon);
+            this->qdesktop_last_bt_connected = false;
+            UL_LOG_INFO("[QDESKTOP topbar] qdesktop_bt_top_icon: x=%d y=%d w=%d h=%d (BT_ICON_X=%d, initially hidden)",
+                this->qdesktop_bt_top_icon->GetX(), this->qdesktop_bt_top_icon->GetY(),
+                this->qdesktop_bt_top_icon->GetWidth(), this->qdesktop_bt_top_icon->GetHeight(),
+                BT_ICON_X);
 
             // ── Cursor (LAST, renders on top of icons + top bar) ─────────
             // Plutonium dispatches OnInput per-element each frame, so the
@@ -1352,15 +1375,31 @@ namespace ul::menu::ui {
             }
         }
 
-        // Top-bar live updates — clock, date, battery, wifi.  Each helper
-        // is a no-op when its target element is null, so the order is
-        // immaterial.  All members are guaranteed non-null in qdesktop mode
-        // because the constructor's QDESKTOP_MODE block initialises them
-        // before returning.
+        // Top-bar live updates — clock, date, battery, wifi, bluetooth.
+        // Each update helper is a no-op when its target element is null.
+        // All top-bar members are guaranteed non-null in qdesktop mode because
+        // the constructor's QDESKTOP_MODE block initialises them before returning.
         this->UpdateTimeText(this->time_mtext);
         this->UpdateDateText(this->date_text);
         this->UpdateBatteryTextAndTopIcons(this->battery_text, this->battery_top_icon, this->battery_charging_top_icon);
         this->UpdateConnectionTopIcon(this->connection_top_icon);
+
+        // ── Bluetooth icon visibility ─────────────────────────────────────────
+        // Show the icon only when a BT audio device is connected.
+        // GetConnectedAudioDevice() returns the device polled every 500 ms by
+        // the bt::Manager thread.  A connected device has a non-zero 6-byte
+        // address; we verify by comparing against the all-zero sentinel using
+        // the exported AudioDeviceAddressesEqual helper.
+        // We track qdesktop_last_bt_connected to avoid redundant SetVisible calls.
+        if(this->qdesktop_bt_top_icon) {
+            const auto bt_dev = ul::menu::bt::GetConnectedAudioDevice();
+            constexpr BtdrvAddress kZeroAddr = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+            const bool bt_now = !ul::menu::bt::AudioDeviceAddressesEqual(bt_dev.addr, kZeroAddr);
+            if(bt_now != this->qdesktop_last_bt_connected) {
+                this->qdesktop_last_bt_connected = bt_now;
+                this->qdesktop_bt_top_icon->SetVisible(bt_now);
+            }
+        }
 #endif
     }
 
@@ -1513,18 +1552,59 @@ namespace ul::menu::ui {
             UL_LOG_INFO("qdesktop: ui_MainMenuLayout: LoadEntries returned %zu",
                         entries.size());
 
-            if (entries.empty()) {
+            // Always load records.bin so we can enrich Application entries whose
+            // control.name is empty.  In hbloader/applet mode the NS sysmodule
+            // denies nsextGetApplicationControlData (rc=0x1F800), so LoadEntries()
+            // returns entries with empty control.name even when .m.json files exist
+            // on SD.  records.bin was written by uManager.nro with NACP names from
+            // nsextGetApplicationControlData(CacheOnly) which succeeds at full
+            // privilege.  We build an app_id → name map from records.bin, then
+            // backfill any entry whose control.name is still empty.
+            {
                 std::vector<ul::menu::Entry> rb_entries;
-                if (ul::menu::qdesktop::LoadEntriesFromRecordsBin(
-                        ul::menu::qdesktop::QAPP_RECORDS_BIN_PATH, rb_entries)) {
+                const bool rb_ok = ul::menu::qdesktop::LoadEntriesFromRecordsBin(
+                        ul::menu::qdesktop::QAPP_RECORDS_BIN_PATH, rb_entries);
+
+                if (entries.empty() && rb_ok) {
+                    // Complete fallback: no .m.json entries at all — use records.bin
+                    // as the primary source.
                     UL_LOG_INFO("qdesktop: ui_MainMenuLayout: records.bin"
-                                " fallback yielded %zu entries",
+                                " full-fallback yielded %zu entries",
                                 rb_entries.size());
                     entries = std::move(rb_entries);
-                } else {
+                } else if (rb_ok && !rb_entries.empty()) {
+                    // Partial enrichment: .m.json entries exist but have empty names
+                    // due to NS applet-mode privilege failure.  Build a fast lookup
+                    // table from the records.bin vector (app_id → name), then
+                    // backfill each Application entry that still has no display name.
+                    std::unordered_map<u64, std::string> rb_name_map;
+                    rb_name_map.reserve(rb_entries.size());
+                    for (const auto &rb : rb_entries) {
+                        if (!rb.control.name.empty()) {
+                            rb_name_map.emplace(rb.app_info.app_id,
+                                                rb.control.name);
+                        }
+                    }
+
+                    size_t enriched = 0;
+                    for (auto &e : entries) {
+                        if (e.Is<ul::menu::EntryType::Application>()
+                                && e.control.name.empty()
+                                && e.app_info.app_id != 0) {
+                            auto it = rb_name_map.find(e.app_info.app_id);
+                            if (it != rb_name_map.end()) {
+                                e.control.name = it->second;
+                                ++enriched;
+                            }
+                        }
+                    }
                     UL_LOG_INFO("qdesktop: ui_MainMenuLayout: records.bin"
-                                " fallback unavailable — desktop will show no"
-                                " installed Switch games this boot");
+                                " name-enrichment: %zu/%zu entries backfilled",
+                                enriched, entries.size());
+                } else if (!rb_ok) {
+                    UL_LOG_INFO("qdesktop: ui_MainMenuLayout: records.bin"
+                                " unavailable — display names may fall back to"
+                                " hex app_id labels");
                 }
             }
 

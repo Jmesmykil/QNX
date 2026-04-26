@@ -1,0 +1,6 @@
+[INFO] [EventManager] alive!
+[INFO] Hello World from uSystem! Launching uMenu...
+[INFO] [EventManager] registered ApplicationRecordUpdateSystemEvent
+[INFO] Launching uMenu with start mode 2...
+[INFO] [EventManager] registered GameCardMountFailureEvent
+[INFO] Got AppletMessage: ChangeIntoBackground

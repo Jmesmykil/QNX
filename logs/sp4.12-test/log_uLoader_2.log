@@ -1,0 +1,3 @@
+[INFO] Program ID: 0x010000000000100D --> applet type: 2
+[INFO] Targetting ':/switch/uManager.nro' with argv ':/switch/uManager.nro sdmc:/switch/uManager.nro' (once: 115)
+[ERROR] MAKERESULT(333, 900 + errno) asserted 2333-0988/0x7B94D...

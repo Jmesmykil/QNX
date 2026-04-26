@@ -138,7 +138,9 @@ namespace ul::menu::ui {
                 this->FadeOutToColor(GetLibraryAppletFadeColor(applet_id));
             }
 
-            // TODO: custom fades for homebrew?
+            // Homebrew NROs are launched as non-library applets.  Use
+            // FadeOutToNonLibraryApplet() for homebrew launches -- the default
+            // fade color already covers that path.
 
             inline void FadeOutToNonLibraryApplet() {
                 this->FadeOutToColor(GetDefaultFadeColor());

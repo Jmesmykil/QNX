@@ -1,5 +1,9 @@
 ATMOSPHERE_LIBS_REL	:= ../../libs/Atmosphere-libs
 
+# L-cycle release flags: bump opt level, enable LTO and dead-code elimination.
+ATMOSPHERE_OPTIMIZATION_FLAG := -O3
+ATMOSPHERE_SETTINGS          += -ffunction-sections -fdata-sections
+
 #---------------------------------------------------------------------------------
 # pull in common stratosphere sysmodule configuration
 #---------------------------------------------------------------------------------
@@ -14,6 +18,7 @@ LIBNX_EXT		:=	$(CURDIR)/../../libs/libnx-ext/libnx-ext
 LIBNX_IPCEXT	:=	$(CURDIR)/../../libs/libnx-ext/libnx-ipcext
 
 CXXFLAGS	+=	$(UL_DEFS)
+export LDFLAGS                += -Wl,--gc-sections
 
 INCLUDES 	+=	/../../libs/json/single_include/nlohmann
 LIBDIRS		+=	$(LIBUCOMMON) $(LIBNX_EXT) $(LIBNX_IPCEXT)
@@ -87,6 +92,7 @@ all: $(ATMOSPHERE_OUT_DIR) $(ATMOSPHERE_BUILD_DIR) $(ATMOSPHERE_LIBRARIES_DIR)/l
 	DEPSDIR=$(CURDIR)/$(ATMOSPHERE_BUILD_DIR) \
 	--no-print-directory -C $(ATMOSPHERE_BUILD_DIR) \
 	-f $(THIS_MAKEFILE)
+	@aarch64-none-elf-strip --strip-all $(CURDIR)/$(ATMOSPHERE_OUT_DIR)/$(TARGET).elf
 
 $(ATMOSPHERE_LIBRARIES_DIR)/libstratosphere/$(ATMOSPHERE_LIBRARY_DIR)/libstratosphere.a: check_lib
 	@$(SILENTCMD)echo "Checked library."

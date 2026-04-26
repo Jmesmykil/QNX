@@ -7,14 +7,14 @@ This file is the long form thank you list. The short form lives in the README. I
 ### XorTroll
 The original author of uLaunch and the entire family of code we forked from. This includes:
 
-* **uLaunch** — the Atmosphere sysmodule that replaces qlaunch (Switch home menu) with a custom launcher. We forked it. This whole project is downstream of uLaunch.
-* **Plutonium** — the C++ UI framework that draws every pixel of the menu. SDL2 wrapper plus a layout system plus an element tree. We did not write any of it.
-* **libnx-ext** — extensions on top of libnx that add functionality the upstream does not expose (NS application control data wrappers and others)
-* **arc** — Python tooling for generating C++ result code definitions from a manifest
-* **uLoader** — the custom homebrew loader that replaces nx-hbloader. Lets uLaunch chainload NRO files as either applet or application context.
-* **uManager** — the installer NRO that creator uses to install and uninstall the sysmodule from inside Switch homebrew menu
-* **uScreen** — the Java desktop companion that displays Switch screen over USB. Switch side sender code is preserved and active in our fork (uSystem main.cpp). Java client preserved as wire protocol reference.
-* **uDesigner** — the WebAssembly theme editor. Preserved on disk as legacy reference.
+* **uLaunch**: the Atmosphere sysmodule that replaces qlaunch (Switch home menu) with a custom launcher. We forked it. This whole project is downstream of uLaunch.
+* **Plutonium**: the C++ UI framework that draws every pixel of the menu. SDL2 wrapper plus a layout system plus an element tree. We did not write any of it.
+* **libnx-ext**: extensions on top of libnx that add functionality the upstream does not expose (NS application control data wrappers and others)
+* **arc**: Python tooling for generating C++ result code definitions from a manifest
+* **uLoader**: the custom homebrew loader that replaces nx-hbloader. Lets uLaunch chainload NRO files as either applet or application context.
+* **uManager**: the installer NRO that creator uses to install and uninstall the sysmodule from inside Switch homebrew menu
+* **uScreen**: the Java desktop companion that displays the Switch screen over USB. Q OS will replace this with a native companion app post-1.0.
+* **uDesigner**: the WebAssembly theme editor. Q OS will replace this with a native companion app post-1.0.
 
 XorTroll's GitHub: https://github.com/XorTroll
 uLaunch repo: https://github.com/XorTroll/uLaunch
@@ -79,23 +79,23 @@ GitHub: https://github.com/kuba--/zip
 
 These ship with devkitPro and we link against them. None of them are forked into our tree.
 
-* `switch-sdl2` — SDL2 port for Switch
-* `switch-sdl2_gfx`, `switch-sdl2_image`, `switch-sdl2_ttf`, `switch-sdl2_mixer` — SDL2 helper libraries
-* `switch-freetype` — font rasterization
-* `switch-glad` — OpenGL loader
-* `switch-libdrm_nouveau` — DRM driver for Tegra X1 GPU
-* `build_romfs` — devkitPro tool for building the read only filesystem image embedded in the NSO
+* `switch-sdl2`: SDL2 port for Switch
+* `switch-sdl2_gfx`, `switch-sdl2_image`, `switch-sdl2_ttf`, `switch-sdl2_mixer`: SDL2 helper libraries
+* `switch-freetype`: font rasterization
+* `switch-glad`: OpenGL loader
+* `switch-libdrm_nouveau`: DRM driver for Tegra X1 GPU
+* `build_romfs`: devkitPro tool for building the read only filesystem image embedded in the NSO
 
 ## Q OS contributors
 
-This fork is a solo project by **Jmesmykil** (creator of Q OS). One person plus the upstream giants whose names are above. Every decision and every line traces back to Jmesmykil.
+Currently this fork is maintained by **Jamesmykil** (creator of Q OS). Every design and implementation decision traces back to Jamesmykil.
 
 If you contribute via pull request you go on this list with your GitHub handle and what you contributed.
 
 ## Asset attribution
 
 ### Q OS originals (29 PNGs as of v1.2.3)
-All visible art in this release is original Q OS work, not upstream. See [docs/QOS-REBRAND-ASSET-INVENTORY.md](./docs/QOS-REBRAND-ASSET-INVENTORY.md) for the full list with dimensions, byte counts, and SHA8 hashes.
+All visible art in this release is original Q OS work, not upstream.
 
 * **P1** Hero assets (5): Background.png, EntryMenuBackground.png, InputBarBackground.png, OverIcon/Cursor.png, OverIcon/Selected.png
 * **P2** SpecialEntry icons (8): Settings, Album, Themes, Controllers, MiiEdit, WebBrowser, Amiibo, Empty
@@ -106,9 +106,9 @@ Generated with ImageMagick 7.1.2-17 in the Q OS brand palette (#00E5FF cyan, #0E
 
 ### Upstream art preserved for the historical record
 The original upstream uLaunch PNGs that Q OS replaced are archived at:
-* `archive/upstream-art-p2/` — 8 SpecialEntry PNGs as XorTroll authored them
-* `archive/upstream-art-p3/` — 9 defaults and chrome PNGs
-* `archive/upstream-art-p4/` — 7 status overlay PNGs
+* `archive/upstream-art-p2/`: 8 SpecialEntry PNGs as XorTroll authored them
+* `archive/upstream-art-p3/`: 9 defaults and chrome PNGs
+* `archive/upstream-art-p4/`: 7 status overlay PNGs
 
 Naming convention: `<original_name>.png.upstream-<sha8>` where sha8 is the first 8 characters of the SHA256 of the upstream PNG. This preserves the upstream pixels without shipping them in the active romfs.
 
@@ -124,8 +124,6 @@ This project is GPLv2 because its dependencies are GPLv2. The propagation chain:
 * **uLaunch upstream** is GPLv2 → forked → propagates
 
 Result: Q OS uMenu fork is GPLv2 in its entirety. Source is published. Modifications are documented. Distribution requires offering source. We comply with all GPLv2 obligations.
-
-Full audit: [LICENSE-AUDIT.md](./LICENSE-AUDIT.md).
 
 ## Final word
 

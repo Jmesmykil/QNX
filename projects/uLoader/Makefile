@@ -29,15 +29,15 @@ EXEFS_SRC	:=	exefs_src
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS	:=	-g -Wall -Werror -O2 -ffunction-sections \
+CFLAGS	:=	-Wall -Werror -O3 -ffunction-sections -fdata-sections \
 			$(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__ $(UL_DEFS)
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++23
 
-ASFLAGS	:=	-g $(ARCH)
-LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+ASFLAGS	:=	$(ARCH)
+LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,--gc-sections -Wl,-Map,$(notdir $*.map)
 
 LIBUCOMMON		:=	$(CURDIR)/../../libs/uCommon
 LIBNX_EXT		:=	$(CURDIR)/../../libs/libnx-ext/libnx-ext
@@ -144,6 +144,7 @@ $(BUILD):
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 	@npdmtool $(OUTPUT)_applet.json $(OUTPUT)_applet.npdm
 	@npdmtool $(OUTPUT)_application.json $(OUTPUT)_application.npdm
+	@aarch64-none-elf-strip --strip-all $(OUTPUT).elf
 
 #---------------------------------------------------------------------------------
 clean:

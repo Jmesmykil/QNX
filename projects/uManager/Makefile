@@ -54,14 +54,14 @@ APP_VERSION := $(VERSION)
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv8-a+crc+crypto -mtune=cortex-a57 -mtp=soft -fPIE
 
-CFLAGS	:=	-g -O2 -ffunction-sections -Wall -Werror $(ARCH) $(DEFINES)
+CFLAGS	:=	-O3 -ffunction-sections -fdata-sections -Wall -Werror $(ARCH) $(DEFINES)
 
 CFLAGS	+=	$(INCLUDE) -D__SWITCH__ $(UL_DEFS) `sdl2-config --cflags`
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++23
 
-ASFLAGS	:=	-g $(ARCH)
-LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+ASFLAGS	:=	$(ARCH)
+LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,--gc-sections -Wl,-Map,$(notdir $*.map)
 
 LIBUCOMMON		:=	$(CURDIR)/../../libs/uCommon
 LIBPU			:=	$(CURDIR)/../../libs/Plutonium/Plutonium
@@ -174,6 +174,7 @@ $(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) -C $(LIBUCOMMON)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+	@aarch64-none-elf-strip --strip-all $(OUTPUT).elf
 
 #---------------------------------------------------------------------------------
 clean:

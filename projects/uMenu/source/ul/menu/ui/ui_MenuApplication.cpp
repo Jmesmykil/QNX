@@ -226,6 +226,11 @@ namespace ul::menu::ui {
 
         #define _LOG_SOFAR(kind) UL_LOG_INFO("MenuApplication::OnLoad -> " kind ", so far took %lld ms", std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - time).count());
 
+        // Capture OnLoad start time for first-paint measurement.
+        // The one-shot render callback below fires on the very first rendered
+        // frame and emits the wall-clock duration from this point to that frame.
+        const auto onload_start_time = time;
+
         this->launch_failed = false;
         this->pending_gc_mount_rc = ResultSuccess;
         this->needs_app_records_reload = false;
@@ -403,6 +408,22 @@ namespace ul::menu::ui {
             }
         });
 
+        // One-shot render callback: fires on the very first rendered frame after
+        // OnLoad returns.  Logs wall-clock time from OnLoad entry to first paint
+        // so cold-start regressions surface immediately in the log.
+        // The shared_ptr copy keeps the flag alive across the callback lifetime.
+        {
+            auto fired = std::make_shared<bool>(false);
+            this->AddRenderCallback([this, onload_start_time, fired]() {
+                if(*fired) { return; }
+                if(::g_uMenuTerminating.load(std::memory_order_acquire)) { return; }
+                *fired = true;
+                const auto first_paint_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now() - onload_start_time).count();
+                UL_LOG_INFO("[MenuApplication] First paint reached %lld ms after OnLoad entry", first_paint_ms);
+            });
+        }
+
         for(; !g_PendingInitialMessageQueue.empty(); ) {
             const auto pending_msg_ctx = g_PendingInitialMessageQueue.front();
             UL_LOG_INFO("[MenuApplication] Forwarding initial queued message of type %d to layout...", (u32)pending_msg_ctx.msg);
@@ -501,6 +522,14 @@ namespace ul::menu::ui {
         this->StopPlayBgm();
 
         if(fade) {
+            // Q OS surface-to-surface transitions use FastFadeAlphaIncrementSteps
+            // (12 steps, ~200 ms at 60 fps).  App launches use DefaultFadeAlpha-
+            // IncrementSteps (24 steps, ~400 ms) via FadeOutToColor / FadeOutTo-
+            // LibraryApplet / FadeOutToNonLibraryApplet -- those paths bypass
+            // LoadMenu entirely.  SetBackgroundFade already applies the fast
+            // count; the explicit call below makes the contract self-documenting
+            // and guards against future changes to SetBackgroundFade's internals.
+            this->SetFadeAlphaIncrementStepCount(FastFadeAlphaIncrementSteps);
             this->SetBackgroundFade();
             this->FadeOut();
 

@@ -29,7 +29,7 @@ EXEFS_SRC	:=	exefs_src
 #---------------------------------------------------------------------------------
 ARCH	:=	-march=armv8-a -mtune=cortex-a57 -mtp=soft -fPIE -Wl,-wrap,libappletLaunch -Wl,-wrap,libappletStart
 
-CFLAGS	:=	-g -O2 -ffunction-sections -Wall -Werror $(ARCH) $(DEFINES)
+CFLAGS	:=	-O3 -ffunction-sections -fdata-sections -Wall -Werror $(ARCH) $(DEFINES)
 
 # Q OS desktop mode: replaces upstream uLaunch icon-ring + top menu with the
 # qdesktop layer (wallpaper + icons + dock + cursor + HUD). Defined here so
@@ -42,8 +42,8 @@ CFLAGS	+=	$(INCLUDE) -D__SWITCH__ $(UL_DEFS)
 
 CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++23
 
-ASFLAGS	:=	-g $(ARCH)
-LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
+ASFLAGS	:=	$(ARCH)
+LDFLAGS	=	-specs=$(DEVKITPRO)/libnx/switch.specs $(ARCH) -Wl,--gc-sections -Wl,-Map,$(notdir $*.map)
 
 LIBUCOMMON		:=	$(CURDIR)/../../libs/uCommon
 LIBPU			:=	$(CURDIR)/../../libs/Plutonium/Plutonium
@@ -149,6 +149,7 @@ $(BUILD):
 	@$(MAKE) -C $(LIBUCOMMON)
 	@$(MAKE) -C $(LIBPU)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+	@aarch64-none-elf-strip --strip-all $(OUTPUT).elf
 
 #---------------------------------------------------------------------------------
 clean:

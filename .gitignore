@@ -9,3 +9,42 @@ build/
 *.nso
 *.pfs0
 .DS_Store
+
+# Backup files (never ship)
+*.bak
+*.bak.*
+*~
+*.orig
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs and dev artifacts
+*.log
+RESULT.md
+HANDOFF.md
+QOS_HANDOFF.md
+ASTRAL_HANDOFF.md
+
+# Internal staging trees (should never be committed here)
+staging/
+logs/
+.memory/
+.learnings/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Internal docs that belong in private repos only
+docs/
+GOVERNANCE.md
+INTEGRATION-SPEC.md
+LICENSE-AUDIT.md
+ROADMAP.md
+UPSTREAM-ANALYSIS.md
+BUILD.md
+cur-changelog.md

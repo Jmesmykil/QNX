@@ -1,181 +1,185 @@
 <div align="center">
 
-![Q OS for Nintendo Switch](assets/branding/hero-banner.png)
+![Q OS uMenu](assets/branding/hero-banner.png)
 
-**A custom operating system for Nintendo Switch. Built on uLaunch as the root source.**
+**A homebrew launcher fork for Nintendo Switch**
 
 ![GPL v2](https://img.shields.io/badge/license-GPLv2-00E5FF)
 ![Atmosphere](https://img.shields.io/badge/Atmosphere-1.11.1-D946EF)
 ![Switch](https://img.shields.io/badge/platform-Nintendo%20Switch-A78BFA)
 ![v1.2.3](https://img.shields.io/badge/version-1.2.3-0E1A33)
-![Solo project](https://img.shields.io/badge/built%20by-Jmesmykil-00E5FF)
 
 </div>
 
-## Hey
+## See it running
 
-This is Q OS. A custom operating system for the Nintendo Switch.
+<div align="center">
 
-It is not just a reskin. It is a desktop environment metaphor running where the stock Nintendo home menu used to live. Wallpaper. Dock. Top bar. File browser. System monitor. Lockscreen. Settings panel. Full screen app grid like the All Programs view on a real desktop OS. All of it on Switch hardware, all of it through Atmosphere CFW, all of it removable in one delete if you ever want stock Nintendo back.
+https://github.com/Jmesmykil/uLaunch/raw/unew/assets/branding/qos-demo.mp4
 
-uLaunch is the root source. XorTroll wrote the sysmodule that lets a custom launcher take over the qlaunch process. Plutonium is the UI framework underneath. We forked both and built Q OS on top.
+[Download / view the demo video](assets/branding/qos-demo.mp4) (10 MB, 1080p, 64 seconds, 3x speed, no audio)
 
-Nobody has built a real desktop OS experience on Switch homebrew before. This is that.
+</div>
 
-This is a solo project. One person. The upstream giants whose names are in the credits. Nothing else.
+## What this is
 
-![What you get](assets/branding/features.png)
+This is a fork of XorTroll's uLaunch. uLaunch replaces the Switch home menu (qlaunch) so you can boot straight into a custom launcher instead of the stock Nintendo one. We took that base and reskinned it with the Q OS look, added a few new surfaces (Vault, Monitor, About, Launchpad), a top bar that actually fits the screen, and a desktop dock that works the way you expect a dock to work.
 
-## Why this is different
+It runs on Atmosphere CFW. Stock Switch firmware is untouched. Pull the bundle out of `atmosphere/contents/` and you are back to the stock Nintendo home menu with zero side effects. That part matters and we keep it true.
 
-Switch homebrew has had launchers for years. uLaunch itself is years old and excellent. What Q OS adds:
+## A real shoutout to the people who made this possible
 
-* **Desktop environment metaphor** instead of menu metaphor. The screen is a desktop with a wallpaper, a dock at the bottom, a top bar at the top, icons on a grid. You think of it like a computer desktop, not a menu of options.
-* **Native Q OS surfaces** built on top: Vault file browser. Monitor system info. About panel. QSettings. QLockscreen. Each one is a proper desktop app sitting on top of the wallpaper, with its own UI, not buried in a settings tree.
-* **Launchpad** is the All Programs view. Press the dock icon to see every installed game and every homebrew NRO in one full screen grid with category headers. Search by typing. Like macOS Launchpad or Windows All Programs.
-* **Q OS branded art** end to end. Every visible PNG is original work in the Q OS palette. Cyan, navy, magenta, lavender. Twenty nine PNGs replaced. Upstream art preserved in `archive/upstream-art-*/` for the historical record.
-* **Honest engineering**. The L cycle design doc spells out exactly what is feasible and what is not. NRO framebuffer capture is architecturally impossible in Atmosphere Phase 1.5 without forking the display stack. We say so. We design around it. Nobody pretends otherwise.
+This project would not exist without the work of these people. Read this part. They earned every line.
 
-## Massive shoutout to the people who made this possible
-
-Read this part. They earned every line.
-
-**XorTroll** built **uLaunch** (the sysmodule that replaces qlaunch), **Plutonium** (the UI framework that draws every pixel), **libnx-ext** (the libnx extensions), **arc** (the Python tooling for result codes), **uLoader** (the custom hbloader), **uManager** (the installer NRO), **uScreen** (the Switch screen mirror over USB), and **uDesigner** (the WebAssembly theme editor). Almost every system call we make traces back to code XorTroll wrote.
+**XorTroll** built **uLaunch**, the Plutonium UI framework, the libnx-ext extensions, the arc result code generator, and the original uLoader hbloader replacement. Almost every system call we make traces back to code XorTroll wrote. The architecture, the IPC patterns, the theme system, the message queue, the menu state machine. All of it. We did not invent any of that. We forked it, reskinned it, added things on top.
 
 GitHub: https://github.com/XorTroll
 
-**Stary2001** is XorTroll's longtime collaborator on uLaunch. The upstream credit string in our codebase reads "uLaunch by XorTroll and Stary2001". Real credit, not a courtesy.
+**Stary2001** is XorTroll's longtime collaborator on uLaunch and contributed substantially to the upstream codebase that we forked.
 
-GitHub: https://github.com/Stary2001
-
-**The Atmosphere-NX team** ship the custom firmware everything runs on. **SciresM**, **TuxSH**, **hexkyz**, **fincs**, and the entire crew. We use Atmosphere-libs (libstratosphere) for the sysmodule entry point, the message queue, the result codes. Without Atmosphere there is no homebrew Switch scene at all.
+**The Atmosphere-NX team** ship the custom firmware everything runs on top of. **SciresM**, **TuxSH**, **hexkyz**, **fincs**, and the entire crew. Without Atmosphere there is no homebrew Switch scene. We use Atmosphere-libs (libstratosphere) for the sysmodule entry points, the message queue primitives, the result codes. Their CFW work made this category of project possible.
 
 GitHub: https://github.com/Atmosphere-NX
 
-**The switchbrew team** maintain **libnx**, the C library that gives us access to every Switch service. **fincs**, **plutoo**, **yellows8**, **WinterMute**, **shchmue**, and many more. Years of reverse engineering work made everything we do possible.
+**The switchbrew team** maintain **libnx**, the C library that gives us access to every Switch service. **fincs**, **plutoo**, **yellows8**, **WinterMute**, **shchmue**, and many more. Every `nsInitialize`, every `appletGetOperationMode`, every `usbCommsInitialize` call we make goes through libnx. Their reverse engineering work over the years is the only reason any of this works.
 
 GitHub: https://github.com/switchbrew
 
-**WinterMute** and **devkitPro** maintain devkitA64, the toolchain we compile against. Every Switch homebrew project uses devkitPro.
+**WinterMute** and the **devkitPro** maintainers ship devkitA64, the toolchain we compile against. devkitA64 is GCC plus Switch headers plus build templates. Everything Q OS uMenu compiles into runs because devkitPro packages exist.
 
 GitHub: https://github.com/devkitPro
 
-**The Sphaira team** ship the homebrew app store. Our planned distribution channel.
+**The Sphaira team** ship the homebrew app store we plan to publish through. Their work on hb-appstore and the ForTheUsers infrastructure makes homebrew distribution actually usable for normal people.
 
 GitHub: https://github.com/ITotalJustice/sphaira
 
-**The Hekate team** (CTCaer and contributors) ship the bootloader chain we sit on top of.
+**The Hekate team** (**CTCaer** and contributors) ship the bootloader chain we sit on top of. Hekate launches Atmosphere which launches our sysmodule. None of that boot path exists without Hekate.
 
 GitHub: https://github.com/CTCaer/hekate
 
-**Library authors:** **Dear ImGui** by **ocornut**, **stb** by **Sean T. Barrett**, **nlohmann/json** by **Niels Lohmann**, and **kuba--/zip**. Each library solves a real problem cleanly and we use them gratefully.
+**Dear ImGui** by **ocornut** is in our libs tree (used by the legacy upstream uDesigner web tool). **stb** by **Sean T. Barrett** for the image and font primitives. **nlohmann/json** for the JSON parsing that drives the theme system. **kuba--/zip** for the zip handling. Each of these libraries solves a real problem cleanly and we use them gratefully.
 
-If your name should be here and is missing, open an issue. The full attribution is in [CREDITS.md](./CREDITS.md). The license chain is in [LICENSE-AUDIT.md](./LICENSE-AUDIT.md).
+If we missed your name and you should be on this list, open an issue and we will add you. The full attribution chain lives in [CREDITS.md](./CREDITS.md).
 
 ## Honest status
 
-Q OS for Switch v1.2.3 is real working software, not vaporware. What that means:
+This release ships the K cycle work as of 2026-04-25. What that means concretely:
 
-**Working on hardware (verified)**
-* Top bar (battery, connection, time, date) at correct sizes and positions
-* Desktop grid 9 columns by 5 rows of installed apps and homebrew
-* Dock with five Q OS builtins (Vault, Monitor, Control, About, All Programs)
-* Launchpad full screen app grid with section headers (Applications, Homebrew, Built in)
+**Verified working on hardware**
+* Top bar with battery, connection, time, date, all rendered at the right size in the right place
+* Desktop grid with 9 columns by 5 rows of icons
+* Dock with 5 builtin slots: Vault file browser, Monitor, Control panel, About, All Programs
+* Launchpad full screen app grid (the "All Programs" view)
 * Vault, Monitor, About, QSettings, QLockscreen as Q OS native surfaces
-* Home button safely returns from any subsurface to main desktop
-* B button safely returns from Launchpad to main desktop
-* 29 PNG art rebrand across hero wallpaper, special entry icons, defaults, status overlays
+* Home button safely returns to the main menu from any subsurface
+* B button safely returns from Launchpad to main menu
+* Rebranded art assets across 29 PNGs (hero wallpaper, special entry icons, defaults, status overlays)
 
-**Built but not yet visually verified on hardware**
-* Full P2 + P3 + P4 art rebrand visually rendering as expected
-* Lavender DockAllPrograms icon
-* K+5 test harness v2.0.0 in either normal or rig mode
+**Built but not yet visually verified by a human on the actual Switch**
+* The full P2 plus P3 plus P4 art rebrand visually rendering as expected on the hardware screen
+* The new lavender DockAllPrograms icon
+* The K+5 test harness v2.0.0 in either normal mode or rig mode
 
-**Designed but not implemented yet**
+**Designed but not yet implemented**
 * K+1 Folders and Categories (Nintendo, Homebrew, Extras, Payloads sections)
 * K+2 Settings and Filter chain (icon size picker, hide entries, favorites)
 * K+3 Long press iPhone style edit mode with drag reorder
 * K+4 Recent app LRU tracking
-* L cycle Window Manager + Homebrew Window Launcher + Task Manager (the next big thing)
+* Native companion apps to replace the upstream Java uScreen and WASM uDesigner (post-1.0 scope)
+* L cycle Window Manager, Homebrew Window Launcher, Task Manager (the next big thing)
 
-Design SSOTs for everything in the "designed not implemented" bucket live in [docs/](./docs/).
+## What you get when you install this
 
 ![Brand palette](assets/branding/brand-palette.png)
 
-The Q OS look. Cyan accent #00E5FF. Deep navy base #0E1A33. Magenta accent #D946EF. Lavender accent #A78BFA. White for legibility.
+The Q OS look. Cyan accent, deep navy base, magenta and lavender pops. The wallpaper is a single 1920 by 1080 PNG. The icons all use the same palette.
 
 ![SpecialEntry icons](assets/branding/icons-row.png)
 
-Settings, Album, Themes, Controllers, MiiEdit, WebBrowser, Amiibo, and the Empty slot placeholder. All eight rebuilt as Q OS originals. Upstream art archived under `archive/upstream-art-p2/` for the historical record.
+Settings, Album, Themes, Controllers, MiiEdit, WebBrowser, Amiibo, and the Empty slot placeholder. All eight rebuilt as Q OS originals. The upstream uLaunch icons are archived under `archive/upstream-art-p2/` for the full historical record.
+
+## What ships in qos-umenu-v1.2.3
+
+The release bundle is `qos-umenu-v1.2.3.zip` (and `.7z`). It contains exactly these artifacts:
+
+| Artifact | Path on SD card | Notes |
+|---|---|---|
+| `exefs.nsp` | `atmosphere/contents/0100000000001000/exefs.nsp` | uSystem, replaces qlaunch |
+| `main` | `ulaunch/bin/uMenu/main` | Q OS menu binary |
+| `main.npdm` | `ulaunch/bin/uMenu/main.npdm` | Access control descriptor |
+| `romfs.bin` | `ulaunch/bin/uMenu/romfs.bin` | Theme assets (29 Q OS original PNGs) |
+| `uManager/` | `ulaunch/bin/uManager/` | Installer NRO assets |
+| `uLoader/` | `ulaunch/bin/uLoader/` | hbloader replacement |
+| `uManager.nro` | `switch/uManager.nro` | Homebrew management app |
+
+The 29 original PNGs in `romfs.bin` are P1 through P4 of the rebrand: 5 hero assets, 8 SpecialEntry icons, 9 defaults and chrome pieces, and 7 status overlays. All generated in the Q OS brand palette and released under GPLv2.
 
 ## Install
 
 You need:
-* A Nintendo Switch with Atmosphere CFW already working (we do not cover Atmosphere setup; the [Atmosphere README](https://github.com/Atmosphere-NX/Atmosphere) is the source of truth)
+* A Nintendo Switch with Atmosphere CFW already working (we do not cover Atmosphere setup here, the [Atmosphere README](https://github.com/Atmosphere-NX/Atmosphere) is the source of truth for that)
 * Hekate or fusee as your bootloader (Hekate recommended)
 * SD card mounted on your computer
 
-Drop the contents of the release zip onto your SD card root. The directory layout matches Atmosphere's expectations:
-
+Drop the contents of the release zip onto your SD card root. The directory layout matches what Atmosphere expects:
 ```
-sdmc:/atmosphere/contents/0100000000001000/exefs.nsp    (Q OS uSystem, replaces stock qlaunch)
-sdmc:/ulaunch/bin/uMenu/main                             (the Q OS desktop binary)
+sdmc:/atmosphere/contents/0100000000001000/exefs.nsp    (uSystem, replaces qlaunch)
+sdmc:/ulaunch/bin/uMenu/main                             (the Q OS menu binary)
 sdmc:/ulaunch/bin/uMenu/main.npdm
 sdmc:/ulaunch/bin/uMenu/romfs.bin                        (theme assets)
-sdmc:/ulaunch/bin/uManager/                              (installer NRO assets)
-sdmc:/ulaunch/bin/uLoader/                               (custom hbloader for NRO chainload)
-sdmc:/switch/uManager.nro                                (Q OS installer homebrew app)
+sdmc:/ulaunch/bin/uManager/                              (the installer NRO assets)
+sdmc:/ulaunch/bin/uLoader/                               (the hbloader replacement)
+sdmc:/switch/uManager.nro                                (homebrew app for managing things)
 ```
 
-Eject the SD card properly. Boot Hekate. Launch Atmosphere CFW. Q OS loads as the home screen instead of stock Nintendo.
+Eject the SD card properly. Boot into Hekate. Launch Atmosphere CFW. Q OS uMenu loads instead of the stock home menu.
 
-To uninstall: delete `sdmc:/atmosphere/contents/0100000000001000/exefs.nsp` and reboot. Stock Nintendo home menu returns. No other side effects. Truly removable.
+To uninstall, delete `sdmc:/atmosphere/contents/0100000000001000/exefs.nsp` and reboot. Stock home menu returns.
 
 ## Build from source
 
 Requirements:
-* macOS or Linux
+* macOS or Linux (we develop on macOS)
 * devkitPro with devkitA64 installed at `/opt/devkitpro`
-* Packages: `switch-sdl2`, `switch-freetype`, `switch-glad`, `switch-libdrm_nouveau`, `switch-sdl2_gfx`, `switch-sdl2_image`, `switch-sdl2_ttf`, `switch-sdl2_mixer`, `build_romfs`
-* Submodules initialized: `git submodule update --init --recursive`
+* The following packages: `switch-sdl2`, `switch-freetype`, `switch-glad`, `switch-libdrm_nouveau`, `switch-sdl2_gfx`, `switch-sdl2_image`, `switch-sdl2_ttf`, `switch-sdl2_mixer`, `build_romfs`
+* Git submodules initialized: `git submodule update --init --recursive` inside `src/`
 
-Build the package:
+Build everything:
 ```
+cd src
 make package
 ```
-Output: `qos-umenu-v1.2.3.zip` and `.7z` in the repo root.
 
-Build only the menu:
+Output goes to `src/SdOut/` and zips up as `qos-umenu-v1.2.3.zip` and `.7z`.
+
+Build just the menu without packaging:
 ```
+cd src
 make umenu
 ```
-Output: `SdOut/ulaunch/bin/uMenu/main` and `romfs.bin`.
 
-Full version chain and build ritual is in [ROADMAP.md](./ROADMAP.md).
+Output: `src/SdOut/ulaunch/bin/uMenu/main` and `romfs.bin`.
 
 ## What is next
 
-The L cycle. Window manager so multiple Q OS apps can run on screen at once. Replacing nx-hbloader with windowed homebrew launches (where feasible; see honest finding in [docs/L-CYCLE-WINDOW-MANAGER-DESIGN.md](./docs/L-CYCLE-WINDOW-MANAGER-DESIGN.md)). A task manager that lists running processes with memory and CPU. The K cycle was about getting Q OS desktop solid. The L cycle is about turning it into a real OS shaped thing where multiple things run at once and you can see what is happening.
+The L cycle. Window manager. Replacing nx-hbloader with windowed homebrew launches. A task manager. The K cycle was about getting the desktop working solidly. The L cycle is about turning it into a real OS shaped thing where multiple apps run in windows and you can see what is happening. Design work is in flight as of this release.
 
 ## Contributing
 
-Open issues. Open pull requests. Solo project but contributions welcome.
+Open issues. Open pull requests. We answer them. The codebase is GPLv2 and any contribution you make will ship under the same terms.
 
-GPLv2 throughout. Any contribution ships under the same terms.
-
-If you want to fork this and ship your own thing, that is what GPLv2 is for. Keep the credit chain intact.
+If you want to fork this and ship your own thing, do that too. That is what GPLv2 is for. Just keep the credit chain intact and open source your changes.
 
 ## License
 
-GPLv2. Plutonium and Atmosphere-libs are GPLv2 and they propagate through static linking. Whole project is GPLv2 too. Full audit in [LICENSE-AUDIT.md](./LICENSE-AUDIT.md).
+GPLv2. Plutonium and Atmosphere-libs are GPLv2 and they propagate through static linking, so the whole project is GPLv2 too. We did not pick that, the upstream did, but we agree with the choice and we ship under the same terms.
 
-The 29 Q OS branded art assets are originals released under GPLv2 to keep the bundle license consistent.
+The art assets (P1 through P4 = 29 PNGs across `romfs/default/ui/`) are Q OS originals, also released under GPLv2 to keep the bundle license consistent.
 
-## Where this lives
+## Where to find us
 
-* Repo (this fork): https://github.com/Jmesmykil/uLaunch
-* Upstream uLaunch (read this to understand the architecture): https://github.com/XorTroll/uLaunch
-* Atmosphere CFW: https://github.com/Atmosphere-NX/Atmosphere
-* My Atmosphere fork (credit and tracking): https://github.com/Jmesmykil/Atmosphere
+* Issues: open them on this repo
+* Q OS umbrella project: https://github.com/Jmesmykil/QOS
+* Upstream uLaunch (read this if you want to understand the architecture): https://github.com/XorTroll/uLaunch
 
-Built with respect for everyone whose code I am standing on.
+Built with respect for everyone whose code we are standing on.

@@ -87,16 +87,23 @@ namespace ul::menu::qdesktop {
 // Rust LP_GAP_X=8    → C++: 12.
 // Rust LP_GAP_Y=8    → C++: 12.
 // Rust LP_GRID_X=40  → C++: 60.
-// Rust LP_GRID_Y=140 → C++: 144 (search 84, search_h 48 → grid below search bar).
+// Rust LP_GRID_Y=140 → C++: 192 (search 84, search_h 48 → strip 138..174 → grid below).
+// v1.7.0-stabilize-7.1 hotfix: LP_GRID_Y bumped from 144 to 192 so the icon
+// grid clears the auto-folder filter strip ("tabs") at y=138..174.  Pre-fix,
+// LP_GRID_Y=144 placed cells 30 px INSIDE the strip; All / SystemUtil / etc.
+// filter tiles overlapped the first row of icons (creator HW report).  Cull
+// at y=1032 still leaves 5 rows visible (row 4 bottom = 990 < 1032), so
+// LP_ROWS=5 / LP_ITEMS_PER_PAGE=50 are unchanged.
 // Search bar and hot-corner are spec-defined values from the task.
 
 constexpr s32 LP_COLS          = 10;
 // F10 (stabilize-5): explicit row count so Items-Per-Page is a constant, not
 // derived at runtime.  5 rows × 10 cols = 50 items per page.
-// Derivation: usable height = 1080 - LP_GRID_Y(144) - status_line(40) = 896 px.
-// Each row = LP_CELL_H(150) + LP_GAP_Y(12) = 162 px.  896 / 162 = 5.53 → 5.
-// Row 5 (0-indexed) would start at y=144+810=954; bottom=1104 > 1080 → clips.
-// Row 4 bottom = 792+150 = 942 → fully visible.  5 rows is the safe maximum.
+// Derivation (post-stabilize-7.1): usable height = 1080 - LP_GRID_Y(192) -
+// status_line(40) = 848 px.  Each row = LP_CELL_H(150) + LP_GAP_Y(12) = 162 px.
+// 848 / 162 = 5.23 → 5.  Row 5 (0-indexed) would start at y=192+810=1002;
+// bottom=1152 > 1032 cull → clips.  Row 4 bottom = 192+4*162+150 = 990
+// → fully visible.  5 rows is the safe maximum (unchanged from pre-fix).
 constexpr s32 LP_ROWS          = 5;
 constexpr size_t LP_ITEMS_PER_PAGE = static_cast<size_t>(LP_COLS * LP_ROWS);  // 50
 constexpr s32 LP_CELL_W        = 156;   // icon + label column width
@@ -104,7 +111,7 @@ constexpr s32 LP_CELL_H        = 150;   // icon + label row height (incl. label)
 constexpr s32 LP_GAP_X         = 12;
 constexpr s32 LP_GAP_Y         = 12;
 constexpr s32 LP_GRID_X        = 60;    // safe-area left margin
-constexpr s32 LP_GRID_Y        = 144;   // below search bar (84 + 48 + 12 gap)
+constexpr s32 LP_GRID_Y        = 192;   // below auto-folder strip (138 + 36 + 18 clearance)
 constexpr s32 LP_SEARCH_BAR_X  = 300;
 constexpr s32 LP_SEARCH_BAR_Y  = 84;
 constexpr s32 LP_SEARCH_BAR_W  = 1320;

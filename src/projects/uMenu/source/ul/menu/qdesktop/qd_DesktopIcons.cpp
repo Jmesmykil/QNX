@@ -20,8 +20,12 @@
 #include <sys/stat.h>
 #include <cstring>
 #include <cstdio>
+#include <cerrno>             // v1.7.0-stabilize-7 Slice 5: SaveFavorites errno reporting
 #include <algorithm>
+#include <string>
 #include <unordered_map>
+#include <unordered_set>      // v1.7.0-stabilize-7 Slice 5: g_favorites_set_
+#include <vector>
 
 // Pull in SDL2 directly (sdl2_Types.hpp aliases Renderer = SDL_Renderer*).
 #include <SDL2/SDL.h>
@@ -238,6 +242,25 @@ static const AutoFolderSpec kAutoFolderSpecs[] = {
     { "umanager",  0, 0, ClassifyKind::SystemUtil },
     { "nxovl",     0, 0, ClassifyKind::SystemUtil },
     { "nxtheme",   0, 0, ClassifyKind::SystemUtil },
+    // v1.7.0-stabilize-7 (Slice 4 / O-B Phase 4): extended SystemUtil set.
+    // These NRO/payload names are commonly seen in CFW SD root and were
+    // previously falling through to ClassifyKind::Unknown -> Other folder.
+    // Routing them to SystemUtil sends them to the System folder where
+    // configuration / management / recovery tools belong.
+    { "daybreak",  0, 0, ClassifyKind::SystemUtil },
+    { "sphaira",   0, 0, ClassifyKind::SystemUtil },
+    { "lockpick",  0, 0, ClassifyKind::SystemUtil },
+    { "linkalho",  0, 0, ClassifyKind::SystemUtil },
+    { "netman",    0, 0, ClassifyKind::SystemUtil },
+    { "tinwoo",    0, 0, ClassifyKind::SystemUtil },
+    { "nxshell",   0, 0, ClassifyKind::SystemUtil },
+    { "ftpd",      0, 0, ClassifyKind::SystemUtil },
+    { "haze",      0, 0, ClassifyKind::SystemUtil },
+    { "fusee",     0, 0, ClassifyKind::SystemUtil },
+    { "hwfly",     0, 0, ClassifyKind::SystemUtil },
+    { "picofly",   0, 0, ClassifyKind::SystemUtil },
+    { "monitor",   0, 0, ClassifyKind::SystemUtil },
+    { "vault",     0, 0, ClassifyKind::SystemUtil },
     // Generic homebrew tools.
     { "hbmenu",    0, 0, ClassifyKind::HomebrewTool },
     { "nro",       0, 0, ClassifyKind::HomebrewTool },
@@ -250,6 +273,509 @@ static const AutoFolderSpec kAutoFolderSpecs[] = {
 // and PopulateBuiltins.  Never cleared between frames; rebuilt if Initialize()
 // is called again.
 static std::unordered_map<std::string, ClassifyKind> g_entry_classification_;
+
+// F4 (stabilize-4): NS icon retry counter side table.
+// Keyed by app_id (u64).  Tracks how many times LoadNsIconToCache returned
+// false (NS service unavailable at startup) for each Application entry so we
+// retry up to NS_ICON_MAX_RETRIES times before accepting the fallback gray
+// block as the permanent icon.  Stored here (not in NroEntry) to keep the
+// struct size pinned at 1632 bytes.
+static constexpr u8 NS_ICON_MAX_RETRIES = 3;
+static std::unordered_map<u64, u8> g_ns_icon_retry_;
+
+// F4 (stabilize-5): RC-B3 — NRO icon retry cap.
+// Mirrors g_ns_icon_retry_ for NRO entries.  Keyed by nro_path (std::string
+// because NroEntry has no u64 app_id).  Same semantics: cap at 3 retries;
+// after that the LRU gray fallback is accepted permanently.
+// NOT added to NroEntry struct — that is pinned at 1632 bytes (static_assert).
+static constexpr u8 NRO_ICON_MAX_RETRIES = 3;
+static std::unordered_map<std::string, u8> g_nro_icon_retry_;
+
+// ── v1.7.0-stabilize-7 Slice 4 (O-B): desktop folder grid state ──────────────
+// Per the O-B desktop redesign, the per-icon paint loop is replaced with a
+// 6-folder categorized grid above the dock. All state is in file-scope side
+// tables; NroEntry remains pinned at 1632 bytes per the static_assert.
+
+// Folder identifiers — maps 1:1 to kDesktopFolders[] table indices below.
+// Order is LOAD-BEARING (Phase 5 input math + Phase 3 LP filter switch use
+// the underlying u8 values via static_cast<size_t>(DesktopFolderId)).
+enum class DesktopFolderId : u8 {
+    Games     = 0,
+    Emulators = 1,
+    Tools     = 2,
+    System    = 3,
+    QOS       = 4,
+    Other     = 5,
+};
+static constexpr size_t kDesktopFolderCount = 6;
+
+// Per-folder render constants — name, glyph fallback, tint colour for the
+// (tinted) Folder.png base. Glyph is shown only when the cached name texture
+// is unavailable (defensive; the lazy-build in PaintDesktopFolders almost
+// always succeeds before the first frame finishes).
+struct DesktopFolderSpec {
+    DesktopFolderId id;
+    const char     *name;
+    char            glyph;
+    u8              tint_r, tint_g, tint_b;
+};
+static constexpr DesktopFolderSpec kDesktopFolders[kDesktopFolderCount] = {
+    { DesktopFolderId::Games,     "Games",     'G', 0x60u, 0xA5u, 0xFAu },
+    { DesktopFolderId::Emulators, "Emulators", 'E', 0x4Au, 0xDEu, 0x80u },
+    { DesktopFolderId::Tools,     "Tools",     'T', 0xFBu, 0xBFu, 0x24u },
+    { DesktopFolderId::System,    "System",    'S', 0xC0u, 0x84u, 0xFCu },
+    { DesktopFolderId::QOS,       "Q OS",      'Q', 0xA7u, 0x8Bu, 0xFAu },
+    { DesktopFolderId::Other,     "Other",     '?', 0x80u, 0x80u, 0x80u },
+};
+
+// Per-folder live counts (recomputed by RecomputeDesktopFolders).
+static size_t g_desktop_folder_counts[kDesktopFolderCount] = {0,0,0,0,0,0};
+// Per-folder cached rectangles (set by RecomputeDesktopFolders; also recomputed
+// inside PaintDesktopFolders to add the layout (x,y) origin).
+static SDL_Rect g_desktop_folder_rects[kDesktopFolderCount] = {};
+// Layout-dirty flag — set true on construction and whenever the icon set
+// changes (SetApplicationEntries / SetSpecialEntries / scan completion).
+static bool g_desktop_folder_layout_dirty = true;
+// Tinted base bg texture (Folder.png) — lazily loaded by PaintDesktopFolders.
+static SDL_Texture *g_desktop_folder_bg_tex = nullptr;
+// Cached per-folder name + count text textures (lazy-build, count_tex rebuilt
+// when the displayed count changes).
+static SDL_Texture *g_desktop_folder_name_tex[kDesktopFolderCount]   = {};
+static int          g_desktop_folder_name_w[kDesktopFolderCount]     = {};
+static int          g_desktop_folder_name_h[kDesktopFolderCount]     = {};
+static SDL_Texture *g_desktop_folder_count_tex[kDesktopFolderCount]  = {};
+static int          g_desktop_folder_count_w[kDesktopFolderCount]    = {};
+static int          g_desktop_folder_count_h[kDesktopFolderCount]    = {};
+static size_t       g_desktop_folder_last_count[kDesktopFolderCount] = {
+    SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX
+};
+
+// Phase 3: pending Launchpad pre-filter — single u8 side-table consumed by
+// QdLaunchpadElement::Open() exactly once. Set when a desktop folder is
+// tapped/launched; LoadMenu(Launchpad) follows.
+static AutoFolderIdx g_pending_lp_folder = AutoFolderIdx::None;
+
+// Layout — 3×2 grid above the dock, tuned to coexist with the favorites strip
+// at y=622..762 (Slice 5 / O-F). Folders end at y = 110 + 2*(200+40) - 40 = 550,
+// favorites strip begins at y=622: 72 px gap. Dock at y=932.
+static constexpr s32 DF_TILE_W = 400;
+static constexpr s32 DF_TILE_H = 200;
+static constexpr s32 DF_GAP_X  = 60;
+static constexpr s32 DF_GAP_Y  = 40;
+static constexpr s32 DF_COLS   = 3;
+static constexpr s32 DF_ROWS   = 2;
+// Centred horizontally: (1920 - (3*400 + 2*60)) / 2 = (1920 - 1320) / 2 = 300.
+static constexpr s32 DF_GRID_X = (1920 - (DF_COLS * DF_TILE_W
+                                          + (DF_COLS - 1) * DF_GAP_X)) / 2;
+// 110 px from screen top — leaves room for the 96×72 hot corner widget at (0,0).
+static constexpr s32 DF_GRID_Y = 110;
+
+// Compute the screen-relative rect for folder index fi (0..5), without any
+// layout (x,y) translation. Caller adds (x,y) before drawing or hit-testing.
+static void ComputeDesktopFolderRect(size_t fi, SDL_Rect &out) {
+    const size_t col = fi % static_cast<size_t>(DF_COLS);
+    const size_t row = fi / static_cast<size_t>(DF_COLS);
+    out.x = DF_GRID_X + static_cast<s32>(col) * (DF_TILE_W + DF_GAP_X);
+    out.y = DF_GRID_Y + static_cast<s32>(row) * (DF_TILE_H + DF_GAP_Y);
+    out.w = DF_TILE_W;
+    out.h = DF_TILE_H;
+}
+
+// Map a single NroEntry to one of the 6 desktop folders.
+//
+// Routing rules (first match wins):
+//   1. IconKind::Builtin entries are dock-only and never participate in the
+//      desktop folder grid; routed to Other as a defensive default for any
+//      caller that bypasses the dock-skip in RecomputeDesktopFolders.
+//   2. IconKind::Special entries are system applets (Settings/Album/etc.) and
+//      always belong in System.
+//   3. NRO entries with "qos" / "qos-" in name or path land in Q OS — this is
+//      a name preempt because ClassifyKind has no QosApp value and Q OS NROs
+//      otherwise ride the HomebrewTool/Emulator buckets.
+//   4. Everything else delegates to GetAutoFolderKind via stable_id, mapping
+//      ClassifyKind values to folders per the table in O-B §"Folder definitions".
+static DesktopFolderId ClassifyDesktopFolder(const NroEntry &entry) {
+    if (entry.kind == IconKind::Builtin) {
+        return DesktopFolderId::Other;
+    }
+    if (entry.kind == IconKind::Special) {
+        return DesktopFolderId::System;
+    }
+    // Q OS name preempt (covers qos / qos-mock-* / qos-test-harness etc.).
+    if (entry.kind == IconKind::Nro && entry.nro_path[0] != '\0'
+            && (CiStrStr(entry.name, "qos")
+                || CiStrStr(entry.nro_path, "qos-"))) {
+        return DesktopFolderId::QOS;
+    }
+    // Fall through: build stable_id and consult the side table.
+    std::string sid;
+    if (entry.kind == IconKind::Nro) {
+        sid = entry.nro_path;
+    } else if (entry.kind == IconKind::Application) {
+        char hex[32];
+        snprintf(hex, sizeof(hex), "app:%016llx",
+                 static_cast<unsigned long long>(entry.app_id));
+        sid = hex;
+    } else {
+        // Unknown kind — defensive default.
+        return DesktopFolderId::Other;
+    }
+    const ClassifyKind ck = QdDesktopIconsElement::GetAutoFolderKind(sid);
+    switch (ck) {
+        case ClassifyKind::NintendoGame:
+        case ClassifyKind::ThirdPartyGame: return DesktopFolderId::Games;
+        case ClassifyKind::Emulator:       return DesktopFolderId::Emulators;
+        case ClassifyKind::HomebrewTool:   return DesktopFolderId::Tools;
+        case ClassifyKind::SystemUtil:
+        case ClassifyKind::Payload:        return DesktopFolderId::System;
+        case ClassifyKind::Builtin:        return DesktopFolderId::Other;
+        case ClassifyKind::Unknown:
+        default:                           return DesktopFolderId::Other;
+    }
+}
+
+// ── v1.7.0-stabilize-7 Slice 5 (O-F): favorites store ────────────────────────
+// Per the O-F design, user favorites are persisted to
+// sdmc:/ulaunch/qos-favorites.toml as a one-line-per-entry tag-prefixed list.
+// The runtime keeps a parallel std::unordered_set for O(1) IsFavorite lookup
+// against the FavKey representation. Cap = 12 entries to keep RAM <2 KB and
+// avoid pagination on the desktop strip (6 visible + scroll deferred).
+
+enum class FavoriteKind : u8 {
+    Nro     = 0,
+    App     = 1,
+    Builtin = 2,
+    Special = 3,
+};
+
+struct FavoriteEntry {
+    FavoriteKind kind;
+    // 769 bytes mirrors NroEntry::nro_path / icon_path (FS_MAX_PATH).  For
+    // App / Builtin / Special this is a short string ("01007ef000118000",
+    // "Vault", "Settings"); for Nro it is the full SD path.
+    char         id[769];
+};
+
+static std::vector<FavoriteEntry>           g_favorites_list_;
+static std::unordered_set<std::string>      g_favorites_set_;
+static bool                                 g_favorites_loaded_ = false;
+// Toast-pending state for the next OnRender frame (g_MenuApplication is
+// available there but using ShowNotification synchronously inside OnInput
+// during a touch-up is fine; we do the latter).
+static constexpr size_t  MAX_FAVORITES = 12u;
+static constexpr const char *FAVORITES_PATH =
+    "sdmc:/ulaunch/qos-favorites.toml";
+static constexpr const char *FAVORITES_TMP_PATH =
+    "sdmc:/ulaunch/qos-favorites.toml.tmp";
+
+// Build the FavKey string for an LpItem-shaped pair of fields. The Set/Map
+// uses these as keys for membership testing; the TOML serializer emits the
+// same form so a round-trip Load -> contains() returns true.
+//
+// Format mirrors the FavoriteKind enum:
+//   Nro      -> "nro:<full_sd_path>"
+//   App      -> "app:<hex16>"
+//   Builtin  -> "builtin:<name>"
+//   Special  -> "special:<name>"
+static std::string FavKey(FavoriteKind kind, const char *id) {
+    switch (kind) {
+        case FavoriteKind::Nro:     return std::string("nro:")     + id;
+        case FavoriteKind::App:     return std::string("app:")     + id;
+        case FavoriteKind::Builtin: return std::string("builtin:") + id;
+        case FavoriteKind::Special: return std::string("special:") + id;
+    }
+    return std::string();  // unreachable; keeps the compiler from complaining
+}
+
+// Parse a single line of qos-favorites.toml into out_kind / out_id. Returns
+// true on a recognized prefix; false on unrecognized / blank lines so the
+// caller can skip them silently. Trailing newlines are stripped before the
+// id copy.
+static bool ParseFavoriteLine(const char *line, FavoriteKind &out_kind,
+                               char *out_id, size_t out_id_cap) {
+    if (line == nullptr || out_id == nullptr || out_id_cap == 0u) {
+        return false;
+    }
+    const char *prefix = nullptr;
+    if (strncmp(line, "nro:", 4) == 0) {
+        out_kind = FavoriteKind::Nro;
+        prefix   = line + 4;
+    } else if (strncmp(line, "app:", 4) == 0) {
+        out_kind = FavoriteKind::App;
+        prefix   = line + 4;
+    } else if (strncmp(line, "builtin:", 8) == 0) {
+        out_kind = FavoriteKind::Builtin;
+        prefix   = line + 8;
+    } else if (strncmp(line, "special:", 8) == 0) {
+        out_kind = FavoriteKind::Special;
+        prefix   = line + 8;
+    } else {
+        return false;  // unrecognized / blank
+    }
+    // Copy with trailing-newline strip and bounds check.
+    size_t i = 0u;
+    for (; prefix[i] != '\0' && prefix[i] != '\n' && prefix[i] != '\r'
+           && i + 1u < out_id_cap; ++i) {
+        out_id[i] = prefix[i];
+    }
+    out_id[i] = '\0';
+    return out_id[0] != '\0';
+}
+
+// Lazy loader — idempotent. Called from every entry point that mutates or
+// queries the store so OnInput and OnRender both see the same loaded state.
+static void EnsureFavoritesLoaded() {
+    if (g_favorites_loaded_) {
+        return;
+    }
+    g_favorites_loaded_ = true;  // mark loaded even if file absent
+
+    FILE *f = fopen(FAVORITES_PATH, "rb");
+    if (f == nullptr) {
+        return;  // first-boot or never-favorited: empty store
+    }
+    char line[1024];
+    while (fgets(line, sizeof(line), f) != nullptr
+            && g_favorites_list_.size() < MAX_FAVORITES) {
+        FavoriteEntry fav;
+        if (ParseFavoriteLine(line, fav.kind, fav.id, sizeof(fav.id))) {
+            const std::string key = FavKey(fav.kind, fav.id);
+            if (g_favorites_set_.find(key) == g_favorites_set_.end()) {
+                g_favorites_list_.push_back(fav);
+                g_favorites_set_.insert(key);
+            }
+        }
+    }
+    fclose(f);
+}
+
+// Atomic save: write to qos-favorites.toml.tmp, fsync (flush), close, rename.
+// rename(2) on FAT32/exFAT is atomic for files <512 KB which our store always
+// is (<2 KB even at full capacity). Caller must not rely on the on-disk file
+// being current synchronously — fsync is best-effort on libnx FS but the
+// rename closes the window where a power loss would leave the .tmp readable
+// and the canonical file truncated.
+static bool SaveFavorites() {
+    FILE *f = fopen(FAVORITES_TMP_PATH, "wb");
+    if (f == nullptr) {
+        UL_LOG_WARN("qdesktop: SaveFavorites: fopen(tmp) failed errno=%d", errno);
+        return false;
+    }
+    for (const FavoriteEntry &fav : g_favorites_list_) {
+        const char *prefix = "nro:";
+        switch (fav.kind) {
+            case FavoriteKind::Nro:     prefix = "nro:";     break;
+            case FavoriteKind::App:     prefix = "app:";     break;
+            case FavoriteKind::Builtin: prefix = "builtin:"; break;
+            case FavoriteKind::Special: prefix = "special:"; break;
+        }
+        if (fprintf(f, "%s%s\n", prefix, fav.id) < 0) {
+            fclose(f);
+            UL_LOG_WARN("qdesktop: SaveFavorites: fprintf failed");
+            return false;
+        }
+    }
+    fflush(f);
+    fclose(f);
+    // POSIX rename is atomic on FAT32/exFAT and overwrites the destination.
+    if (rename(FAVORITES_TMP_PATH, FAVORITES_PATH) != 0) {
+        UL_LOG_WARN("qdesktop: SaveFavorites: rename failed errno=%d", errno);
+        return false;
+    }
+    UL_LOG_INFO("qdesktop: SaveFavorites: %zu favorites flushed to %s",
+                g_favorites_list_.size(), FAVORITES_PATH);
+    return true;
+}
+
+// Build a FavoriteEntry from an NroEntry. The id field stores whichever
+// representation the FavoriteKind expects (nro_path / app_id hex / name).
+// Returns true on success; false if the entry kind is unsupported (which
+// should never happen for the four IconKind values we route).
+static bool FavEntryFromNroEntry(const NroEntry &entry, FavoriteEntry &out) {
+    if (entry.kind == IconKind::Nro && entry.nro_path[0] != '\0') {
+        out.kind = FavoriteKind::Nro;
+        snprintf(out.id, sizeof(out.id), "%s", entry.nro_path);
+        return true;
+    }
+    if (entry.kind == IconKind::Application && entry.app_id != 0u) {
+        out.kind = FavoriteKind::App;
+        snprintf(out.id, sizeof(out.id), "%016llx",
+                 static_cast<unsigned long long>(entry.app_id));
+        return true;
+    }
+    if (entry.kind == IconKind::Builtin) {
+        out.kind = FavoriteKind::Builtin;
+        snprintf(out.id, sizeof(out.id), "%s", entry.name);
+        return true;
+    }
+    if (entry.kind == IconKind::Special) {
+        out.kind = FavoriteKind::Special;
+        snprintf(out.id, sizeof(out.id), "%s", entry.name);
+        return true;
+    }
+    return false;
+}
+
+// O(1) membership test against the precomputed key set. Lazy-load is
+// idempotent so repeated callers in OnRender are cheap.
+static bool IsFavorite(const NroEntry &entry) {
+    EnsureFavoritesLoaded();
+    FavoriteEntry probe;
+    if (!FavEntryFromNroEntry(entry, probe)) {
+        return false;
+    }
+    const std::string key = FavKey(probe.kind, probe.id);
+    return g_favorites_set_.find(key) != g_favorites_set_.end();
+}
+
+// Toggle favorite state for the entry. Returns true if the entry is now
+// favorited (added), false if it was removed or could not be added (cap hit).
+// Persistence is synchronous on every call; the file is small enough that
+// this is well under the per-frame budget.
+static bool ToggleFavorite(const NroEntry &entry) {
+    EnsureFavoritesLoaded();
+    FavoriteEntry probe;
+    if (!FavEntryFromNroEntry(entry, probe)) {
+        UL_LOG_WARN("qdesktop: ToggleFavorite: unsupported entry kind=%d",
+                    static_cast<int>(entry.kind));
+        return false;
+    }
+    const std::string key = FavKey(probe.kind, probe.id);
+    auto it = g_favorites_set_.find(key);
+    if (it != g_favorites_set_.end()) {
+        // Currently a favorite — remove.
+        g_favorites_set_.erase(it);
+        for (auto lit = g_favorites_list_.begin();
+             lit != g_favorites_list_.end(); ++lit) {
+            if (lit->kind == probe.kind
+                    && strncmp(lit->id, probe.id, sizeof(lit->id)) == 0) {
+                g_favorites_list_.erase(lit);
+                break;
+            }
+        }
+        SaveFavorites();
+        UL_LOG_INFO("qdesktop: ToggleFavorite: removed %s", key.c_str());
+        return false;
+    }
+    // Not a favorite — add (with cap check).
+    if (g_favorites_list_.size() >= MAX_FAVORITES) {
+        if (g_MenuApplication != nullptr) {
+            g_MenuApplication->ShowNotification(
+                "Favorites full (max 12)");
+        }
+        UL_LOG_INFO("qdesktop: ToggleFavorite: cap reached (%zu)",
+                    g_favorites_list_.size());
+        return false;
+    }
+    g_favorites_list_.push_back(probe);
+    g_favorites_set_.insert(key);
+    SaveFavorites();
+    UL_LOG_INFO("qdesktop: ToggleFavorite: added %s", key.c_str());
+    return true;
+}
+
+// Public Launchpad shims — Patch 2 calls these without including the desktop's
+// FavoriteEntry / FavoriteKind (which live in this anonymous-namespace-style
+// file-scope block). The shims accept LpItem by reference; LpItem fields
+// (kind via icon_category + app_id + nro_path + name) carry enough info to
+// reconstruct the FavoriteEntry shape for the lookup / toggle.
+//
+// Note: LpItem doesn't carry an explicit IconKind enum — it carries
+// is_builtin, app_id, nro_path, and icon_path. We reconstruct the FavoriteKind
+// from those fields:
+//   is_builtin     -> Builtin
+//   app_id != 0    -> App
+//   nro_path != ""  -> Nro
+//   else            -> Special  (Switch system applet, no app_id, no nro_path)
+static FavoriteKind FavKindFromLpItem(const LpItem &item) {
+    if (item.is_builtin) {
+        return FavoriteKind::Builtin;
+    }
+    if (item.app_id != 0u) {
+        return FavoriteKind::App;
+    }
+    if (item.nro_path[0] != '\0') {
+        return FavoriteKind::Nro;
+    }
+    return FavoriteKind::Special;
+}
+
+// Build a FavoriteEntry from an LpItem snapshot using the same id format as
+// FavEntryFromNroEntry above so the keys round-trip identically.
+static FavoriteEntry FavEntryFromLpItem(const LpItem &item) {
+    FavoriteEntry out;
+    out.kind = FavKindFromLpItem(item);
+    switch (out.kind) {
+        case FavoriteKind::Nro:
+            snprintf(out.id, sizeof(out.id), "%s", item.nro_path);
+            break;
+        case FavoriteKind::App:
+            snprintf(out.id, sizeof(out.id), "%016llx",
+                     static_cast<unsigned long long>(item.app_id));
+            break;
+        case FavoriteKind::Builtin:
+        case FavoriteKind::Special:
+            snprintf(out.id, sizeof(out.id), "%s", item.name);
+            break;
+    }
+    return out;
+}
+
+// Public LpItem shims (declared in qd_DesktopIcons.hpp public block; defined
+// here so they can access the anonymous file-scope state).
+bool ToggleFavoriteByLpItem(const LpItem &item) {
+    EnsureFavoritesLoaded();
+    const FavoriteEntry probe = FavEntryFromLpItem(item);
+    if (probe.id[0] == '\0') {
+        return false;  // Defensive: empty id means LpItem was malformed.
+    }
+    const std::string key = FavKey(probe.kind, probe.id);
+    auto it = g_favorites_set_.find(key);
+    if (it != g_favorites_set_.end()) {
+        // Remove path.
+        g_favorites_set_.erase(it);
+        for (auto lit = g_favorites_list_.begin();
+             lit != g_favorites_list_.end(); ++lit) {
+            if (lit->kind == probe.kind
+                    && strncmp(lit->id, probe.id, sizeof(lit->id)) == 0) {
+                g_favorites_list_.erase(lit);
+                break;
+            }
+        }
+        SaveFavorites();
+        if (g_MenuApplication != nullptr) {
+            g_MenuApplication->ShowNotification("Removed from favorites");
+        }
+        UL_LOG_INFO("qdesktop: ToggleFavoriteByLpItem: removed %s", key.c_str());
+        return false;
+    }
+    if (g_favorites_list_.size() >= MAX_FAVORITES) {
+        if (g_MenuApplication != nullptr) {
+            g_MenuApplication->ShowNotification("Favorites full (max 12)");
+        }
+        UL_LOG_INFO("qdesktop: ToggleFavoriteByLpItem: cap reached (%zu)",
+                    g_favorites_list_.size());
+        return false;
+    }
+    g_favorites_list_.push_back(probe);
+    g_favorites_set_.insert(key);
+    SaveFavorites();
+    if (g_MenuApplication != nullptr) {
+        g_MenuApplication->ShowNotification("Added to favorites");
+    }
+    UL_LOG_INFO("qdesktop: ToggleFavoriteByLpItem: added %s", key.c_str());
+    return true;
+}
+
+bool IsFavoriteByLpItem(const LpItem &item) {
+    EnsureFavoritesLoaded();
+    const FavoriteEntry probe = FavEntryFromLpItem(item);
+    if (probe.id[0] == '\0') {
+        return false;
+    }
+    const std::string key = FavKey(probe.kind, probe.id);
+    return g_favorites_set_.find(key) != g_favorites_set_.end();
+}
 
 // Classify an NRO entry against kAutoFolderSpecs[].
 // Loop stops when both name_substr == nullptr and app_id_mask == 0 (sentinel).
@@ -279,6 +805,308 @@ ClassifyKind QdDesktopIconsElement::GetAutoFolderKind(const std::string &stable_
         return it->second;
     }
     return ClassifyKind::Unknown;
+}
+
+// ── v1.7.0-stabilize-7 Slice 4 (O-B): folder-grid statics ─────────────────────
+
+// Public accessor (Phase 3) — Launchpad consumes the pending pre-filter.
+// static
+AutoFolderIdx QdDesktopIconsElement::ConsumePendingLaunchpadFolder() {
+    const AutoFolderIdx out = g_pending_lp_folder;
+    g_pending_lp_folder = AutoFolderIdx::None;
+    return out;
+}
+
+// Public marker (Phase 2) — SetApplicationEntries / SetSpecialEntries call
+// this so the next paint refreshes the folder counts.
+// static
+void QdDesktopIconsElement::MarkDesktopFolderLayoutDirty() {
+    g_desktop_folder_layout_dirty = true;
+}
+
+// Map a desktop folder bucket to the matching Launchpad AutoFolderIdx for
+// the pre-filter handoff. None => unfiltered fallback (used for "Other"
+// where there is no clean Launchpad bucket; user gets the all-items view).
+static AutoFolderIdx DesktopFolderToLpFilter(DesktopFolderId fid) {
+    switch (fid) {
+        case DesktopFolderId::Games:     return AutoFolderIdx::NxGames;
+        case DesktopFolderId::Emulators: return AutoFolderIdx::Homebrew;
+        case DesktopFolderId::Tools:     return AutoFolderIdx::Homebrew;
+        case DesktopFolderId::System:    return AutoFolderIdx::System;
+        case DesktopFolderId::QOS:       return AutoFolderIdx::Homebrew;
+        case DesktopFolderId::Other:     return AutoFolderIdx::None;
+    }
+    return AutoFolderIdx::None;
+}
+
+// Trigger Launchpad open with a pre-set active_folder_. The pending side
+// table is consumed by Open() exactly once.
+static void OpenLaunchpadFiltered(DesktopFolderId fid) {
+    if (g_MenuApplication == nullptr) {
+        return;
+    }
+    g_pending_lp_folder = DesktopFolderToLpFilter(fid);
+    UL_LOG_INFO("qdesktop: desktop folder tap fid=%u -> LoadMenu(Launchpad) filter=%u",
+                static_cast<unsigned>(fid),
+                static_cast<unsigned>(g_pending_lp_folder));
+    g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Launchpad);
+}
+
+// Recompute counts and rects. Counts are zeroed and re-tallied from icons_;
+// rects are deterministic from ComputeDesktopFolderRect (no-op repeat is fine).
+void QdDesktopIconsElement::RecomputeDesktopFolders() {
+    for (size_t fi = 0; fi < kDesktopFolderCount; ++fi) {
+        g_desktop_folder_counts[fi] = 0u;
+        ComputeDesktopFolderRect(fi, g_desktop_folder_rects[fi]);
+    }
+    for (size_t i = 0; i < icon_count_; ++i) {
+        const NroEntry &e = icons_[i];
+        // Builtins live in the dock — exclude from folder counts so the
+        // 6-folder grid never advertises an entry that is already painted
+        // separately at the bottom of the screen.
+        if (e.kind == IconKind::Builtin) {
+            continue;
+        }
+        const size_t fi = static_cast<size_t>(ClassifyDesktopFolder(e));
+        if (fi < kDesktopFolderCount) {
+            ++g_desktop_folder_counts[fi];
+        }
+    }
+    g_desktop_folder_layout_dirty = false;
+}
+
+void QdDesktopIconsElement::PaintDesktopFolders(SDL_Renderer *r, s32 x, s32 y) {
+    if (g_desktop_folder_layout_dirty) {
+        RecomputeDesktopFolders();
+    }
+    // Lazy-load Folder.png base texture (one-time per process).
+    if (g_desktop_folder_bg_tex == nullptr) {
+        g_desktop_folder_bg_tex =
+            ::ul::menu::ui::TryFindLoadImage("ui/Main/EntryIcon/Folder");
+    }
+
+    for (size_t fi = 0; fi < kDesktopFolderCount; ++fi) {
+        const DesktopFolderSpec &spec = kDesktopFolders[fi];
+        SDL_Rect cell;
+        ComputeDesktopFolderRect(fi, cell);
+        cell.x += x;
+        cell.y += y;
+
+        // ── 1. Background — tinted Folder.png OR FillRoundRect fallback ──
+        if (g_desktop_folder_bg_tex != nullptr) {
+            SDL_SetTextureColorMod(g_desktop_folder_bg_tex,
+                                   spec.tint_r, spec.tint_g, spec.tint_b);
+            SDL_SetTextureAlphaMod(g_desktop_folder_bg_tex, 0xD8u);
+            SDL_SetTextureBlendMode(g_desktop_folder_bg_tex, SDL_BLENDMODE_BLEND);
+            SDL_RenderCopy(r, g_desktop_folder_bg_tex, nullptr, &cell);
+        } else {
+            FillRoundRect(r, cell, 18,
+                          spec.tint_r, spec.tint_g, spec.tint_b, 0xC0u);
+        }
+
+        // ── 2. Cached name texture (lazy-build) ───────────────────────────
+        if (g_desktop_folder_name_tex[fi] == nullptr && spec.name != nullptr) {
+            const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+            g_desktop_folder_name_tex[fi] = pu::ui::render::RenderText(
+                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::MediumLarge),
+                std::string(spec.name), wh);
+            if (g_desktop_folder_name_tex[fi] != nullptr) {
+                SDL_QueryTexture(g_desktop_folder_name_tex[fi], nullptr, nullptr,
+                                 &g_desktop_folder_name_w[fi],
+                                 &g_desktop_folder_name_h[fi]);
+            }
+        }
+        if (g_desktop_folder_name_tex[fi] != nullptr) {
+            SDL_Rect ndst {
+                cell.x + (cell.w - g_desktop_folder_name_w[fi]) / 2,
+                cell.y + 28,
+                g_desktop_folder_name_w[fi],
+                g_desktop_folder_name_h[fi]
+            };
+            SDL_RenderCopy(r, g_desktop_folder_name_tex[fi], nullptr, &ndst);
+        }
+
+        // ── 3. Cached count texture (rebuild on count change) ────────────
+        const size_t cur_count = g_desktop_folder_counts[fi];
+        if (cur_count != g_desktop_folder_last_count[fi]) {
+            if (g_desktop_folder_count_tex[fi] != nullptr) {
+                SDL_DestroyTexture(g_desktop_folder_count_tex[fi]);
+                g_desktop_folder_count_tex[fi] = nullptr;
+            }
+            g_desktop_folder_last_count[fi] = cur_count;
+        }
+        if (g_desktop_folder_count_tex[fi] == nullptr) {
+            char count_buf[32];
+            snprintf(count_buf, sizeof(count_buf), "(%zu)", cur_count);
+            const pu::ui::Color cc { 0xFFu, 0xFFu, 0xFFu, 0xC0u };
+            g_desktop_folder_count_tex[fi] = pu::ui::render::RenderText(
+                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Medium),
+                std::string(count_buf), cc);
+            if (g_desktop_folder_count_tex[fi] != nullptr) {
+                SDL_QueryTexture(g_desktop_folder_count_tex[fi], nullptr, nullptr,
+                                 &g_desktop_folder_count_w[fi],
+                                 &g_desktop_folder_count_h[fi]);
+            }
+        }
+        if (g_desktop_folder_count_tex[fi] != nullptr) {
+            SDL_Rect cdst {
+                cell.x + (cell.w - g_desktop_folder_count_w[fi]) / 2,
+                cell.y + cell.h - g_desktop_folder_count_h[fi] - 24,
+                g_desktop_folder_count_w[fi],
+                g_desktop_folder_count_h[fi]
+            };
+            SDL_RenderCopy(r, g_desktop_folder_count_tex[fi], nullptr, &cdst);
+        }
+
+        // ── 4. Glyph fallback if name texture failed ─────────────────────
+        if (g_desktop_folder_name_tex[fi] == nullptr) {
+            const std::string gs(1, spec.glyph);
+            const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+            SDL_Texture *gtex = pu::ui::render::RenderText(
+                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Medium),
+                gs, wh);
+            if (gtex != nullptr) {
+                int gw = 0, gh = 0;
+                SDL_QueryTexture(gtex, nullptr, nullptr, &gw, &gh);
+                SDL_Rect gdst {
+                    cell.x + (cell.w - gw) / 2,
+                    cell.y + (cell.h - gh) / 2,
+                    gw, gh
+                };
+                SDL_RenderCopy(r, gtex, nullptr, &gdst);
+                SDL_DestroyTexture(gtex);
+            }
+        }
+
+        // ── 5. Focus / hover ring ────────────────────────────────────────
+        // Focus highlights the currently dpad-focused folder (indices 0..5
+        // of the unified focus ring). Mouse hover provides a softer ring
+        // when cursor_ref_ is over the cell.
+        const bool focused = (dpad_focus_index_ == fi);
+        const bool hovered = (mouse_hover_index_ == fi);
+        if (focused) {
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0xFFu);
+            // 3 px white border via 4 strips at one-pixel insets.
+            for (int t = 0; t < 3; ++t) {
+                SDL_Rect b_top { cell.x - t, cell.y - t,
+                                  cell.w + 2 * t, 1 };
+                SDL_Rect b_bot { cell.x - t, cell.y + cell.h + t - 1,
+                                  cell.w + 2 * t, 1 };
+                SDL_Rect b_lft { cell.x - t, cell.y - t,
+                                  1, cell.h + 2 * t };
+                SDL_Rect b_rgt { cell.x + cell.w + t - 1, cell.y - t,
+                                  1, cell.h + 2 * t };
+                SDL_RenderFillRect(r, &b_top);
+                SDL_RenderFillRect(r, &b_bot);
+                SDL_RenderFillRect(r, &b_lft);
+                SDL_RenderFillRect(r, &b_rgt);
+            }
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        } else if (hovered) {
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0x80u);
+            SDL_RenderDrawRect(r, &cell);
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        }
+    }
+}
+
+// ── v1.7.0-stabilize-7 Slice 5 (O-F): favorites-strip render ─────────────────
+
+// Geometry — coexists with the Slice 4 folder grid (which ends at y=550) and
+// the dock (which begins at y=932). Strip lives at y=622..762.
+static constexpr s32 FAV_STRIP_VISIBLE = 6;
+// FAV_STRIP_W = 6 * ICON_BG_W + 5 * ICON_GRID_GAP_X = 6*140 + 5*28 = 980
+static constexpr s32 FAV_STRIP_W = FAV_STRIP_VISIBLE * ICON_BG_W
+    + (FAV_STRIP_VISIBLE - 1) * ICON_GRID_GAP_X;
+static constexpr s32 FAV_STRIP_LEFT = (1920 - FAV_STRIP_W) / 2;  // 470
+static constexpr s32 FAV_STRIP_TOP  = 622;
+// Per-tile spacing on the strip (icon width + horizontal gap).
+static constexpr s32 FAV_TILE_SPACING = ICON_BG_W + ICON_GRID_GAP_X;  // 168
+
+// Resolve a FavoriteEntry to an icons_[] index, or SIZE_MAX if the favorite
+// no longer matches any entry (auto-prune candidate). Caller is expected to
+// hold icon_count_ stable across the call (true on the main thread).
+static size_t ResolveFavoriteToIconIdx(const std::array<NroEntry, MAX_ICONS> &icons,
+                                        size_t icon_count,
+                                        const FavoriteEntry &fav) {
+    for (size_t i = 0u; i < icon_count; ++i) {
+        const NroEntry &e = icons[i];
+        FavoriteEntry probe;
+        if (!FavEntryFromNroEntry(e, probe)) {
+            continue;
+        }
+        if (probe.kind == fav.kind
+                && strncmp(probe.id, fav.id, sizeof(probe.id)) == 0) {
+            return i;
+        }
+    }
+    return SIZE_MAX;
+}
+
+void QdDesktopIconsElement::PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y) {
+    EnsureFavoritesLoaded();
+    if (g_favorites_list_.empty()) {
+        return;
+    }
+    size_t painted = 0u;
+    const size_t cap = (g_favorites_list_.size() < static_cast<size_t>(FAV_STRIP_VISIBLE))
+                        ? g_favorites_list_.size()
+                        : static_cast<size_t>(FAV_STRIP_VISIBLE);
+    for (size_t fi = 0u; fi < cap; ++fi) {
+        const FavoriteEntry &fav = g_favorites_list_[fi];
+        const size_t idx = ResolveFavoriteToIconIdx(icons_, icon_count_, fav);
+        if (idx >= icon_count_) {
+            // Stale favorite — entry was uninstalled. Skip painting; touch
+            // path emits a toast and prunes when the user taps it. Painting
+            // a placeholder ring would be confusing UX.
+            continue;
+        }
+        // Cell origin within the strip.
+        const s32 cell_x = FAV_STRIP_LEFT
+            + static_cast<s32>(painted) * FAV_TILE_SPACING + x;
+        const s32 cell_y = FAV_STRIP_TOP + y;
+        NroEntry &entry = icons_[idx];
+        const bool dpad_focused  = false;  // strip not in unified focus ring
+        const bool mouse_hovered = (mouse_hover_index_ == idx);
+        PaintIconCell(r, entry, idx, cell_x, cell_y,
+                      dpad_focused, mouse_hovered);
+        ++painted;
+    }
+}
+
+size_t QdDesktopIconsElement::HitTestFavorites(s32 tx, s32 ty) const {
+    // Vertical bounds on the strip (ICON_CELL_H high, anchored at FAV_STRIP_TOP).
+    if (ty < FAV_STRIP_TOP || ty >= FAV_STRIP_TOP + ICON_CELL_H) {
+        return SIZE_MAX;
+    }
+    // Horizontal bounds on the strip overall.
+    if (tx < FAV_STRIP_LEFT
+            || tx >= FAV_STRIP_LEFT
+                     + static_cast<s32>(FAV_STRIP_VISIBLE) * FAV_TILE_SPACING) {
+        return SIZE_MAX;
+    }
+    // Resolve to a paint-position; iterate live list to skip stale entries
+    // (mirrors PaintFavoritesStrip's painted-counter advance).
+    size_t painted = 0u;
+    const size_t cap = (g_favorites_list_.size() < static_cast<size_t>(FAV_STRIP_VISIBLE))
+                        ? g_favorites_list_.size()
+                        : static_cast<size_t>(FAV_STRIP_VISIBLE);
+    for (size_t fi = 0u; fi < cap; ++fi) {
+        const FavoriteEntry &fav = g_favorites_list_[fi];
+        const size_t idx = ResolveFavoriteToIconIdx(icons_, icon_count_, fav);
+        if (idx >= icon_count_) {
+            continue;
+        }
+        const s32 cell_x = FAV_STRIP_LEFT
+            + static_cast<s32>(painted) * FAV_TILE_SPACING;
+        if (tx >= cell_x && tx < cell_x + ICON_BG_W) {
+            return idx;
+        }
+        ++painted;
+    }
+    return SIZE_MAX;
 }
 
 // ── Click tolerance ───────────────────────────────────────────────────────────
@@ -992,10 +1820,20 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     // (the focus ring makes selection visible without colour shift).
     const bool is_hovered = is_mouse_hovered;
 
-    // Compute the fill colour with optional hover highlight.
-    const u8 base_r = entry.bg_r;
-    const u8 base_g = entry.bg_g;
-    const u8 base_b = entry.bg_b;
+    // F7 (stabilize-4): use neutral gray bg when a real icon texture is already
+    // cached for this slot.  The colored bg comes from MakeFallbackIcon's
+    // hash-derived palette (or the app control data's dominant color) and is
+    // only meaningful as a visual placeholder before the icon JPEG loads.  Once
+    // icon_tex_[entry_idx] is populated the icon covers 88% of the bg rect; the
+    // visible colored strip at the inset edges distracts from cover art.  Use
+    // the same #3A3A3A neutral gray that MakeFallbackIcon emits as its body —
+    // it's consistent and invisible behind real icons.
+    // Note: icon_tex_ is indexed by entry_idx but can only be read after the
+    // size guard (entry_idx < MAX_ICONS); fall back to colored if out of range.
+    const bool icon_ready = (entry_idx < MAX_ICONS && icon_tex_[entry_idx] != nullptr);
+    const u8 base_r = icon_ready ? static_cast<u8>(0x3A) : entry.bg_r;
+    const u8 base_g = icon_ready ? static_cast<u8>(0x3A) : entry.bg_g;
+    const u8 base_b = icon_ready ? static_cast<u8>(0x3A) : entry.bg_b;
 
     // saturating_add(40) per Rust desktop_icons.rs hover path.
     const u8 fill_r = is_hovered
@@ -1550,101 +2388,37 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }
 
-    // ── Render all icons ─────────────────────────────────────────────────────
-
-    for (size_t i = 0u; i < icon_count_; ++i) {
-        s32 cell_x, cell_y;
-
-        if (i < BUILTIN_ICON_COUNT) {
-            // Cycle D5 dev toggle: skip dock builtin slots when disabled.
-            if (!dev_dock_on) { continue; }
-            // Dock slot: use two-pass magnify position.
-            // cell_y: dock is placed at DOCK_NOMINAL_TOP row.
-            cell_x = builtin_slot_x[i] + x;
-            cell_y = kDockNominalTop + y;
-        } else {
-            // Cycle D5 dev toggle: skip NRO/Application grid icons when
-            // desktop-icons is disabled.
-            if (!dev_icons_on) { continue; }
-            // NRO grid icon: use nominal CellRect.
-            if (!CellRect(i, cell_x, cell_y)) {
-                continue;
-            }
-            cell_x += x;
-            cell_y += y;
-        }
-
+    // ── v1.7.0-stabilize-7 Slice 4 (O-B) — dock-only paint loop ──────────────
+    //
+    // The pre-stabilize-7 paint loop walked every entry in icons_[] and painted
+    // dock builtins (i < BUILTIN_ICON_COUNT) plus an N-row × M-column grid of
+    // NRO / Application / Special icons above the dock. Per the O-B mandate
+    // ("remove all the icons off of the desktop so we can make the folders
+    // work"), we now paint ONLY the 5 dock builtins from icons_[], plus the
+    // 6-folder categorized grid (PaintDesktopFolders) and the favorites strip
+    // (PaintFavoritesStrip).
+    //
+    // The Launchpad continues to show every entry — it has its own pre-warm
+    // pass (qd_Launchpad.cpp::Open) that populates the icon cache for first-
+    // page items, including the F2b dual-fallback shipped-icon read for
+    // Application entries (Slice 3 stabilize-6). Lazy-load no longer fires on
+    // the desktop because we no longer paint NRO / Application / Special
+    // tiles here.
+    for (size_t i = 0u; i < BUILTIN_ICON_COUNT; ++i) {
+        if (!dev_dock_on) { break; }
+        if (i >= icon_count_) { break; }  // defensive: dock not yet populated
+        const s32 cell_x = builtin_slot_x[i] + x;
+        const s32 cell_y = kDockNominalTop + y;
         NroEntry &entry = icons_[i];
-
-        // ── Lazy icon load ────────────────────────────────────────────────
-        // On the first frame for each non-builtin, non-loaded icon, load the icon
-        // into the cache.  Strategy depends on entry kind:
-        //   Nro         → extract JPEG from NRO ASET section (existing path).
-        //   Application → decode on-disk JPEG at icon_path (new SP3 path).
-        //                 If icon_path is empty, generate hash-derived fallback.
-        if (!entry.icon_loaded && entry.kind != IconKind::Builtin) {
-            if (entry.kind == IconKind::Nro && entry.nro_path[0] != '\0') {
-                const u8 *cached = cache_.Get(entry.nro_path);
-                if (cached == nullptr) {
-                    LoadNroIconToCache(entry.nro_path, entry.nro_path);
-                }
-            } else if (entry.kind == IconKind::Special && entry.icon_path[0] != '\0') {
-                // v1.7.0-stabilize-2: Special entries with a creator-supplied
-                // JPEG (Hekate payloads from ScanPayloads, Hekate special
-                // entries from qd_HekateIni, etc.) load through the same JPEG
-                // pipeline as Applications. Without this branch the cache
-                // entry is never populated, PaintIconCell sees bgra==nullptr,
-                // and the slot falls through to the gray colored-square
-                // fallback ("payload entries showing gray squares" regression
-                // creator reported).
-                //
-                // PNG-backed Special entries (Settings/Album/Themes/etc.)
-                // load via TryFindLoadImage in PaintIconCell section 2a; they
-                // do NOT go through this branch because they have empty
-                // icon_path (the PNG path is hard-coded by special_subtype).
-                const u8 *cached = cache_.Get(entry.icon_path);
-                if (cached == nullptr) {
-                    LoadJpegIconToCache(entry.icon_path, entry.icon_path);
-                }
-            } else if (entry.kind == IconKind::Application) {
-                if (entry.icon_path[0] != '\0') {
-                    // Application has a custom JPEG icon on the SD card.
-                    // Check cache first; load from disk on miss.
-                    const u8 *cached = cache_.Get(entry.icon_path);
-                    if (cached == nullptr) {
-                        LoadJpegIconToCache(entry.icon_path, entry.icon_path);
-                    }
-                } else {
-                    // No custom icon path — fetch the real cover-art JPEG directly
-                    // from NS storage (NsApplicationControlData::icon) via the NS
-                    // service call.  Fabricate a stable cache key from the app_id so
-                    // subsequent frames skip the NS call.
-                    char app_cache_key[32];
-                    snprintf(app_cache_key, sizeof(app_cache_key),
-                             "app:%016llx",
-                             static_cast<unsigned long long>(entry.app_id));
-                    const u8 *cached = cache_.Get(app_cache_key);
-                    if (cached == nullptr) {
-                        const bool loaded = LoadNsIconToCache(entry.app_id, app_cache_key);
-                        UL_LOG_INFO("qdesktop: app icon load app_id=0x%016llx"
-                                    " path='%s' result=%s",
-                                    static_cast<unsigned long long>(entry.app_id),
-                                    app_cache_key,
-                                    loaded ? "ok" : "fallback");
-                    }
-                    // Store the pseudo-path into icon_path so PaintIconCell can find
-                    // the cached texture.  We copy into icon_path (not nro_path)
-                    // since the kind discriminant already routes to icon_path.
-                    snprintf(entry.icon_path, sizeof(entry.icon_path),
-                             "%s", app_cache_key);
-                }
-            }
-            entry.icon_loaded = true;
-        }
-
-        const bool dpad_focused   = (i == dpad_focus_index_);
-        const bool mouse_hovered  = (mouse_hover_index_ < icon_count_) && (i == mouse_hover_index_);
+        const bool dpad_focused = (dpad_focus_index_ == kDesktopFolderCount + i);
+        const bool mouse_hovered = (mouse_hover_index_ == kDesktopFolderCount + i);
         PaintIconCell(r, entry, i, cell_x, cell_y, dpad_focused, mouse_hovered);
+    }
+
+    // ── v1.7.0-stabilize-7 Slice 4 (O-B): folder grid + Slice 5 (O-F): strip ─
+    if (dev_icons_on) {
+        PaintDesktopFolders(r, x, y);
+        PaintFavoritesStrip(r, x, y);
     }
 
     // ── v1.7.0-stabilize-2: hot-corner widget at top-left (96x72) ────────────
@@ -1656,18 +2430,17 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // Geometry: 96 wide x 72 tall, anchored at (x, y) (the layout's origin,
     // typically (0, 0)). Width matches LP_HOTCORNER_W (96) so the close-side
     // handler in qd_Launchpad.cpp uses the same hit-box dimensions.
-    //
-    // Visual: translucent dark fill + 1px white-alpha border + a small
-    // 4-dot grid glyph (placeholder until the real icon asset lands). The
-    // dot grid is drawn as four 12x12 SDL_Rects in a 2x2 layout centred in
-    // the box, giving a recognisable "all programs / launchpad" affordance.
+    // F7 (stabilize-5): P1 — Block B completed; fixed SDL_BLENDMODE_BLEND →
+    // SDL_BLENDMODE_NONE on the fill so desktop icons below don't bleed alpha.
+    // Dot grid removed; "Q" glyph rendered instead (mirrors Block A in
+    // qd_Launchpad.cpp lines 652-670 — same font, color, size, centering).
     {
         constexpr s32 HC_W = LP_HOTCORNER_W;  // 96 (defined in qd_Launchpad.hpp)
         constexpr s32 HC_H = LP_HOTCORNER_H;  // 72
         const s32 hcx = x;
         const s32 hcy = y;
 
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);  // F7 (stabilize-5): fix alpha bleed
         // Fill: dark translucent so wallpaper shows through.
         SDL_SetRenderDrawColor(r, 0x10u, 0x10u, 0x14u, 0xC0u);
         SDL_Rect hc_bg { hcx, hcy, HC_W, HC_H };
@@ -1682,24 +2455,19 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         SDL_RenderFillRect(r, &hc_bottom);
         SDL_RenderFillRect(r, &hc_left);
         SDL_RenderFillRect(r, &hc_right);
-        // 2x2 dot grid centred in the box (Launchpad affordance).
-        constexpr s32 DOT_W = 12;
-        constexpr s32 DOT_H = 12;
-        constexpr s32 DOT_GAP = 6;
-        const s32 grid_w = DOT_W * 2 + DOT_GAP;
-        const s32 grid_h = DOT_H * 2 + DOT_GAP;
-        const s32 grid_x = hcx + (HC_W - grid_w) / 2;
-        const s32 grid_y = hcy + (HC_H - grid_h) / 2;
-        SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0xC0u);
-        for (s32 row = 0; row < 2; ++row) {
-            for (s32 col = 0; col < 2; ++col) {
-                SDL_Rect dot {
-                    grid_x + col * (DOT_W + DOT_GAP),
-                    grid_y + row * (DOT_H + DOT_GAP),
-                    DOT_W, DOT_H
-                };
-                SDL_RenderFillRect(r, &dot);
-            }
+        // "Q" glyph centred in the box — mirrors Block A (qd_Launchpad.cpp).
+        static SDL_Texture *hc_tex = nullptr;
+        if (!hc_tex) {
+            const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+            hc_tex = pu::ui::render::RenderText(
+                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+                "Q", wh);
+        }
+        if (hc_tex) {
+            int tw = 0, th = 0;
+            SDL_QueryTexture(hc_tex, nullptr, nullptr, &tw, &th);
+            SDL_Rect td { hcx + (HC_W - tw) / 2, hcy + (HC_H - th) / 2, tw, th };
+            SDL_RenderCopy(r, hc_tex, nullptr, &td);
         }
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }
@@ -1876,11 +2644,18 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
             if (tx >= 0 && tx < LP_HOTCORNER_W
                     && ty >= 0 && ty < LP_HOTCORNER_H
                     && g_MenuApplication != nullptr) {
+                // F12 (stabilize-6): set the latch BEFORE LoadMenu, not after.
+                // LoadMenu calls FadeOut which busy-loops Application::OnRender;
+                // each iteration recursively calls this OnInput. Without this
+                // pre-LoadMenu update, the inner calls see
+                // was_touch_active_last_frame_ == false and re-fire
+                // LoadMenu(Launchpad) (~17 nested calls observed in HW log
+                // 2026-04-27 00:58:13–14). Same re-entry pattern as cycle-E1
+                // LaunchIcon (qd_DesktopIcons.cpp:2095-2149).
+                was_touch_active_last_frame_ = touch_active_now;
                 UL_LOG_INFO("qdesktop: hot-corner OPEN tap edge tx=%d ty=%d -> LoadMenu(Launchpad)",
                             tx, ty);
                 g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Launchpad);
-                // Update the latch so the same finger-down does not re-fire.
-                was_touch_active_last_frame_ = touch_active_now;
                 return;
             }
         }
@@ -2314,7 +3089,16 @@ void QdDesktopIconsElement::SetApplicationEntries(
             snprintf(e.icon_path, sizeof(e.icon_path), "%s",
                      entry.control.icon_path.c_str());
         } else {
-            e.icon_path[0] = '\0';
+            // F5 (stabilize-4): pre-write the stable NS cache key into icon_path.
+            // The lazy-load block in OnRender contains a routing guard that checks
+            // the "app:" prefix to distinguish NS cache keys from real SD file
+            // paths — so icon_path != '\0' safely routes to the NS branch, not
+            // the custom-JPEG-on-SD branch.  PaintIconCell can then resolve a
+            // cache_.Get hit on the first frame without waiting for the lazy-load
+            // snprintf to run.  The key format "app:%016llx" is identical to the
+            // one fabricated in OnRender so cache_.Get finds the same entry.
+            snprintf(e.icon_path, sizeof(e.icon_path), "app:%016llx",
+                     static_cast<unsigned long long>(entry.app_info.app_id));
         }
 
         // ── Metadata ─────────────────────────────────────────────────────
@@ -2569,6 +3353,73 @@ bool QdDesktopIconsElement::LoadJpegIconToCache(const char *jpeg_path,
     return true;
 }
 
+// ── LoadAppIconFromUSystemCache ───────────────────────────────────────────────
+//
+// F2b (stabilize-6 / O-C): shipped Application icon read from disk.
+//
+// uMenu runs as a library applet and is denied NsApplicationControlSource_Storage
+// access by the firmware (rc=0x196002).  CacheOnly succeeds only when Horizon's
+// own home menu has previously displayed the title and warmed the cache.  In
+// CFW-only setups (the canonical Q OS deployment), the real home menu never
+// runs, so every NS lookup misses regardless of which API is called.
+//
+// The fix is to read the JPEG from a disk path that uSystem (running as a
+// SystemApplet) populates by extracting the same NACP icon bytes via its own
+// nsextGetApplicationControlData call.  Two paths are tried in order:
+//
+//   1. sdmc:/ulaunch/cache/app/<APPID16HEX_UPPER>.jpg
+//      Populated by app_ControlCache.cpp::CacheApplicationIcon() in fork
+//      uSystem.  Primary path once fork uSystem replaces upstream v1.2.0
+//      uSystem at /atmosphere/contents/0100000000001000/exefs.nsp.
+//
+//   2. sdmc:/switch/qos-app-icons/<APPID16HEX_LOWER>.jpg
+//      Creator-curated manual drop.  Permanent fallback for titles uSystem
+//      could not extract (or for users who choose not to deploy fork uSystem).
+//
+// The 8 MB upper bound matches MAX_NRO_BODY (historical) and protects against
+// pathologically large icons; real NACP icons are ≤256 KB.
+
+bool QdDesktopIconsElement::LoadAppIconFromUSystemCache(const u64 app_id,
+                                                        const char *cache_key)
+{
+    char sd_path[96];
+
+    // Path 1: uSystem cache (uppercase hex; matches FormatProgramId in
+    // util_String.cpp:6-10 of the fork uSystem source).
+    snprintf(sd_path, sizeof(sd_path),
+             "sdmc:/ulaunch/cache/app/%016llX.jpg",
+             static_cast<unsigned long long>(app_id));
+    {
+        struct stat st;
+        if (stat(sd_path, &st) == 0 && st.st_size > 0
+                && st.st_size <= (8 * 1024 * 1024)) {
+            if (LoadJpegIconToCache(sd_path, cache_key)) {
+                UL_LOG_INFO("qdesktop: shipped icon from uSystem cache app_id=0x%016llx",
+                            static_cast<unsigned long long>(app_id));
+                return true;
+            }
+        }
+    }
+
+    // Path 2: creator-curated manual drop (lowercase hex).
+    snprintf(sd_path, sizeof(sd_path),
+             "sdmc:/switch/qos-app-icons/%016llx.jpg",
+             static_cast<unsigned long long>(app_id));
+    {
+        struct stat st;
+        if (stat(sd_path, &st) == 0 && st.st_size > 0
+                && st.st_size <= (8 * 1024 * 1024)) {
+            if (LoadJpegIconToCache(sd_path, cache_key)) {
+                UL_LOG_INFO("qdesktop: shipped icon from manual drop app_id=0x%016llx",
+                            static_cast<unsigned long long>(app_id));
+                return true;
+            }
+        }
+    }
+
+    return false;  // caller falls through to NS path / gray fallback
+}
+
 // ── LoadNsIconToCache ─────────────────────────────────────────────────────────
 //
 // Fetches the JPEG icon bytes for app_id directly from NS storage
@@ -2610,7 +3461,10 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
     // When it fails, retry with NsApplicationControlSource_CacheOnly — the
     // icon thumbnail is almost always warm in the NS cache after the home menu
     // has displayed it once.
-    Result rc = nsextGetApplicationControlData(
+    // F2 (stabilize-5): RC-B1 — use nsGetApplicationControlData (not nsext variant).
+    // nsextGetApplicationControlData returns 0x196002 (permission denied) for library
+    // applets on Erista firmware; the non-ext variant has applet-mode access.
+    Result rc = nsGetApplicationControlData(
         NsApplicationControlSource_Storage,
         app_id,
         ctrl_data,
@@ -2625,7 +3479,7 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
                     static_cast<unsigned int>(rc),
                     static_cast<unsigned long long>(icon_size));
         icon_size = 0;
-        rc = nsextGetApplicationControlData(
+        rc = nsGetApplicationControlData(  // F2 (stabilize-5): RC-B1
             NsApplicationControlSource_CacheOnly,
             app_id,
             ctrl_data,

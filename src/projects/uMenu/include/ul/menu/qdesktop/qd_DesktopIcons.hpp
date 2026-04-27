@@ -255,7 +255,40 @@ public:
     // Stable ID format: see ClassifyKind comment above.
     static ClassifyKind GetAutoFolderKind(const std::string &stable_id);
 
+    // v1.7.0-stabilize-7 Slice 4 (O-B): consume any pending Launchpad folder
+    // pre-filter set by a desktop-folder tap.  Returns the AutoFolderIdx that
+    // should be applied to active_folder_, then resets the pending state.  If
+    // no folder tap is pending, returns AutoFolderIdx::None and is a no-op.
+    // Called from QdLaunchpadElement::Open() exactly once per Open cycle.
+    static AutoFolderIdx ConsumePendingLaunchpadFolder();
+
+    // v1.7.0-stabilize-7 Slice 4 (O-B): mark the desktop folder grid layout
+    // as needing a recompute on the next paint.  Called by SetApplicationEntries
+    // and SetSpecialEntries after the icon set changes so the folder counts
+    // refresh.  No-op if the layout is already dirty.
+    static void MarkDesktopFolderLayoutDirty();
+
 private:
+    // v1.7.0-stabilize-7 Slice 4 (O-B): recompute per-folder counts and rects.
+    // Called lazily from PaintDesktopFolders when g_desktop_folder_layout_dirty
+    // is set; safe to call from any frame.
+    void RecomputeDesktopFolders();
+
+    // v1.7.0-stabilize-7 Slice 4 (O-B): paint the 6-folder desktop grid.
+    // Called from OnRender after the dock paint loop, before the hot corner.
+    // Honors dev_icons_on (the same flag that previously gated the icon grid).
+    void PaintDesktopFolders(SDL_Renderer *r, s32 x, s32 y);
+
+    // v1.7.0-stabilize-7 Slice 5 (O-F): paint the favorites strip.
+    // Called from OnRender between the dock loop and the hot-corner block.
+    // Renders up to FAV_STRIP_VISIBLE tiles for items in g_favorites_list_
+    // that resolve to an active icons_[] index.
+    void PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y);
+
+    // v1.7.0-stabilize-7 Slice 5 (O-F): hit-test the favorites strip.
+    // Returns the icons_[] index whose favorite tile contains (tx, ty), or
+    // SIZE_MAX if no tile matches.  Layout-relative; caller adds (x, y).
+    size_t HitTestFavorites(s32 tx, s32 ty) const;
     QdTheme theme_;
     std::array<NroEntry, MAX_ICONS> icons_;
     size_t icon_count_;
@@ -436,6 +469,20 @@ private:
     // failure so the caller always has a cache entry after this call returns.
     // Returns true if a real JPEG was decoded; false if the fallback was used.
     bool LoadNsIconToCache(u64 app_id, const char *cache_key);
+
+    // F2b (stabilize-6 / O-C): Load the shipped Application icon from disk
+    // instead of asking NS at library-applet runtime.  Tries two paths in order:
+    //   1. sdmc:/ulaunch/cache/app/<APPID16HEX_UPPER>.jpg
+    //      (uSystem-populated by app_ControlCache.cpp; primary path once
+    //      fork uSystem is deployed to /atmosphere/contents/0100000000001000/)
+    //   2. sdmc:/switch/qos-app-icons/<APPID16HEX_LOWER>.jpg
+    //      (creator-curated manual drop; permanent fallback for titles
+    //      uSystem could not extract)
+    // On success, the JPEG is decoded via LoadJpegIconToCache and the cache
+    // is keyed by cache_key.  Returns true on success (cache populated),
+    // false if both paths missed or decode failed (caller falls through to
+    // LoadNsIconToCache or gray fallback).
+    bool LoadAppIconFromUSystemCache(u64 app_id, const char *cache_key);
 
     // Extract the JPEG icon from the ASET section of the NRO at nro_path, decode it
     // via ExtractNroIcon, and insert the result into the icon cache keyed by

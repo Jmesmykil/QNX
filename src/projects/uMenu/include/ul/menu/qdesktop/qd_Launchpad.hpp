@@ -91,6 +91,14 @@ namespace ul::menu::qdesktop {
 // Search bar and hot-corner are spec-defined values from the task.
 
 constexpr s32 LP_COLS          = 10;
+// F10 (stabilize-5): explicit row count so Items-Per-Page is a constant, not
+// derived at runtime.  5 rows × 10 cols = 50 items per page.
+// Derivation: usable height = 1080 - LP_GRID_Y(144) - status_line(40) = 896 px.
+// Each row = LP_CELL_H(150) + LP_GAP_Y(12) = 162 px.  896 / 162 = 5.53 → 5.
+// Row 5 (0-indexed) would start at y=144+810=954; bottom=1104 > 1080 → clips.
+// Row 4 bottom = 792+150 = 942 → fully visible.  5 rows is the safe maximum.
+constexpr s32 LP_ROWS          = 5;
+constexpr size_t LP_ITEMS_PER_PAGE = static_cast<size_t>(LP_COLS * LP_ROWS);  // 50
 constexpr s32 LP_CELL_W        = 156;   // icon + label column width
 constexpr s32 LP_CELL_H        = 150;   // icon + label row height (incl. label)
 constexpr s32 LP_GAP_X         = 12;
@@ -305,6 +313,16 @@ private:
     // Open() does not immediately self-close on a still-down finger.
     bool                    lp_was_touch_active_last_frame_;
 
+    // F10 (stabilize-5): pagination state.
+    // page_index_: 0-based current page (0 = first page).
+    // page_count_: total pages = ceil(filtered_idxs_.size() / LP_ITEMS_PER_PAGE).
+    // Both are recalculated whenever filtered_idxs_ is rebuilt (RebuildFilter).
+    // dpad_focus_index_ is always relative to the FILTERED list (global), not the
+    // current page; CellXY is called with (vpos - page_start) so the focused cell
+    // scrolls onto the screen when the page changes.
+    size_t                  page_index_;
+    size_t                  page_count_;
+
     // Per-slot cached text and icon textures; same pattern as DesktopIcons.
     // Max LP items == MAX_ICONS == 48; vector index mirrors items_ index.
     std::vector<SDL_Texture *> name_tex_;
@@ -370,6 +388,11 @@ private:
     void PaintStatusLine(SDL_Renderer *r, size_t total_nintendo,
                          size_t total_homebrew, size_t total_extras,
                          size_t total_builtins) const;
+
+    // F10 (stabilize-5): paint page indicator dots when page_count_ > 1.
+    // Renders a row of small circles centred horizontally above the status line.
+    // The active page's dot is rendered bright; inactive dots are dim.
+    void PaintPageDots(SDL_Renderer *r) const;
 };
 
 } // namespace ul::menu::qdesktop

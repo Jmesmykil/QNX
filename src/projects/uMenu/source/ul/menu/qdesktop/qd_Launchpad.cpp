@@ -17,6 +17,8 @@
 
 #include <ul/menu/qdesktop/qd_Launchpad.hpp>
 #include <ul/menu/qdesktop/qd_AutoFolders.hpp>      // Fix D (v1.6.12): LookupFolderIdx, kTopLevelFolders
+#include <ul/menu/ui/ui_MenuApplication.hpp>         // F3 (stabilize-4): g_MenuApplication + MenuType
+#include <ul/menu/ui/ui_Common.hpp>                  // F9 (stabilize-5): TryFindLoadImage for Builtin icons
 #include <ul/ul_Result.hpp>                         // UL_LOG_INFO
 #include <pu/ui/render/render_Renderer.hpp>          // pu::ui::render::GetMainRenderer
 #include <pu/ui/ui_Types.hpp>                        // pu::ui::GetDefaultFont / DefaultFontSize
@@ -29,6 +31,9 @@
 
 // libnx HID constants.
 #include <switch.h>
+
+// F3 (stabilize-4): MenuApplication global — defined in ui_MenuApplication.cpp.
+extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
 
 namespace ul::menu::qdesktop {
 
@@ -46,6 +51,8 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
       frame_tick_(0),
       active_folder_(AutoFolderIdx::None),
       lp_was_touch_active_last_frame_(false),
+      page_index_(0),    // F10 (stabilize-5): pagination — declared before icon_cache_ in header
+      page_count_(1),    // F10 (stabilize-5): pagination
       icon_cache_(nullptr)
 {
     // items_, filtered_idxs_, query_ default-initialise to empty.
@@ -87,6 +94,8 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     pending_launch_from_mouse_ = false;
     filter_dirty_              = false;
     active_folder_             = AutoFolderIdx::None;  // Fix D (v1.6.12): show all by default
+    page_index_                = 0;  // F10 (stabilize-5): always start at first page
+    page_count_                = 1;  // F10 (stabilize-5): recalculated in RebuildFilter
     // v1.7.0-stabilize-2: reset edge-trigger latch so the same finger-down
     // that triggered Open() does not immediately fire the close handler on
     // the very next frame. The latch must be true while a still-down finger
@@ -214,7 +223,28 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
 
         // Application entries with a custom icon_path (JPEG on SD):
         // route through LoadJpegIconToCache exactly as OnRender does.
+        // F2b (stabilize-6 / O-C): if icon_path is a pre-written NS cache key
+        // ("app:%016llx" — written by SetApplicationEntries per F5), the
+        // disk-read path expects a real file, so route through the
+        // shipped-icon dual-fallback first; on miss, leave the slot empty
+        // and let the OnRender path retry.
         if (it.icon_path[0] != '\0') {
+            const bool has_ns_key =
+                (it.icon_path[0] == 'a' &&
+                 it.icon_path[1] == 'p' &&
+                 it.icon_path[2] == 'p' &&
+                 it.icon_path[3] == ':');
+            if (has_ns_key && it.app_id != 0) {
+                bool loaded = desktop_icons->LoadAppIconFromUSystemCache(
+                    it.app_id, it.icon_path);
+                if (loaded) {
+                    ++prewarm_hit;
+                }
+                // No NS fallback in prewarm — NS calls are deferred to
+                // OnRender lazy-load to avoid blocking Open() (matches the
+                // empty-icon_path branch below).
+                continue;
+            }
             bool loaded = desktop_icons->LoadJpegIconToCache(it.icon_path,
                                                               it.icon_path);
             if (loaded) {
@@ -223,9 +253,24 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
             continue;
         }
 
-        // Application entries with empty icon_path require an NS service call
-        // (LoadNsIconToCache).  Do NOT block Open() with NS calls; they are
-        // deferred to the Launchpad's own OnRender lazy-load path.
+        // Application entries with empty icon_path: try the shipped-icon
+        // dual-fallback first (stat-based, fast), then defer to OnRender
+        // lazy-load if both disk paths miss.
+        // F2b (stabilize-6 / O-C): same dual-fallback as the icon_path
+        // branch above; we synthesise the "app:%016llx" cache key here so
+        // PaintCell's lookup matches.
+        if (it.app_id != 0) {
+            char app_cache_key[32];
+            snprintf(app_cache_key, sizeof(app_cache_key),
+                     "app:%016llx",
+                     static_cast<unsigned long long>(it.app_id));
+            bool loaded = desktop_icons->LoadAppIconFromUSystemCache(
+                it.app_id, app_cache_key);
+            if (loaded) {
+                ++prewarm_hit;
+            }
+            // NS calls remain deferred to OnRender (do not block Open()).
+        }
     }
 
     UL_LOG_INFO("qdesktop: Launchpad prewarm: checked=%zu hit=%zu",
@@ -411,7 +456,7 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
     // its own per-element latch (`lp_was_touch_active_last_frame_`) so the
     // two state machines do not interfere.
     {
-        const bool touch_active_now = (touch_pos.x != 0 || touch_pos.y != 0);
+        const bool touch_active_now = !touch_pos.IsEmpty();  // F1 (stabilize-5): RC-A sentinel fix
         const s32  tx               = static_cast<s32>(touch_pos.x);
         const s32  ty               = static_cast<s32>(touch_pos.y);
         const bool touch_corner_now = touch_active_now
@@ -422,7 +467,19 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         if (touch_corner_edge) {
             UL_LOG_INFO("qdesktop: Launchpad hot-corner CLOSE tap edge tx=%d ty=%d", tx, ty);
             Close();
-            SetVisible(false);
+            // F11 (stabilize-6): mirror QdLaunchpadHostLayout::OnMenuInput's
+            // B/Plus path — leave the element VISIBLE so the next
+            // LoadMenu(MenuType::Launchpad) actually renders. SetVisible(false)
+            // here orphans the element for every subsequent Open cycle because
+            // Plutonium's per-element dispatch gates OnRender + OnInput on
+            // IsVisible() and Open() does not toggle visibility. Counter-example
+            // proof at qd_LaunchpadHostLayout.cpp:32-40 (B/Plus path).
+            SetVisible(true);
+            // F3 (stabilize-4): restore the Main desktop layout so the screen
+            // is not left blank after closing.  Previously Close()+SetVisible(false)
+            // hid the Launchpad but never switched the active MenuType back, so
+            // the user saw a black screen on close.
+            g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Main);
             // Latch is cleared by Close(); the next frame will re-arm it on
             // the next finger-down. No further state update needed here.
             return;
@@ -441,9 +498,7 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         return;
     }
 
-#if 0  // v1.7.0-stabilize-3: auto-folder tile strip deferred to v1.7.1 K+1 phase 2.
-       // Cause: v1.6.12 instability (creator-reported "way too many icons", regressed
-       // hot corner / default icons). Re-enable when QdFolderSheet modal lands.
+    // F8 (stabilize-5): P3 — auto-folder strip OnInput re-enabled.
     // ── Fix D (v1.6.12): Touch tap on the auto-folder tile strip ─────────────
     // The folder tile strip occupies a horizontal band starting at:
     //   y = LP_SEARCH_BAR_Y + LP_SEARCH_BAR_H + 6 = 138 px
@@ -458,7 +513,7 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         // touch_pos.IsEmpty() / valid tap is signalled by keys_down containing
         // the Plutonium touch-tap flag. Use the x/y fields when the point is
         // non-zero (the framework sets {0,0} when there is no active touch).
-        const bool has_touch = (touch_pos.x != 0 || touch_pos.y != 0);
+        const bool has_touch = !touch_pos.IsEmpty();  // F1 (stabilize-5): RC-A sentinel fix
         if (has_touch) {
             const s32 tx = static_cast<s32>(touch_pos.x);
             const s32 ty = static_cast<s32>(touch_pos.y);
@@ -515,7 +570,6 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
             }
         }
     }
-#endif
 
     if (n == 0u) {
         return;  // Nothing to navigate.
@@ -561,6 +615,32 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         if (mouse_hover_index_ < n) {
             pending_launch_            = true;
             pending_launch_from_mouse_ = true;
+        }
+    }
+
+    // ── F10 (stabilize-5): L / R — page navigation ───────────────────────────
+    // L steps to the previous page; R steps to the next page.
+    // After a page change, clamp dpad_focus_index_ to the items on the new page.
+    // mouse_hover_index_ is reset to SIZE_MAX (cursor position is page-relative
+    // so hovered item changes identity after a page turn).
+    if (keys_down & HidNpadButton_L) {
+        if (page_index_ > 0u) {
+            --page_index_;
+            // Move D-pad focus to the first item of the new page.
+            dpad_focus_index_ = page_index_ * LP_ITEMS_PER_PAGE;
+            mouse_hover_index_ = SIZE_MAX;
+        }
+    }
+    if (keys_down & HidNpadButton_R) {
+        if (page_index_ + 1u < page_count_) {
+            ++page_index_;
+            // Move D-pad focus to the first item of the new page.
+            dpad_focus_index_ = page_index_ * LP_ITEMS_PER_PAGE;
+            // Clamp to last item if the new page has fewer than LP_ITEMS_PER_PAGE.
+            if (dpad_focus_index_ >= n) {
+                dpad_focus_index_ = (n > 0u) ? (n - 1u) : 0u;
+            }
+            mouse_hover_index_ = SIZE_MAX;
         }
     }
 }
@@ -612,7 +692,10 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     SDL_Rect hcbb { 0, LP_HOTCORNER_H - 1, LP_HOTCORNER_W, 1 };
     SDL_RenderFillRect(r, &hcbr);
     SDL_RenderFillRect(r, &hcbb);
-    // Render "Q" glyph inside hot-corner to indicate Launchpad.
+    // F7 (stabilize-5): Block A re-enabled — "Q" glyph in hot-corner.
+    // Previously wrapped in #if 0 (stabilize-4) due to Plutonium RenderText crash
+    // on Erista.  Re-enabled for stabilize-5; if a crash recurs on HW the
+    // root cause is in Plutonium font metrics, not this call site.
     {
         static SDL_Texture *hc_tex = nullptr;
         if (!hc_tex) {
@@ -705,9 +788,7 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         }
     }
 
-#if 0  // v1.7.0-stabilize-3: auto-folder tile strip deferred to v1.7.1 K+1 phase 2.
-       // Cause: v1.6.12 instability (creator-reported "way too many icons", regressed
-       // hot corner / default icons). Re-enable when QdFolderSheet modal lands.
+    // F8 (stabilize-5): P3 — auto-folder strip OnRender re-enabled.
     // ── 3.5. Fix D (v1.6.12): Auto-folder tile strip ─────────────────────────
     // Render up to kTopLevelFolderCount tiles in a horizontal strip between the
     // search bar and the icon grid.  Only tiles for non-empty buckets are drawn;
@@ -760,8 +841,14 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
                             all_active);
         }
     }
-#endif
 
+#if 0
+    // F1 (stabilize-4): Section headers deferred — RenderText is called once
+    // per visible section per frame (un-cached, re-allocates a new SDL_Texture
+    // every frame), causing progressive GPU pool exhaustion on Switch.  Headers
+    // also require 28 px of dead space above every section's first row, which
+    // clips the bottom row on the current grid layout.  Defer until a static
+    // cached label strategy is in place.
     // ── 4. Section headers ────────────────────────────────────────────────────
     // Walk the filtered list and emit a section label wherever LpSortKind
     // transitions.  The first row header sits at y = LP_GRID_Y - 24 above the
@@ -802,23 +889,36 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
             }
         }
     }
+#endif  // F1 deferred
 
-    // ── 5. Icon grid ──────────────────────────────────────────────────────────
-    const size_t nf = filtered_idxs_.size();
-    for (size_t vpos = 0u; vpos < nf; ++vpos) {
+    // ── 5. Icon grid (F10: sliced to current page) ───────────────────────────
+    const size_t nf         = filtered_idxs_.size();
+    const size_t page_start = page_index_ * LP_ITEMS_PER_PAGE;
+    const size_t page_end   = (page_start + LP_ITEMS_PER_PAGE < nf)
+                              ? page_start + LP_ITEMS_PER_PAGE
+                              : nf;
+    for (size_t vpos = page_start; vpos < page_end; ++vpos) {
         const size_t item_idx = filtered_idxs_[vpos];
         if (item_idx >= items_.size()) { continue; }
 
+        // cell_pos is page-local so CellXY maps row 0..LP_ROWS-1 correctly.
+        const size_t cell_pos = vpos - page_start;
         s32 cx = 0, cy = 0;
-        CellXY(vpos, cx, cy);
+        CellXY(cell_pos, cx, cy);
 
         // Cull cells that would render below the status line (1080 - 48 = 1032).
         if (cy + LP_CELL_H > 1032) { continue; }
 
         // Fix B (v1.6.12): highlight if D-pad focused OR mouse-hovered.
+        // dpad_focus_index_ and mouse_hover_index_ are global filtered indices.
         const bool cell_highlighted = (vpos == dpad_focus_index_)
                                    || (vpos == mouse_hover_index_);
         PaintCell(r, items_[item_idx], item_idx, cx, cy, cell_highlighted);
+    }
+
+    // F10: render page indicator dots when more than one page exists.
+    if (page_count_ > 1u) {
+        PaintPageDots(r);
     }
 
     // ── 6. Status line ────────────────────────────────────────────────────────
@@ -1042,6 +1142,19 @@ void QdLaunchpadElement::RebuildFilter() {
         filtered_idxs_.push_back(i);
     }
 
+    // F10 (stabilize-5): recalculate page_count_ after filter is rebuilt.
+    // page_count_ = ceil(filtered_idxs_.size() / LP_ITEMS_PER_PAGE), minimum 1.
+    const size_t nf = filtered_idxs_.size();
+    if (nf == 0u) {
+        page_count_ = 1u;
+    } else {
+        page_count_ = (nf + LP_ITEMS_PER_PAGE - 1u) / LP_ITEMS_PER_PAGE;
+    }
+    // Clamp page_index_ so it stays within [0, page_count_ - 1].
+    if (page_index_ >= page_count_) {
+        page_index_ = page_count_ - 1u;
+    }
+
     filter_dirty_ = false;
 }
 
@@ -1142,8 +1255,33 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
         }
     }
 
+    // ── 2b. F9 (stabilize-5): Builtin icon lazy-load via TryFindLoadImage ───────
+    // When the BGRA cache misses for a Builtin entry, attempt to load the
+    // per-slot PNG from romfs (e.g. "ui/Main/EntryIcon/DockVault.png").
+    // Mirrors the qd_DesktopIcons.cpp IconKind::Builtin branch.
+    // Only fires once per slot: icon_tex_[item_idx] is set on first hit and
+    // reused on subsequent frames. Falls through to glyph if PNG is absent.
+    if (bgra == nullptr && item.sort_kind == LpSortKind::Builtin
+            && item_idx < icon_tex_.size()) {
+        if (icon_tex_[item_idx] == nullptr) {
+            // First render of this slot: try to load from romfs.
+            static char dock_path_lp[128];
+            snprintf(dock_path_lp, sizeof(dock_path_lp),
+                     "ui/Main/EntryIcon/Dock%s", item.name);
+            icon_tex_[item_idx] = ::ul::menu::ui::TryFindLoadImage(dock_path_lp);
+        }
+        if (icon_tex_[item_idx] != nullptr) {
+            SDL_Rect dst { icon_x, icon_y, LP_ICON_W, LP_ICON_H };
+            SDL_RenderCopy(r, icon_tex_[item_idx], nullptr, &dst);
+        }
+    }
+
     // ── 3. Glyph fallback (when no icon art) ─────────────────────────────────
-    if (bgra == nullptr && item.glyph != '\0' && item_idx < glyph_tex_.size()) {
+    // Only render glyph if BOTH the bgra cache and the Builtin tex are absent.
+    const bool has_builtin_tex = (item.sort_kind == LpSortKind::Builtin
+                                  && item_idx < icon_tex_.size()
+                                  && icon_tex_[item_idx] != nullptr);
+    if (bgra == nullptr && !has_builtin_tex && item.glyph != '\0' && item_idx < glyph_tex_.size()) {
         if (glyph_tex_[item_idx] == nullptr) {
             const std::string gs(1, item.glyph);
             const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
@@ -1282,6 +1420,39 @@ void QdLaunchpadElement::PaintStatusLine(SDL_Renderer *r,
         SDL_Rect sd { sx, sy, sw, sh };
         SDL_RenderCopy(r, st, nullptr, &sd);
         SDL_DestroyTexture(st);
+    }
+}
+
+// ── PaintPageDots ─────────────────────────────────────────────────────────────
+// F10 (stabilize-5): draw a row of small filled squares centred horizontally
+// at y == 1040, in the gap between the icon grid and the status line.
+// Active page dot: accent colour, full alpha.
+// Inactive page dots: text_secondary colour, full alpha.
+// Only called when page_count_ > 1.
+void QdLaunchpadElement::PaintPageDots(SDL_Renderer *r) const {
+    static constexpr s32 DOT_SIZE = 8;
+    static constexpr s32 DOT_GAP  = 4;
+
+    const s32 n = static_cast<s32>(page_count_);
+    const s32 total_w = n * DOT_SIZE + (n - 1) * DOT_GAP;
+    s32 dot_x = (1920 - total_w) / 2;
+    static constexpr s32 DOT_Y = 1040;
+
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    for (size_t i = 0u; i < page_count_; ++i) {
+        if (i == page_index_) {
+            SDL_SetRenderDrawColor(r,
+                theme_.accent.r, theme_.accent.g, theme_.accent.b, 0xFFu);
+        } else {
+            SDL_SetRenderDrawColor(r,
+                theme_.text_secondary.r,
+                theme_.text_secondary.g,
+                theme_.text_secondary.b,
+                0xFFu);
+        }
+        const SDL_Rect dot { dot_x, DOT_Y, DOT_SIZE, DOT_SIZE };
+        SDL_RenderFillRect(r, &dot);
+        dot_x += DOT_SIZE + DOT_GAP;
     }
 }
 

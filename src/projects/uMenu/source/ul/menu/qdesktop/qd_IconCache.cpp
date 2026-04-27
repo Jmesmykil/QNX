@@ -43,11 +43,22 @@ bool QdIconCache::EnsureDir() {
         return false;
     }
     // Directory name MUST stay in lockstep with ICON_CACHE_DIR in qd_IconCache.hpp.
-    Result rc = fsFsCreateDirectory(sdmc, "/switch/qos-icon-cache-v2");
+    // F5 (stabilize-5): RC-B4 — bumped to qos-icon-cache-v3.
+    Result rc = fsFsCreateDirectory(sdmc, "/switch/qos-icon-cache-v3");
     const bool ok = R_SUCCEEDED(rc) || (rc == 0x402);
     UL_LOG_INFO("qdesktop: IconCache EnsureDir rc=0x%X ok=%d", static_cast<unsigned>(rc), ok ? 1 : 0);
-    // Either success (0) or already-exists (0x402) is fine.
-    return ok;
+    if (!ok) {
+        return false;
+    }
+    // Write generation.txt sentinel so future builds can detect stale caches.
+    // Using raw fopen on the sdmc: devoptab path (the device is already mounted).
+    const std::string gen_path = std::string(ICON_CACHE_DIR) + "generation.txt";
+    FILE *gf = fopen(gen_path.c_str(), "w");
+    if (gf) {
+        fputs(ICON_CACHE_GENERATION, gf);
+        fclose(gf);
+    }
+    return true;
 }
 
 // ── AdvanceTick ───────────────────────────────────────────────────────────────
@@ -69,7 +80,7 @@ u64 QdIconCache::PathHash(const char *path) {
 
 // ── DiskPath ──────────────────────────────────────────────────────────────────
 
-// Returns: "sdmc:/switch/qos-icon-cache-v2/<hash16hex>.rgba"
+// Returns: "sdmc:/switch/qos-icon-cache-v3/<hash16hex>.rgba"
 std::string QdIconCache::DiskPath(u64 hash) {
     static constexpr const char hex[] = "0123456789abcdef";
     // 16 hex digits + ".rgba" suffix

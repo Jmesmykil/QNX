@@ -1,4 +1,4 @@
-// qd_IconCache.hpp — 24-entry LRU icon cache for uMenu C++ SP1 (v1.1.12).
+// qd_IconCache.hpp — LRU icon cache for uMenu C++ SP1 (v1.1.12).
 // Ported from tools/mock-nro-desktop-gui/src/icon_cache.rs.
 #pragma once
 #include <pu/Plutonium>
@@ -11,13 +11,21 @@ namespace ul::menu::qdesktop {
 static constexpr u32    CACHE_ICON_W       = 64;     // from icon_cache.rs CACHE_ICON_W
 static constexpr u32    CACHE_ICON_H       = 64;     // from icon_cache.rs CACHE_ICON_H
 static constexpr size_t CACHE_ENTRY_BYTES  = CACHE_ICON_W * CACHE_ICON_H * 4;  // 16384
-static constexpr size_t MEM_CACHE_CAP      = 24;     // from icon_cache.rs MEM_CACHE_CAP
+// F9 (stabilize-4): raised from 24 → 128 so a full Launchpad page of apps
+// (up to ~80 icons per scroll page) can cache without LRU thrashing.  At
+// 128 entries × 16 KB = 2 MB total — well within Switch heap headroom.
+static constexpr size_t MEM_CACHE_CAP      = 128;
 // On-disk directory.  Created by EnsureIconCacheDir() on first use.
 // v2: directory bumped from "qos-icon-cache" → "qos-icon-cache-v2" because the
 // v1 ring contains channel-scrambled NRO icons (qd_NroAsset RGBA8888 instead of
 // ABGR8888). Old files are ignored, not migrated; user can delete the v1 dir
 // from the SD root at leisure.
-static constexpr const char ICON_CACHE_DIR[] = "sdmc:/switch/qos-icon-cache-v2/";
+// F5 (stabilize-5): RC-B4 — directory bumped to "qos-icon-cache-v3" to invalidate
+// any stale gray-block entries from builds where nsextGetApplicationControlData
+// was returning 0x196002 (all NS icons landed as gray blobs in v2).
+// EnsureDir() also writes a generation.txt sentinel (see qd_IconCache.cpp).
+static constexpr const char ICON_CACHE_DIR[]        = "sdmc:/switch/qos-icon-cache-v3/";
+static constexpr const char ICON_CACHE_GENERATION[] = "1";  // bump when on-disk format changes
 
 // Single LRU slot.
 struct IconCacheEntry {
@@ -27,7 +35,7 @@ struct IconCacheEntry {
     bool valid;         // true if the slot holds a real icon
 };
 
-// 24-entry in-memory LRU + transparent on-disk persistence.
+// In-memory LRU + transparent on-disk persistence.
 // Disk format per entry: 64×64 BGRA (16384 bytes).
 // Filename: "<hash16hex>.rgba"  e.g. "0000000004b2a3f1.rgba"
 class QdIconCache {

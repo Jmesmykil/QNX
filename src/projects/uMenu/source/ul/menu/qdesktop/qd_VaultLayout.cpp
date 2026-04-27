@@ -8,7 +8,14 @@
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
 #include <ul/menu/qdesktop/qd_WmConstants.hpp>
 #include <ul/menu/smi/smi_Commands.hpp>
+#include <ul/menu/ui/ui_MenuApplication.hpp>  // F6 (stabilize-5): RC-C — FadeOutToNonLibraryApplet
 #include <ul/ul_Result.hpp>
+
+// F6 (stabilize-5): RC-C — same extern pattern as qd_DesktopIcons.cpp / qd_Launchpad.cpp.
+// Required so EnterFocused() can call FadeOutToNonLibraryApplet()+Finalize() before
+// smi::LaunchHomebrewLibraryApplet(); without it uMenu re-asserts foreground and
+// kills hbloader before the NRO can boot.
+extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
 #include <pu/ui/render/render_Renderer.hpp>
 #include <pu/ui/ui_Types.hpp>
 #include <SDL2/SDL.h>
@@ -271,6 +278,15 @@ bool QdVaultLayout::EntryRect(size_t i,
 
     out_x = pane_left + col * col_stride;
     out_y = pane_top  + row * row_stride - scroll_offset_;
+
+    // (stabilize-6 / RC-C4): clip cells outside the visible scroll window so
+    // scrolled-off rows do not return a false positive to touch hit-testing.
+    // Mirrors the render-side clip at the OnRender main-pane culling check.
+    const s32 visible_top    = origin_y + VAULT_BODY_TOP + VAULT_PATHBAR_H;
+    const s32 visible_bottom = origin_y + VAULT_BODY_TOP + VAULT_BODY_H;
+    if (out_y + VAULT_CELL_H <= visible_top || out_y >= visible_bottom) {
+        return false;
+    }
     return true;
 }
 
@@ -278,13 +294,16 @@ bool QdVaultLayout::EntryRect(size_t i,
 
 void QdVaultLayout::RenderSidebar(SDL_Renderer *r,
                                    s32 origin_x, s32 origin_y) const {
-    // Background panel.
+    // (stabilize-6 / RC-C2): sidebar bg alpha reflects input focus.
+    // Was 0xD0; new 0xE0 focused / 0x90 unfocused so the user gets a
+    // visual cue that the sidebar is the active input target.
+    const u8 sb_bg_alpha = sidebar_focused_ ? 0xE0u : 0x90u;
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r,
                            theme_.surface_glass.r,
                            theme_.surface_glass.g,
                            theme_.surface_glass.b,
-                           0xD0u);
+                           sb_bg_alpha);
     SDL_Rect sidebar_bg {
         origin_x,
         origin_y + VAULT_BODY_TOP,
@@ -336,6 +355,24 @@ void QdVaultLayout::RenderSidebar(SDL_Renderer *r,
             };
             SDL_RenderFillRect(r, &hi);
             SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        }
+
+        // (stabilize-6 / RC-C2): sidebar focus ring. Mirrors main-pane
+        // ring (drawn at OnRender focus block) so the user sees the same
+        // affordance whether they are in main-pane or sidebar mode.
+        if (sidebar_focused_ && i == sidebar_idx_) {
+            SDL_SetRenderDrawColor(r,
+                                   theme_.focus_ring.r,
+                                   theme_.focus_ring.g,
+                                   theme_.focus_ring.b,
+                                   0xFFu);
+            SDL_Rect ring {
+                origin_x + 1,
+                item_y - 1,
+                VAULT_SIDEBAR_W - 3,
+                SIDEBAR_ITEM_H - 2
+            };
+            SDL_RenderDrawRect(r, &ring);
         }
 
         // Lazy-build and cache the sidebar label texture.
@@ -606,8 +643,88 @@ void QdVaultLayout::OnInput(const u64 keys_down,
     }
 
     (void)keys_up;
-    (void)keys_held;
-    (void)touch_pos;
+
+    // (stabilize-6 / RC-C3): D-pad auto-repeat — `keys_held` was previously
+    // discarded, so a held direction never moved focus past the first frame.
+    // Mirrors the auto-repeat idiom used in qd_DesktopIcons (per cycle-G3 nav).
+    static constexpr u32 DPAD_REPEAT_DELAY_FRAMES    = 18u;
+    static constexpr u32 DPAD_REPEAT_INTERVAL_FRAMES = 5u;
+    auto dpad_should_repeat = [](u32 &held_frames, bool is_held) -> bool {
+        if (!is_held) {
+            held_frames = 0u;
+            return false;
+        }
+        ++held_frames;
+        if (held_frames <= DPAD_REPEAT_DELAY_FRAMES) {
+            return false;
+        }
+        const u32 since_delay = held_frames - DPAD_REPEAT_DELAY_FRAMES;
+        return (since_delay % DPAD_REPEAT_INTERVAL_FRAMES) == 0u;
+    };
+    const bool repeat_up    = dpad_should_repeat(dpad_held_frames_up_,
+                                                  (keys_held & HidNpadButton_Up) != 0u);
+    const bool repeat_down  = dpad_should_repeat(dpad_held_frames_down_,
+                                                  (keys_held & HidNpadButton_Down) != 0u);
+    const bool repeat_left  = dpad_should_repeat(dpad_held_frames_left_,
+                                                  (keys_held & HidNpadButton_Left) != 0u);
+    const bool repeat_right = dpad_should_repeat(dpad_held_frames_right_,
+                                                  (keys_held & HidNpadButton_Right) != 0u);
+
+    // ── Sidebar touch hit-test (stabilize-6 / RC-C2) ────────────────────────
+    // Mirrors RenderSidebar() rects (SIDEBAR_ITEM_H=42, SIDEBAR_TOP_PAD=18).
+    // Edge-triggered via sb_was_touch_active_last_frame_ so a single tap
+    // fires exactly one Navigate(); a held finger does not re-fire.
+    {
+        static constexpr s32 SB_ITEM_H  = 42;   // mirror RenderSidebar()
+        static constexpr s32 SB_TOP_PAD = 18;
+        const bool sb_touch_active_now = !touch_pos.IsEmpty();
+        if (sb_touch_active_now && !sb_was_touch_active_last_frame_) {
+            const s32 tx = static_cast<s32>(touch_pos.x);
+            const s32 ty = static_cast<s32>(touch_pos.y);
+            if (tx >= 0 && tx < VAULT_SIDEBAR_W) {
+                const s32 base_y = VAULT_BODY_TOP + SB_TOP_PAD;
+                if (ty >= base_y &&
+                    ty <  base_y + static_cast<s32>(SIDEBAR_ROOT_COUNT) * SB_ITEM_H) {
+                    const s32 rel = ty - base_y;
+                    const size_t hit = static_cast<size_t>(rel / SB_ITEM_H);
+                    if (hit < SIDEBAR_ROOT_COUNT) {
+                        UL_LOG_INFO("vault: sidebar tap idx=%zu path='%s'",
+                                    hit, SIDEBAR_ROOTS[hit].path);
+                        sidebar_idx_     = hit;
+                        sidebar_focused_ = false;          // tap returns control to main
+                        Navigate(SIDEBAR_ROOTS[hit].path);
+                        sb_was_touch_active_last_frame_ = sb_touch_active_now;
+                        return;
+                    }
+                }
+            }
+        }
+        sb_was_touch_active_last_frame_ = sb_touch_active_now;
+    }
+
+    // F8 (stabilize-4): touch tap hit-test for Vault entry cells.
+    // Previously (void)touch_pos meant touch taps on the Vault grid were
+    // silently ignored — only D-pad + A worked to open entries.  Now we
+    // iterate the visible entry grid, check whether the tap falls inside
+    // a cell, move focus to that cell, and immediately call EnterFocused().
+    //
+    // F1-derivative (stabilize-6 / O-E F.5): use !touch_pos.IsEmpty()
+    // sentinel instead of the broken (x != 0 || y != 0) check, matching
+    // qd_DesktopIcons.cpp:1967, 2028 and qd_Launchpad.cpp:423, 473.
+    if (!touch_pos.IsEmpty() && entry_count_ > 0) {
+        for (size_t i = 0; i < entry_count_; ++i) {
+            s32 cx, cy;
+            if (!EntryRect(i, cx, cy, 0, 0)) {
+                continue;
+            }
+            if (touch_pos.x >= cx && touch_pos.x < cx + VAULT_CELL_W &&
+                touch_pos.y >= cy && touch_pos.y < cy + VAULT_CELL_H) {
+                focus_idx_ = i;
+                EnterFocused();
+                return;
+            }
+        }
+    }
 
     if (entry_count_ == 0) {
         if (keys_down & HidNpadButton_B) {
@@ -619,29 +736,57 @@ void QdVaultLayout::OnInput(const u64 keys_down,
     const s32 cols = MainPaneCols();
 
     // ── D-pad navigation ──────────────────────────────────────────────────────
-    if (keys_down & HidNpadButton_Up) {
-        if (focus_idx_ >= static_cast<size_t>(cols)) {
-            focus_idx_ -= static_cast<size_t>(cols);
+    // (stabilize-6 / RC-C2): sidebar_focused_ routes UP/DOWN to sidebar_idx_,
+    // RIGHT to main; main-mode LEFT at column 0 enters sidebar.
+    if (sidebar_focused_) {
+        if ((keys_down & HidNpadButton_Up) || repeat_up) {
+            if (sidebar_idx_ > 0u) { --sidebar_idx_; }
+            UL_LOG_INFO("vault: sidebar dpad up idx=%zu", sidebar_idx_);
         }
-    }
-    if (keys_down & HidNpadButton_Down) {
-        if (focus_idx_ + static_cast<size_t>(cols) < entry_count_) {
-            focus_idx_ += static_cast<size_t>(cols);
+        if ((keys_down & HidNpadButton_Down) || repeat_down) {
+            if (sidebar_idx_ + 1u < SIDEBAR_ROOT_COUNT) { ++sidebar_idx_; }
+            UL_LOG_INFO("vault: sidebar dpad down idx=%zu", sidebar_idx_);
         }
-    }
-    if (keys_down & HidNpadButton_Left) {
-        if (focus_idx_ > 0) {
-            --focus_idx_;
+        if ((keys_down & HidNpadButton_Left) || repeat_left) {
+            // Sidebar already at left edge — silent no-op (matches main-pane
+            // LEFT-at-col-0 semantics).
         }
-    }
-    if (keys_down & HidNpadButton_Right) {
-        if (focus_idx_ + 1 < entry_count_) {
-            ++focus_idx_;
+        if ((keys_down & HidNpadButton_Right) || repeat_right) {
+            sidebar_focused_ = false;
+            UL_LOG_INFO("vault: sidebar dpad right -> main pane");
+        }
+    } else {
+        if ((keys_down & HidNpadButton_Up) || repeat_up) {
+            if (focus_idx_ >= static_cast<size_t>(cols)) {
+                focus_idx_ -= static_cast<size_t>(cols);
+            }
+        }
+        if ((keys_down & HidNpadButton_Down) || repeat_down) {
+            if (focus_idx_ + static_cast<size_t>(cols) < entry_count_) {
+                focus_idx_ += static_cast<size_t>(cols);
+            }
+        }
+        if ((keys_down & HidNpadButton_Left) || repeat_left) {
+            // (stabilize-6 / RC-C2): LEFT from column 0 jumps into the sidebar
+            // instead of being a silent no-op.
+            const s32 col = static_cast<s32>(focus_idx_) % cols;
+            if (col == 0) {
+                sidebar_focused_ = true;
+                UL_LOG_INFO("vault: main dpad left at col0 -> sidebar idx=%zu",
+                            sidebar_idx_);
+            } else if (focus_idx_ > 0) {
+                --focus_idx_;
+            }
+        }
+        if ((keys_down & HidNpadButton_Right) || repeat_right) {
+            if (focus_idx_ + 1 < entry_count_) {
+                ++focus_idx_;
+            }
         }
     }
 
-    // ── Scroll tracking: keep focused row visible ─────────────────────────────
-    {
+    // ── Scroll tracking: keep focused row visible (main pane only) ──────────
+    if (!sidebar_focused_) {
         const s32 row_stride = VAULT_CELL_H + VAULT_CELL_GAP;
         const s32 focused_row = static_cast<s32>(focus_idx_) / cols;
         const s32 focused_top = focused_row * row_stride;
@@ -656,15 +801,30 @@ void QdVaultLayout::OnInput(const u64 keys_down,
     }
 
     // ── A / ZR: enter / launch ───────────────────────────────────────────────
-    // ZR mirrors A so the shoulder trigger can be used as the primary action.
+    // (stabilize-6 / RC-C2): A on sidebar = Navigate; A on main = EnterFocused.
+    // A/B/ZR/ZL deliberately do NOT auto-repeat — held A would fire
+    // EnterFocused() repeatedly (bad); held B would fire NavigateUp()
+    // repeatedly (races directory scan).
     if ((keys_down & HidNpadButton_A) || (keys_down & HidNpadButton_ZR)) {
-        EnterFocused();
+        if (sidebar_focused_) {
+            UL_LOG_INFO("vault: sidebar A idx=%zu path='%s'",
+                        sidebar_idx_, SIDEBAR_ROOTS[sidebar_idx_].path);
+            Navigate(SIDEBAR_ROOTS[sidebar_idx_].path);
+            sidebar_focused_ = false;
+        } else {
+            EnterFocused();
+        }
     }
 
     // ── B / ZL: navigate up ──────────────────────────────────────────────────
-    // ZL mirrors B so the left shoulder trigger navigates back (go up a level).
+    // (stabilize-6 / RC-C2): B on sidebar releases focus; B on main = NavigateUp.
     if ((keys_down & HidNpadButton_B) || (keys_down & HidNpadButton_ZL)) {
-        NavigateUp();
+        if (sidebar_focused_) {
+            sidebar_focused_ = false;
+            UL_LOG_INFO("vault: sidebar B -> main pane");
+        } else {
+            NavigateUp();
+        }
     }
 }
 
@@ -727,6 +887,15 @@ void QdVaultLayout::EnterFocused() {
         case EntryKind::Nro:
             if (e.full_path[0] != '\0') {
                 UL_LOG_INFO("vault: launch NRO '%s'", e.full_path);
+                // F6 (stabilize-5): RC-C — FadeOut+Finalize before NRO launch.
+                // Without this, uMenu re-asserts foreground status after the
+                // LaunchHomebrewLibraryApplet() call and kills hbloader before
+                // the NRO can initialize.  Pattern mirrors qd_DesktopIcons.cpp
+                // cycle-C1 fix at LaunchIcon() lines 2200-2203.
+                if (g_MenuApplication) {
+                    g_MenuApplication->FadeOutToNonLibraryApplet();
+                    g_MenuApplication->Finalize();
+                }
                 smi::LaunchHomebrewLibraryApplet(
                     std::string(e.full_path), std::string(""));
             }

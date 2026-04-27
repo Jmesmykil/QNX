@@ -157,10 +157,18 @@ NroIconResult ExtractNroIcon(const char *nro_path) {
         return NroIconResult{ fb, 64, 64, false };
     }
 
-    // ── 3. Drain bytes from end of header to nro_size ────────────────────
+    // ── 3. Validate NRO body size against actual file size ───────────────
+    // F3 (stabilize-5): RC-B2 — removed the 8 MB hard cap that rejected
+    // large NROs (PPSSPP ~16-40 MB, DolphinNX ~60 MB+).  Replaced with a
+    // file-size validation: nro_size in the header must not exceed the
+    // actual file size.  DrainBytes will catch any short-reads; we do not
+    // need an artificial upper bound.
     // We already consumed HDR_SIZE bytes.  Drain the remainder of the NRO body.
-    constexpr size_t MAX_NRO_BODY = 8 * 1024 * 1024;
-    if (nro_size > MAX_NRO_BODY) {
+    fseek(f, 0, SEEK_END);
+    const size_t file_size = static_cast<size_t>(ftell(f));
+    fseek(f, static_cast<long>(HDR_SIZE), SEEK_SET);  // restore read position after header
+    if (static_cast<size_t>(nro_size) > file_size) {
+        // nro_size field exceeds actual file — corrupt NRO; use fallback.
         fclose(f);
         u8 *fb = MakeFallbackIcon(nro_path);
         return NroIconResult{ fb, 64, 64, false };

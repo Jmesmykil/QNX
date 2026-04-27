@@ -102,6 +102,21 @@ private:
     size_t     focus_idx_;          ///< currently highlighted entry (D-pad)
     s32        scroll_offset_;      ///< row scroll in main pane
 
+    // ── Sidebar input state (stabilize-6 / RC-C2) ──────────────────────────
+    // Touch tap or D-pad LEFT-at-col-0 enters sidebar mode; sidebar_idx_ is
+    // the highlighted sidebar slot (0..SIDEBAR_ROOT_COUNT-1). The
+    // sb_was_touch_active_last_frame_ latch matches the canonical
+    // edge-trigger pattern used at qd_DesktopIcons.cpp:339, 1968.
+    bool   sidebar_focused_ = false;
+    size_t sidebar_idx_     = 0u;
+    bool   sb_was_touch_active_last_frame_ = false;
+
+    // ── RC-C3 (P2) auto-repeat state for D-pad ─────────────────────────────
+    u32    dpad_held_frames_up_    = 0u;
+    u32    dpad_held_frames_down_  = 0u;
+    u32    dpad_held_frames_left_  = 0u;
+    u32    dpad_held_frames_right_ = 0u;
+
     // Cached SDL text textures for sidebar labels.
     // 6 sidebar entries, rendered once and reused.
     SDL_Texture *sidebar_tex_[SIDEBAR_ROOT_COUNT];

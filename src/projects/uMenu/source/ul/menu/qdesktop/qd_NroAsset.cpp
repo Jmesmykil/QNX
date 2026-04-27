@@ -10,10 +10,11 @@
 //   6. Skip any gap between ASET header end and icon_off.
 //   7. Read icon_size bytes of JPEG blob.
 //   8. Decode JPEG with SDL2_image IMG_Load_RW → SDL_Surface → RGBA copy.
-// Fallback (any failure): DJB2 hash of nro_path → hue → HSL(hue,0.55,0.40) → RGB;
-//   allocate 64×64 solid-colour RGBA.
+// Fallback (any failure): neutral gray #3A3A3A, 64×64 RGBA (v1.6.11+).
+//   Random-HSL colouring removed -- produced jarring coloured squares.
 
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
+#include <ul/menu/qdesktop/qd_HekateIni.hpp>
 #include <cstring>
 #include <cstdio>
 #include <cmath>
@@ -102,27 +103,30 @@ void HslToRgb(u32 h_deg, float s, float l,
 }
 
 // ── Fallback icon ──────────────────────────────────────────────────────────
-// 64×64 solid-colour RGBA pixel buffer from DJB2(nro_path) → HSL(hue,0.55,0.40).
+// 64×64 neutral-gray RGBA pixel buffer (#3A3A3A, fully opaque).
+// Used when icon extraction fails for any app type.  Neutral gray is
+// visually consistent and does NOT draw attention away from real icons.
+// The random-HSL / DJB2-hash colouring that previously lived here was
+// removed in v1.6.11 -- it produced jarring coloured squares when
+// icons could not be decoded.
 // Caller must free with delete[].
 u8 *MakeFallbackIcon(const char *nro_path) {
-    u32 h = Djb2Hash32(nro_path);
-    u32 hue = h % 360u;
-    u8 r, g, b;
-    HslToRgb(hue, 0.55f, 0.40f, r, g, b);
+    (void)nro_path; // path no longer hashed; parameter kept for ABI stability
+    constexpr u8 kGray = 0x3A;
     constexpr size_t N = 64 * 64 * 4;
     u8 *buf = new u8[N];
     for (size_t i = 0; i < 64 * 64; ++i) {
-        buf[i * 4 + 0] = r;
-        buf[i * 4 + 1] = g;
-        buf[i * 4 + 2] = b;
-        buf[i * 4 + 3] = 0xFF;
+        buf[i * 4 + 0] = kGray; // R
+        buf[i * 4 + 1] = kGray; // G
+        buf[i * 4 + 2] = kGray; // B
+        buf[i * 4 + 3] = 0xFF;  // A
     }
     return buf;
 }
 
 // ── ExtractNroIcon ─────────────────────────────────────────────────────────
 // Extract the JPEG icon from the ASET section of an NRO file.
-// Falls back to MakeFallbackIcon on any parse/decode failure.
+// Falls back to MakeFallbackIcon (neutral gray #3A3A3A) on any parse/decode failure.
 NroIconResult ExtractNroIcon(const char *nro_path) {
     // ── 1. Open file ──────────────────────────────────────────────────────
     FILE *f = fopen(nro_path, "rb");
@@ -255,6 +259,137 @@ NroIconResult ExtractNroIcon(const char *nro_path) {
     SDL_FreeSurface(rgba_surf);
 
     return NroIconResult{ pixels, w, h, true };
+}
+
+// ── ResolvePayloadIcon (Fix C, v1.6.12) ────────────────────────────────────
+//
+// Attempts to find a creator-supplied icon for a payload or system tool.
+// Candidate paths are tried in order; the first path where fopen succeeds
+// (i.e. the file exists) is returned.  Returns "" if no candidate exists.
+//
+// stem derivation: payload_name with one of the known extensions
+// (.bin, .nro, .kip, .kip1) stripped (case-insensitive suffix match).
+// If no known extension is present, the full name is used as the stem.
+
+std::string ResolvePayloadIcon(const char *payload_name) {
+    if (!payload_name || payload_name[0] == '\0') {
+        return std::string();
+    }
+
+    // ── 1. Derive stem by stripping known payload extensions ─────────────────
+    std::string stem(payload_name);
+    static const char * const kExts[] = { ".bin", ".nro", ".kip1", ".kip", nullptr };
+    for (int ei = 0; kExts[ei] != nullptr; ++ei) {
+        const size_t ext_len = strlen(kExts[ei]);
+        if (stem.size() > ext_len) {
+            // Case-insensitive suffix comparison (ASCII only — all known exts are ASCII).
+            const size_t off = stem.size() - ext_len;
+            bool match = true;
+            for (size_t i = 0; i < ext_len && match; ++i) {
+                const char a = static_cast<char>(stem[off + i] | 0x20);
+                const char b = static_cast<char>(kExts[ei][i] | 0x20);
+                if (a != b) { match = false; }
+            }
+            if (match) {
+                stem.erase(off);
+                break;
+            }
+        }
+    }
+
+    // ── 2. Build and probe candidate paths ────────────────────────────────────
+    // Buffer large enough for the longest candidate path.
+    char buf[769];
+    static const char * const kImgExts[] = { ".jpg", ".bmp", ".png", nullptr };
+
+    // Priority 0 (highest): Hekate INI icon= field.
+    // Parse hekate_ipl.ini + bootloader/ini/*.ini; for each entry whose
+    // payload basename (without extension) matches our stem, probe the
+    // declared icon= path on the SD card.  BMP is the Hekate convention;
+    // SDL2_image IMG_Load handles BMP natively so no custom decoder is needed.
+    {
+        const std::vector<HekateIniEntry> ini_entries = LoadAllHekateIniEntries();
+        for (const HekateIniEntry &entry : ini_entries) {
+            if (entry.icon_path.empty()) {
+                continue;
+            }
+            // Derive the stem from entry.payload_path (basename without ext).
+            // payload_path may be "bootloader/payloads/qos.bin" or just "qos.bin".
+            std::string ep = entry.payload_path;
+            // Strip leading path components.
+            const size_t slash = ep.rfind('/');
+            if (slash != std::string::npos) {
+                ep = ep.substr(slash + 1);
+            }
+            // Strip known extensions (same set as the outer stem derivation).
+            static const char * const kPayloadExts[] = { ".bin", ".nro", ".kip1", ".kip", nullptr };
+            for (int ei = 0; kPayloadExts[ei] != nullptr; ++ei) {
+                const size_t ext_len = strlen(kPayloadExts[ei]);
+                if (ep.size() > ext_len) {
+                    const size_t off = ep.size() - ext_len;
+                    bool match = true;
+                    for (size_t i = 0; i < ext_len && match; ++i) {
+                        if ((ep[off + i] | 0x20) != (kPayloadExts[ei][i] | 0x20)) {
+                            match = false;
+                        }
+                    }
+                    if (match) { ep.erase(off); break; }
+                }
+            }
+            // Case-insensitive stem comparison.
+            if (ep.size() != stem.size()) {
+                continue;
+            }
+            bool stems_equal = true;
+            for (size_t i = 0; i < stem.size() && stems_equal; ++i) {
+                if ((static_cast<unsigned char>(ep[i]) | 0x20u) !=
+                    (static_cast<unsigned char>(stem[i]) | 0x20u)) {
+                    stems_equal = false;
+                }
+            }
+            if (!stems_equal) {
+                continue;
+            }
+            // Stems match; probe sdmc:/<entry.icon_path>.
+            snprintf(buf, sizeof(buf), "sdmc:/%s", entry.icon_path.c_str());
+            FILE *f = fopen(buf, "rb");
+            if (f) { fclose(f); return std::string(buf); }
+        }
+    }
+
+    // Priority 1: /bootloader/res/<stem>.bmp (direct Hekate convention fallback
+    // when no INI entry declares an icon= but the BMP is present by name).
+    snprintf(buf, sizeof(buf), "sdmc:/bootloader/res/%s.bmp", stem.c_str());
+    {
+        FILE *f = fopen(buf, "rb");
+        if (f) { fclose(f); return std::string(buf); }
+    }
+
+    // Priority 2: /bootloader/payloads/<stem>.<imgext>
+    for (int ei = 0; kImgExts[ei] != nullptr; ++ei) {
+        snprintf(buf, sizeof(buf), "sdmc:/bootloader/payloads/%s%s",
+                 stem.c_str(), kImgExts[ei]);
+        FILE *f = fopen(buf, "rb");
+        if (f) { fclose(f); return std::string(buf); }
+    }
+
+    // Priority 3: /switch/<stem>/icon.jpg
+    snprintf(buf, sizeof(buf), "sdmc:/switch/%s/icon.jpg", stem.c_str());
+    {
+        FILE *f = fopen(buf, "rb");
+        if (f) { fclose(f); return std::string(buf); }
+    }
+
+    // Priority 4: /atmosphere/config/reboot_to_payload/icons/<stem>.jpg
+    snprintf(buf, sizeof(buf),
+             "sdmc:/atmosphere/config/reboot_to_payload/icons/%s.jpg",
+             stem.c_str());
+    {
+        FILE *f = fopen(buf, "rb");
+        if (f) { fclose(f); return std::string(buf); }
+    }
+
+    return std::string();
 }
 
 } // namespace ul::menu::qdesktop

@@ -1,4 +1,4 @@
-// qd_Launchpad.cpp — Full-screen app-grid overlay for Q OS uMenu (v1.0.0).
+// qd_Launchpad.cpp - Full-screen app-grid overlay for Q OS uMenu (v1.0.0).
 // Ported from tools/mock-nro-desktop-gui/src/launchpad.rs (v1.1.0).
 //
 // Integration note:
@@ -9,13 +9,14 @@
 //
 //     friend class QdLaunchpadElement;
 //
-//   This is the minimal, correct approach — the Launchpad and DesktopIcons are
+//   This is the minimal, correct approach: the Launchpad and DesktopIcons are
 //   intentionally tightly coupled (Launchpad is a subordinate view of the same
 //   data model).  The alternative (adding a public GetIcon(size_t) accessor) is
 //   equally valid; in that case replace the direct icons_[] accesses below with
 //   calls to that accessor.
 
 #include <ul/menu/qdesktop/qd_Launchpad.hpp>
+#include <ul/menu/qdesktop/qd_AutoFolders.hpp>      // Fix D (v1.6.12): LookupFolderIdx, kTopLevelFolders
 #include <ul/ul_Result.hpp>                         // UL_LOG_INFO
 #include <pu/ui/render/render_Renderer.hpp>          // pu::ui::render::GetMainRenderer
 #include <pu/ui/ui_Types.hpp>                        // pu::ui::GetDefaultFont / DefaultFontSize
@@ -37,14 +38,17 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
     : theme_(theme),
       is_open_(false),
       pending_launch_(false),
+      pending_launch_from_mouse_(false),
       desktop_icons_ptr_(nullptr),
-      focus_filtered_(0),
+      dpad_focus_index_(0),
+      mouse_hover_index_(SIZE_MAX),
       filter_dirty_(false),
       frame_tick_(0),
+      active_folder_(AutoFolderIdx::None),
       icon_cache_(nullptr)
 {
     // items_, filtered_idxs_, query_ default-initialise to empty.
-    // Texture vectors start empty — slots are pushed in Open().
+    // Texture vectors start empty; slots are pushed in Open().
 }
 
 // ── Destructor ────────────────────────────────────────────────────────────────
@@ -76,11 +80,14 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     items_.clear();
     filtered_idxs_.clear();
     query_.clear();
-    focus_filtered_ = 0;
-    pending_launch_  = false;
-    filter_dirty_    = false;
-    desktop_icons_ptr_ = desktop_icons;  // retained until Close() so DispatchPendingLaunch can fire
-    icon_cache_      = &desktop_icons->cache_;
+    dpad_focus_index_          = 0;
+    mouse_hover_index_         = SIZE_MAX;
+    pending_launch_            = false;
+    pending_launch_from_mouse_ = false;
+    filter_dirty_              = false;
+    active_folder_             = AutoFolderIdx::None;  // Fix D (v1.6.12): show all by default
+    desktop_icons_ptr_         = desktop_icons;
+    icon_cache_                = &desktop_icons->cache_;
 
     // Deep-copy every icon entry into items_.
     // Uses the friend-declared access to icons_[] and icon_count_.
@@ -163,6 +170,61 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     // Build the initial (unfiltered) filtered index list.
     RebuildFilter();
 
+    // v1.6.11 Fix 1: pre-warm the icon cache for first-page items before the
+    // first frame renders.  Without this, PaintCell() calls icon_cache_->Get()
+    // on the very first OnRender tick; the cache is empty so Get() returns
+    // nullptr; a neutral-gray tile is drawn permanently because the lazy-load
+    // path in QdDesktopIconsElement::OnRender does NOT run while the Launchpad
+    // overlay is active (the desktop element is suppressed).
+    //
+    // Limit to the first page (LP_COLS x visible rows = approximately 40 items
+    // for a 1920x1080 layout) so the Open() call does not block noticeably on
+    // slow SD cards.  Items beyond the first page are loaded lazily by the
+    // Launchpad's own OnRender once the user scrolls.
+    //
+    // The number of visible rows is derived from the Launchpad geometry:
+    //   LP_GRID_Y=144, LP_CELL_H=150, LP_GAP_Y=12; cull threshold ~1032px.
+    //   Visible rows = ceil((1032 - LP_GRID_Y) / (LP_CELL_H + LP_GAP_Y)) = 6.
+    // First-page item count = LP_COLS * visible_rows = 10 * 6 = 60.
+    static constexpr size_t LP_PREWARM_ITEMS = 60u;
+    const size_t prewarm_limit = (items_.size() < LP_PREWARM_ITEMS)
+                                 ? items_.size()
+                                 : LP_PREWARM_ITEMS;
+
+    size_t prewarm_hit = 0u;
+    for (size_t i = 0u; i < prewarm_limit; ++i) {
+        const LpItem &it = items_[i];
+
+        // NRO-backed entries: load from ASET section.
+        if (it.nro_path[0] != '\0') {
+            // Cache key mirrors what PaintCell() computes for IconKind::Nro.
+            bool loaded = desktop_icons->LoadNroIconToCache(it.nro_path,
+                                                            it.nro_path);
+            if (loaded) {
+                ++prewarm_hit;
+            }
+            continue;
+        }
+
+        // Application entries with a custom icon_path (JPEG on SD):
+        // route through LoadJpegIconToCache exactly as OnRender does.
+        if (it.icon_path[0] != '\0') {
+            bool loaded = desktop_icons->LoadJpegIconToCache(it.icon_path,
+                                                              it.icon_path);
+            if (loaded) {
+                ++prewarm_hit;
+            }
+            continue;
+        }
+
+        // Application entries with empty icon_path require an NS service call
+        // (LoadNsIconToCache).  Do NOT block Open() with NS calls; they are
+        // deferred to the Launchpad's own OnRender lazy-load path.
+    }
+
+    UL_LOG_INFO("qdesktop: Launchpad prewarm: checked=%zu hit=%zu",
+                prewarm_limit, prewarm_hit);
+
     is_open_ = true;
 
     // Count by category for the log line.
@@ -183,19 +245,22 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
 // ── Close ─────────────────────────────────────────────────────────────────────
 
 void QdLaunchpadElement::Close() {
-    // Free every cached SDL texture before clearing items_ — the vectors must
+    // Free every cached SDL texture before clearing items_; the vectors must
     // still be alive while FreeAllTextures walks them.
     FreeAllTextures();
 
     items_.clear();
     filtered_idxs_.clear();
     query_.clear();
-    focus_filtered_    = 0;
-    pending_launch_    = false;
-    filter_dirty_      = false;
-    icon_cache_        = nullptr;
-    desktop_icons_ptr_ = nullptr;
-    is_open_           = false;
+    dpad_focus_index_          = 0;
+    mouse_hover_index_         = SIZE_MAX;
+    pending_launch_            = false;
+    pending_launch_from_mouse_ = false;
+    filter_dirty_              = false;
+    active_folder_             = AutoFolderIdx::None;  // Fix D (v1.6.12)
+    icon_cache_                = nullptr;
+    desktop_icons_ptr_         = nullptr;
+    is_open_                   = false;
 
     UL_LOG_INFO("qdesktop: Launchpad closed");
 }
@@ -218,12 +283,29 @@ void QdLaunchpadElement::DispatchPendingLaunch() {
         UL_LOG_WARN("qdesktop: Launchpad DispatchPendingLaunch: desktop_icons_ptr_ is null");
         return;
     }
-    const size_t idx = FocusedDesktopIdx();
+
+    // Fix B (v1.6.12): pick the index based on which button triggered the launch.
+    size_t idx = SIZE_MAX;
+    if (pending_launch_from_mouse_) {
+        // ZR launched: resolve mouse_hover_index_ to a desktop_idx.
+        if (mouse_hover_index_ < filtered_idxs_.size()) {
+            const size_t item_idx = filtered_idxs_[mouse_hover_index_];
+            if (item_idx < items_.size()) {
+                idx = items_[item_idx].desktop_idx;
+            }
+        }
+    } else {
+        // A launched: use the D-pad focused item.
+        idx = FocusedDesktopIdx();
+    }
+
     if (idx == SIZE_MAX) {
-        UL_LOG_WARN("qdesktop: Launchpad DispatchPendingLaunch: no valid focused idx");
+        UL_LOG_WARN("qdesktop: Launchpad DispatchPendingLaunch: no valid idx"
+                    " (from_mouse=%d)", static_cast<int>(pending_launch_from_mouse_));
         return;
     }
-    UL_LOG_INFO("qdesktop: Launchpad DispatchPendingLaunch idx=%zu", idx);
+    UL_LOG_INFO("qdesktop: Launchpad DispatchPendingLaunch idx=%zu from_mouse=%d",
+                idx, static_cast<int>(pending_launch_from_mouse_));
     desktop_icons_ptr_->LaunchIcon(idx);
 }
 
@@ -237,9 +319,9 @@ void QdLaunchpadElement::PushQueryChar(char c) {
     // Clamp focus to the new (possibly shorter) filtered set.
     const size_t n = FilteredCount();
     if (n == 0u) {
-        focus_filtered_ = 0u;
-    } else if (focus_filtered_ >= n) {
-        focus_filtered_ = n - 1u;
+        dpad_focus_index_ = 0u;
+    } else if (dpad_focus_index_ >= n) {
+        dpad_focus_index_ = n - 1u;
     }
 }
 
@@ -250,9 +332,9 @@ void QdLaunchpadElement::PopQueryChar() {
         RebuildFilter();
         const size_t n = FilteredCount();
         if (n == 0u) {
-            focus_filtered_ = 0u;
-        } else if (focus_filtered_ >= n) {
-            focus_filtered_ = n - 1u;
+            dpad_focus_index_ = 0u;
+        } else if (dpad_focus_index_ >= n) {
+            dpad_focus_index_ = n - 1u;
         }
     }
 }
@@ -261,7 +343,7 @@ void QdLaunchpadElement::ClearQuery() {
     query_.clear();
     filter_dirty_ = true;
     RebuildFilter();
-    focus_filtered_ = 0u;
+    dpad_focus_index_ = 0u;
 }
 
 // ── FocusedDesktopIdx ─────────────────────────────────────────────────────────
@@ -270,10 +352,10 @@ size_t QdLaunchpadElement::FocusedDesktopIdx() const {
     if (!is_open_ || filtered_idxs_.empty()) {
         return SIZE_MAX;
     }
-    if (focus_filtered_ >= filtered_idxs_.size()) {
+    if (dpad_focus_index_ >= filtered_idxs_.size()) {
         return SIZE_MAX;
     }
-    const size_t item_idx = filtered_idxs_[focus_filtered_];
+    const size_t item_idx = filtered_idxs_[dpad_focus_index_];
     if (item_idx >= items_.size()) {
         return SIZE_MAX;
     }
@@ -283,7 +365,7 @@ size_t QdLaunchpadElement::FocusedDesktopIdx() const {
 // ── OnInput ───────────────────────────────────────────────────────────────────
 
 void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held*/,
-                                  pu::ui::TouchPoint /*touch_pos*/)
+                                  pu::ui::TouchPoint touch_pos)
 {
     if (!is_open_) {
         return;
@@ -309,40 +391,122 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         return;
     }
 
+    // ── Fix D (v1.6.12): Touch tap on the auto-folder tile strip ─────────────
+    // The folder tile strip occupies a horizontal band starting at:
+    //   y = LP_SEARCH_BAR_Y + LP_SEARCH_BAR_H + 6 = 138 px
+    //   height = 36 px (FTILE_H from OnRender)
+    // "All" tile:  x = LP_SEARCH_BAR_X - 208 .. LP_SEARCH_BAR_X - 9
+    //              = 92 .. 291
+    // Spec tiles:  starting at LP_SEARCH_BAR_X = 300, 200 px wide, 8 px gap.
+    //
+    // Touch points are checked against this strip; a valid hit sets
+    // active_folder_ and marks filter_dirty_ so RebuildFilter runs next frame.
+    {
+        // touch_pos.IsEmpty() / valid tap is signalled by keys_down containing
+        // the Plutonium touch-tap flag. Use the x/y fields when the point is
+        // non-zero (the framework sets {0,0} when there is no active touch).
+        const bool has_touch = (touch_pos.x != 0 || touch_pos.y != 0);
+        if (has_touch) {
+            const s32 tx = static_cast<s32>(touch_pos.x);
+            const s32 ty = static_cast<s32>(touch_pos.y);
+
+            // Tile strip geometry (mirrors OnRender step 3.5).
+            static constexpr s32 FTILE_W       = 200;
+            static constexpr s32 FTILE_H       = 36;
+            static constexpr s32 FTILE_GAP     = 8;
+            static constexpr s32 FTILE_STRIP_Y = LP_SEARCH_BAR_Y + LP_SEARCH_BAR_H + 6;
+
+            if (ty >= FTILE_STRIP_Y && ty < FTILE_STRIP_Y + FTILE_H) {
+                // Check "All" tile: x range [LP_SEARCH_BAR_X - FTILE_W - FTILE_GAP,
+                //                             LP_SEARCH_BAR_X - FTILE_GAP)
+                const s32 all_tile_x = LP_SEARCH_BAR_X - FTILE_W - FTILE_GAP;
+                if (tx >= all_tile_x && tx < all_tile_x + FTILE_W) {
+                    if (active_folder_ != AutoFolderIdx::None) {
+                        active_folder_ = AutoFolderIdx::None;
+                        filter_dirty_  = true;
+                    }
+                } else {
+                    // Walk the spec tiles in the same order as OnRender.
+                    // Count bucket occupancy to skip empty tiles (which are not
+                    // rendered and thus have no hit area).
+                    s32 spec_tile_x = LP_SEARCH_BAR_X;
+                    for (size_t fi = 0u; fi < kTopLevelFolderCount; ++fi) {
+                        // Count items in this bucket (same walk as OnRender 3.5).
+                        size_t bucket_count = 0u;
+                        for (const LpItem &it : items_) {
+                            const std::string sid = StableIdForItem(it);
+                            const AutoFolderIdx fidx = LookupFolderIdx(sid);
+                            if (fidx == kTopLevelFolders[fi].idx) {
+                                ++bucket_count;
+                            }
+                        }
+
+                        if (bucket_count == 0u) {
+                            continue;  // Empty bucket: tile not rendered, skip.
+                        }
+
+                        if (tx >= spec_tile_x && tx < spec_tile_x + FTILE_W) {
+                            // Hit: set this folder as the active filter.
+                            const AutoFolderIdx new_folder = kTopLevelFolders[fi].idx;
+                            if (active_folder_ != new_folder) {
+                                active_folder_ = new_folder;
+                                filter_dirty_  = true;
+                                // Clamp D-pad focus to the new filtered set.
+                                dpad_focus_index_ = 0u;
+                            }
+                            break;
+                        }
+                        spec_tile_x += FTILE_W + FTILE_GAP;
+                    }
+                }
+            }
+        }
+    }
+
     if (n == 0u) {
         return;  // Nothing to navigate.
     }
 
-    // ── D-pad navigation (clamp at edges — no wrapping, per spec) ────────────
+    // D-pad navigation: clamp at edges, no wrapping, per spec. ──────────────
     if (keys_down & HidNpadButton_Up) {
-        if (focus_filtered_ >= static_cast<size_t>(LP_COLS)) {
-            focus_filtered_ -= static_cast<size_t>(LP_COLS);
+        if (dpad_focus_index_ >= static_cast<size_t>(LP_COLS)) {
+            dpad_focus_index_ -= static_cast<size_t>(LP_COLS);
         } else {
-            focus_filtered_ = 0u;
+            dpad_focus_index_ = 0u;
         }
     }
     if (keys_down & HidNpadButton_Down) {
-        const size_t stepped = focus_filtered_ + static_cast<size_t>(LP_COLS);
-        focus_filtered_ = (stepped < n) ? stepped : (n - 1u);
+        const size_t stepped = dpad_focus_index_ + static_cast<size_t>(LP_COLS);
+        dpad_focus_index_ = (stepped < n) ? stepped : (n - 1u);
     }
     if (keys_down & HidNpadButton_Left) {
-        if (focus_filtered_ > 0u) {
-            focus_filtered_ -= 1u;
+        if (dpad_focus_index_ > 0u) {
+            dpad_focus_index_ -= 1u;
         }
     }
     if (keys_down & HidNpadButton_Right) {
-        if (focus_filtered_ + 1u < n) {
-            focus_filtered_ += 1u;
+        if (dpad_focus_index_ + 1u < n) {
+            dpad_focus_index_ += 1u;
         }
     }
 
-    // ── A / ZR: launch focused item ───────────────────────────────────────────
-    if ((keys_down & HidNpadButton_A) || (keys_down & HidNpadButton_ZR)) {
-        if (focus_filtered_ < n) {
-            pending_launch_ = true;
-            // Do NOT call Close() here — the host must first call
-            // desktop_icons->LaunchIcon(FocusedDesktopIdx()), then Close().
-            // We mark the intent; the host dispatches on IsPendingLaunch().
+    // Fix B (v1.6.12): A and ZR are independent input sources.
+    // A launches the D-pad focused item; ZR launches the mouse-hovered item.
+    // pending_launch_from_mouse_ tells DispatchPendingLaunch() which index to use.
+
+    // ── A: launch D-pad focused item ─────────────────────────────────────────
+    if (keys_down & HidNpadButton_A) {
+        if (dpad_focus_index_ < n) {
+            pending_launch_            = true;
+            pending_launch_from_mouse_ = false;
+        }
+    }
+
+    // ── ZR: launch mouse-hovered item ────────────────────────────────────────
+    if (keys_down & HidNpadButton_ZR) {
+        if (mouse_hover_index_ < n) {
+            pending_launch_            = true;
+            pending_launch_from_mouse_ = true;
         }
     }
 }
@@ -487,6 +651,59 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         }
     }
 
+    // ── 3.5. Fix D (v1.6.12): Auto-folder tile strip ─────────────────────────
+    // Render up to kTopLevelFolderCount tiles in a horizontal strip between the
+    // search bar and the icon grid.  Only tiles for non-empty buckets are drawn;
+    // the active bucket (active_folder_) gets an accent border.
+    // Tile geometry: strip top = LP_SEARCH_BAR_Y + LP_SEARCH_BAR_H + 6 px gap.
+    // Each tile: 200 px wide, 36 px tall, 8 px horizontal gap between tiles.
+    // The strip is left-aligned at LP_SEARCH_BAR_X so it aligns with the search bar.
+    {
+        // Count items per AutoFolderIdx bucket (walk all items, not filtered).
+        size_t bucket_count[kTopLevelFolderCount] = {};
+        for (const LpItem &it : items_) {
+            const std::string sid = StableIdForItem(it);
+            const AutoFolderIdx fidx = LookupFolderIdx(sid);
+            const u8 raw = static_cast<u8>(fidx);
+            if (raw >= 1u && raw <= static_cast<u8>(kTopLevelFolderCount)) {
+                bucket_count[raw - 1u] += 1u;  // kTopLevelFolders[0] = NxGames (idx=1)
+            }
+        }
+
+        static constexpr s32 FTILE_W       = 200;
+        static constexpr s32 FTILE_H       = 36;
+        static constexpr s32 FTILE_GAP     = 8;
+        static constexpr s32 FTILE_STRIP_Y = LP_SEARCH_BAR_Y + LP_SEARCH_BAR_H + 6;
+
+        s32 tile_x = LP_SEARCH_BAR_X;
+        for (size_t fi = 0u; fi < kTopLevelFolderCount; ++fi) {
+            if (bucket_count[fi] == 0u) {
+                continue;  // Skip empty buckets -- no tile rendered.
+            }
+            const TopLevelFolderSpec &spec = kTopLevelFolders[fi];
+            const bool is_active = (active_folder_ == spec.idx);
+            PaintFolderTile(r, tile_x, FTILE_STRIP_Y, FTILE_W, FTILE_H,
+                            spec.display_name, bucket_count[fi], is_active);
+            tile_x += FTILE_W + FTILE_GAP;
+        }
+
+        // "All" tile: always first; shows all items when active_folder_ == None.
+        // Rendered to the LEFT of the spec-based tiles -- insert before the loop.
+        // (Re-render: clear what we drew above, prepend "All" tile, re-emit in order.)
+        // Simpler approach: render "All" tile at a fixed position 208 px before LP_SEARCH_BAR_X.
+        // LP_SEARCH_BAR_X = 300; LP_SEARCH_BAR_X - 208 = 92; safe for 1920-width overlay.
+        {
+            const bool all_active = (active_folder_ == AutoFolderIdx::None);
+            PaintFolderTile(r,
+                            LP_SEARCH_BAR_X - FTILE_W - FTILE_GAP,
+                            FTILE_STRIP_Y,
+                            FTILE_W, FTILE_H,
+                            "All",
+                            items_.size(),
+                            all_active);
+        }
+    }
+
     // ── 4. Section headers ────────────────────────────────────────────────────
     // Walk the filtered list and emit a section label wherever LpSortKind
     // transitions.  The first row header sits at y = LP_GRID_Y - 24 above the
@@ -540,8 +757,10 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         // Cull cells that would render below the status line (1080 - 48 = 1032).
         if (cy + LP_CELL_H > 1032) { continue; }
 
-        PaintCell(r, items_[item_idx], item_idx, cx, cy,
-                  (vpos == focus_filtered_));
+        // Fix B (v1.6.12): highlight if D-pad focused OR mouse-hovered.
+        const bool cell_highlighted = (vpos == dpad_focus_index_)
+                                   || (vpos == mouse_hover_index_);
+        PaintCell(r, items_[item_idx], item_idx, cx, cy, cell_highlighted);
     }
 
     // ── 6. Status line ────────────────────────────────────────────────────────
@@ -558,34 +777,198 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     PaintStatusLine(r, nintendo_count, homebrew_count, extras_count, builtin_count);
 }
 
+// ── StableIdForItem ───────────────────────────────────────────────────────────
+// Fix D (v1.6.12): reconstruct the stable ID string for an LpItem.
+//
+// This mirrors the four registration forms in qd_DesktopIcons.cpp exactly:
+//   Builtin    -> "builtin:<name>"            (is_builtin == true)
+//   Application -> "app:<16 lowercase hex>"   (app_id != 0, !is_builtin)
+//   Payload    -> "payload:<basename>"         (icon_category == Payloads)
+//   NRO        -> nro_path verbatim            (fallthrough)
+//
+// The function may NOT extend LpItem. All fields used here already exist in
+// the struct (app_id, is_builtin, icon_category, nro_path, name).
+
+// static
+std::string QdLaunchpadElement::StableIdForItem(const LpItem &item)
+{
+    // Builtin entries are identified by the is_builtin flag set during Open().
+    if (item.is_builtin) {
+        std::string sid;
+        sid.reserve(8u + strnlen(item.name, sizeof(item.name)));
+        sid = "builtin:";
+        sid += item.name;
+        return sid;
+    }
+
+    // Application entries carry a non-zero app_id (Nintendo title ID).
+    if (item.app_id != 0u) {
+        char hex[17];
+        snprintf(hex, sizeof(hex), "%016lx", static_cast<unsigned long>(item.app_id));
+        std::string sid;
+        sid.reserve(4u + 16u);
+        sid = "app:";
+        sid += hex;
+        return sid;
+    }
+
+    // Payload entries have icon_category == IconCategory::Payloads.
+    // The stable ID uses the basename of nro_path (the .bin filename).
+    if (item.icon_category == IconCategory::Payloads) {
+        // Find the last '/' in nro_path to extract the basename.
+        const char *p = item.nro_path;
+        const char *slash = nullptr;
+        for (const char *q = p; *q != '\0'; ++q) {
+            if (*q == '/') {
+                slash = q;
+            }
+        }
+        const char *base = (slash != nullptr) ? (slash + 1) : p;
+        std::string sid;
+        sid.reserve(8u + strnlen(base, sizeof(item.nro_path)));
+        sid = "payload:";
+        sid += base;
+        return sid;
+    }
+
+    // Plain NRO: stable ID is the full nro_path verbatim.
+    return std::string(item.nro_path);
+}
+
+// ── PaintFolderTile ───────────────────────────────────────────────────────────
+// Fix D (v1.6.12): render one auto-folder tile at screen rect (tx, ty, tw, th).
+//
+// Visual design:
+//   Background  : surface_glass at 80% alpha; brightened by 0x18 when is_active.
+//   Border      : 1px accent-colour ring when is_active; 1px dim ring otherwise.
+//   Label text  : display_name label left-padded 6 px; vertically centred.
+//   Count badge : small count "(N)" right of label, slightly dimmer colour.
+//
+// Blend mode on entry is unspecified; this function sets its own blend mode for
+// each draw call and does not restore the prior state (callers in OnRender do
+// not rely on a particular mode after PaintFolderTile returns).
+
+void QdLaunchpadElement::PaintFolderTile(SDL_Renderer *r,
+                                          s32 tx, s32 ty,
+                                          s32 tile_w, s32 tile_h,
+                                          const char *label,
+                                          size_t item_count,
+                                          bool is_active) const
+{
+    // ── Background fill ───────────────────────────────────────────────────────
+    const u8 bg_r_base = theme_.surface_glass.r;
+    const u8 bg_g_base = theme_.surface_glass.g;
+    const u8 bg_b_base = theme_.surface_glass.b;
+
+    const u8 bg_r = is_active
+        ? static_cast<u8>(std::min(255, (int)bg_r_base + 0x18))
+        : bg_r_base;
+    const u8 bg_g = is_active
+        ? static_cast<u8>(std::min(255, (int)bg_g_base + 0x18))
+        : bg_g_base;
+    const u8 bg_b = is_active
+        ? static_cast<u8>(std::min(255, (int)bg_b_base + 0x18))
+        : bg_b_base;
+
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, bg_r, bg_g, bg_b, 0xCCu);  // 80% alpha
+    SDL_Rect bg_rect { tx, ty, tile_w, tile_h };
+    SDL_RenderFillRect(r, &bg_rect);
+
+    // ── Border ────────────────────────────────────────────────────────────────
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    if (is_active) {
+        SDL_SetRenderDrawColor(r,
+            theme_.accent.r, theme_.accent.g, theme_.accent.b, 0xFFu);
+    } else {
+        // Dim ring: text_secondary colour at 60% opacity.
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(r,
+            theme_.text_secondary.r,
+            theme_.text_secondary.g,
+            theme_.text_secondary.b,
+            0x99u);  // ~60%
+    }
+    SDL_Rect border { tx, ty, tile_w, tile_h };
+    SDL_RenderDrawRect(r, &border);
+
+    // ── Label text ────────────────────────────────────────────────────────────
+    // Build "<label> (N)" string. Max label buffer: 64 + 12 = 76 chars.
+    char label_buf[80];
+    snprintf(label_buf, sizeof(label_buf), "%s (%zu)", label, item_count);
+
+    const pu::ui::Color text_col =
+        is_active
+            ? pu::ui::Color{ 0xFFu, 0xFFu, 0xFFu, 0xFFu }
+            : pu::ui::Color{ theme_.text_secondary.r,
+                             theme_.text_secondary.g,
+                             theme_.text_secondary.b,
+                             0xFFu };
+
+    SDL_Texture *lt = pu::ui::render::RenderText(
+        pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+        label_buf, text_col,
+        static_cast<u32>(tile_w - 12));  // wrap at tile width - 6px left + 6px right pad
+
+    if (lt) {
+        int lw = 0, lh = 0;
+        SDL_QueryTexture(lt, nullptr, nullptr, &lw, &lh);
+        const s32 lx = tx + 6;
+        const s32 ly = ty + (tile_h - lh) / 2;
+        SDL_Rect ldst { lx, ly, lw, lh };
+        SDL_RenderCopy(r, lt, nullptr, &ldst);
+        SDL_DestroyTexture(lt);
+    }
+}
+
 // ── RebuildFilter ─────────────────────────────────────────────────────────────
 
 void QdLaunchpadElement::RebuildFilter() {
     filtered_idxs_.clear();
-    if (query_.empty()) {
-        // No query: all items are visible.
+
+    // Fix D (v1.6.12): build the query-lowercased string once, used below.
+    // If query is empty AND no folder filter is active, fast-path all items.
+    const bool folder_filter = (active_folder_ != AutoFolderIdx::None);
+
+    if (query_.empty() && !folder_filter) {
+        // No query, no folder filter: all items visible.
         filtered_idxs_.reserve(items_.size());
         for (size_t i = 0u; i < items_.size(); ++i) {
             filtered_idxs_.push_back(i);
         }
-    } else {
-        // Case-insensitive ASCII substring search.
-        // Mirrors launchpad.rs Launchpad::filtered_indices():
-        //   q = query.to_ascii_lowercase()
-        //   item.name.to_ascii_lowercase().contains(&q[..])
-        char q_lower[64];
-        const size_t qlen = std::min(query_.size(), sizeof(q_lower) - 1u);
+        filter_dirty_ = false;
+        return;
+    }
+
+    // Prepare lowercased query (may be empty when only folder filter is active).
+    char q_lower[64] = {};
+    size_t qlen = 0u;
+    if (!query_.empty()) {
+        qlen = std::min(query_.size(), sizeof(q_lower) - 1u);
         for (size_t i = 0u; i < qlen; ++i) {
             q_lower[i] = static_cast<char>(
                 std::tolower(static_cast<unsigned char>(query_[i])));
         }
         q_lower[qlen] = '\0';
+    }
 
-        for (size_t i = 0u; i < items_.size(); ++i) {
-            const char *name = items_[i].name;
-            // Build lower-cased version of the item name.
+    for (size_t i = 0u; i < items_.size(); ++i) {
+        const LpItem &it = items_[i];
+
+        // Fix D (v1.6.12): apply folder filter first (cheapest check).
+        if (folder_filter) {
+            const std::string sid = StableIdForItem(it);
+            const AutoFolderIdx fidx = LookupFolderIdx(sid);
+            if (fidx != active_folder_) {
+                continue;  // Item belongs to a different bucket; exclude it.
+            }
+        }
+
+        // Apply text query filter (when query is non-empty).
+        if (qlen > 0u) {
+            const char *name = it.name;
             char name_lower[64];
-            const size_t nlen = std::min(strnlen(name, sizeof(items_[i].name)),
+            const size_t nlen = std::min(strnlen(name, sizeof(it.name)),
                                          sizeof(name_lower) - 1u);
             for (size_t j = 0u; j < nlen; ++j) {
                 name_lower[j] = static_cast<char>(
@@ -593,12 +976,14 @@ void QdLaunchpadElement::RebuildFilter() {
             }
             name_lower[nlen] = '\0';
 
-            // Substring search — strstr on the lowercased pair.
-            if (strstr(name_lower, q_lower) != nullptr) {
-                filtered_idxs_.push_back(i);
+            if (strstr(name_lower, q_lower) == nullptr) {
+                continue;  // Does not match query; exclude.
             }
         }
+
+        filtered_idxs_.push_back(i);
     }
+
     filter_dirty_ = false;
 }
 

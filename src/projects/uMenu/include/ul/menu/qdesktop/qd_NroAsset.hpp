@@ -76,4 +76,15 @@ void HslToRgb(u32 h_deg, float s, float l,
 // Allocates 64*64*4 bytes (caller must free with delete[]).
 u8 *MakeFallbackIcon(const char *nro_path);
 
+// Fix C (v1.6.12): resolve a creator-provided icon for a payload or system tool.
+// Tries candidate paths in order using fopen existence checks:
+//   1. sdmc:/bootloader/payloads/<stem>.jpg / .bmp / .png
+//   2. sdmc:/switch/<stem>/icon.jpg
+//   3. sdmc:/atmosphere/config/reboot_to_payload/icons/<stem>.jpg
+// where <stem> is payload_name with any .bin / .nro / .kip extension stripped.
+//
+// Returns the first path that exists, or an empty string if none found.
+// The returned string is suitable for passing to LoadJpegIconToCache.
+std::string ResolvePayloadIcon(const char *payload_name);
+
 } // namespace ul::menu::qdesktop

@@ -6,6 +6,7 @@
 //   via LoadJpegIconToCache(); LaunchIcon() dispatches smi::LaunchApplication for apps.
 
 #include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
+#include <ul/menu/qdesktop/qd_AutoFolders.hpp>  // Fix D (v1.6.12): auto-folder side table
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
 #include <ul/menu/qdesktop/qd_IconCategory.hpp>
 #include <ul/menu/qdesktop/qd_Anim.hpp>
@@ -156,6 +157,129 @@ IconCategory QdDesktopIconsElement::ClassifyEntry(const NroEntry &e) {
     return IconCategory::Extras;
 }
 
+// ── Fix D (v1.6.12): Auto-folder classification side table ────────────────────
+// Finer-grained classification for folder assignment.  Stored in a static
+// unordered_map keyed by a per-kind stable ID string rather than by pointer or
+// struct field to AVOID extending NroEntry, LpItem, or any libnx-visible struct
+// (extending those would corrupt the libnx IPC command table).
+//
+// Stable ID convention:
+//   NRO entry          → nro_path string   (e.g. "sdmc:/switch/sys-clk.nro")
+//   Application entry  → "app:<hex16>"     (e.g. "app:01007EF00011E000")
+//   Payload entry      → "payload:<fname>" (e.g. "payload:Atmosphere.bin")
+//   Builtin/Special    → "builtin:<name>"  (e.g. "builtin:Settings")
+//
+// The table is populated by the three scan functions (ScanNros,
+// SetApplicationEntries, ScanPayloads) and by PopulateBuiltins.
+// Consumers call GetAutoFolderKind(stable_id) to retrieve the kind.
+
+// ClassifyKind is declared in qd_DesktopIcons.hpp (included above).
+
+// Name-substring rules applied (in order) when classifying NRO homebrew.
+// First matching rule wins.  Comparison is case-insensitive on the entry name.
+// app_id_* fields are used for Application entries (name_substr==nullptr means
+// skip the name check; apply the app_id mask/value check instead).
+struct AutoFolderSpec {
+    const char  *name_substr; // substring to match against entry name; nullptr=skip name check
+    u64          app_id_mask; // 0 = skip app_id check
+    u64          app_id_value;
+    ClassifyKind kind;
+};
+
+// Helper: case-insensitive substring search (avoids <strings.h> dependency).
+static bool CiStrStr(const char *haystack, const char *needle) {
+    if (!needle || needle[0] == '\0') { return true; }
+    if (!haystack) { return false; }
+    for (size_t i = 0; haystack[i] != '\0'; ++i) {
+        size_t j = 0;
+        for (; needle[j] != '\0'; ++j) {
+            const char h = static_cast<char>(
+                (haystack[i + j] >= 'A' && haystack[i + j] <= 'Z')
+                ? haystack[i + j] + 32 : haystack[i + j]);
+            const char n = static_cast<char>(
+                (needle[j] >= 'A' && needle[j] <= 'Z')
+                ? needle[j] + 32 : needle[j]);
+            if (h != n) { break; }
+        }
+        if (needle[j] == '\0') { return true; }
+    }
+    return false;
+}
+
+// Ordered classification rules for NRO homebrew.  Emulator keywords take
+// priority over generic tool keywords so "yuzu" ranks as Emulator, not Tool.
+static const AutoFolderSpec kAutoFolderSpecs[] = {
+    // Emulators (name substrings that strongly imply emulation).
+    { "yuzu",      0, 0, ClassifyKind::Emulator },
+    { "ryujinx",   0, 0, ClassifyKind::Emulator },
+    { "retroarch", 0, 0, ClassifyKind::Emulator },
+    { "melonds",   0, 0, ClassifyKind::Emulator },
+    { "ppsspp",    0, 0, ClassifyKind::Emulator },
+    { "desmume",   0, 0, ClassifyKind::Emulator },
+    { "mupen64",   0, 0, ClassifyKind::Emulator },
+    { "dolphin",   0, 0, ClassifyKind::Emulator },
+    { "citra",     0, 0, ClassifyKind::Emulator },
+    { "bsnes",     0, 0, ClassifyKind::Emulator },
+    { "snes9x",    0, 0, ClassifyKind::Emulator },
+    { "mgba",      0, 0, ClassifyKind::Emulator },
+    { "nestopia",  0, 0, ClassifyKind::Emulator },
+    { "mednafen",  0, 0, ClassifyKind::Emulator },
+    // System utilities / tweaks.
+    { "sys-clk",   0, 0, ClassifyKind::SystemUtil },
+    { "sysclk",    0, 0, ClassifyKind::SystemUtil },
+    { "edizon",    0, 0, ClassifyKind::SystemUtil },
+    { "goldleaf",  0, 0, ClassifyKind::SystemUtil },
+    { "tinfoil",   0, 0, ClassifyKind::SystemUtil },
+    { "awoo",      0, 0, ClassifyKind::SystemUtil },
+    { "dbi",       0, 0, ClassifyKind::SystemUtil },
+    { "hekate",    0, 0, ClassifyKind::SystemUtil },
+    { "nxmtp",     0, 0, ClassifyKind::SystemUtil },
+    { "umanager",  0, 0, ClassifyKind::SystemUtil },
+    { "nxovl",     0, 0, ClassifyKind::SystemUtil },
+    { "nxtheme",   0, 0, ClassifyKind::SystemUtil },
+    // Generic homebrew tools.
+    { "hbmenu",    0, 0, ClassifyKind::HomebrewTool },
+    { "nro",       0, 0, ClassifyKind::HomebrewTool },
+    // Sentinel — matches nothing; default for unrecognised entries.
+    { nullptr,     0, 0, ClassifyKind::Unknown },
+};
+
+// Static side table: stable_id -> ClassifyKind.
+// Populated incrementally by ScanNros, SetApplicationEntries, ScanPayloads,
+// and PopulateBuiltins.  Never cleared between frames; rebuilt if Initialize()
+// is called again.
+static std::unordered_map<std::string, ClassifyKind> g_entry_classification_;
+
+// Classify an NRO entry against kAutoFolderSpecs[].
+// Loop stops when both name_substr == nullptr and app_id_mask == 0 (sentinel).
+// Returns the first matching ClassifyKind, or ClassifyKind::Unknown.
+static ClassifyKind ClassifyNroAutoFolder(const NroEntry &e) {
+    for (const AutoFolderSpec *spec = kAutoFolderSpecs;
+         spec->name_substr != nullptr || spec->app_id_mask != 0;
+         ++spec) {
+        if (spec->name_substr != nullptr) {
+            if (CiStrStr(e.name, spec->name_substr)) {
+                return spec->kind;
+            }
+        } else if (spec->app_id_mask != 0) {
+            if ((e.app_id & spec->app_id_mask) == spec->app_id_value) {
+                return spec->kind;
+            }
+        }
+    }
+    return ClassifyKind::Unknown;
+}
+
+// Public accessor — declared in qd_DesktopIcons.hpp.
+// static
+ClassifyKind QdDesktopIconsElement::GetAutoFolderKind(const std::string &stable_id) {
+    auto it = g_entry_classification_.find(stable_id);
+    if (it != g_entry_classification_.end()) {
+        return it->second;
+    }
+    return ClassifyKind::Unknown;
+}
+
 // ── Click tolerance ───────────────────────────────────────────────────────────
 // Maximum Euclidean pixel displacement (squared comparison to avoid sqrt) from
 // TouchDown to TouchUp that still classifies as a click rather than a drag.
@@ -188,7 +312,7 @@ static constexpr BuiltinIconDef BUILTIN_ICON_DEFS[BUILTIN_ICON_COUNT] = {
 // ── Constructor / Destructor ──────────────────────────────────────────────────
 
 QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
-    : theme_(theme), icon_count_(0), focused_idx_(0),
+    : theme_(theme), icon_count_(0), dpad_focus_index_(0), mouse_hover_index_(SIZE_MAX),
       prev_magnify_center_(-1), magnify_center_(-1), frame_tick_(0),
       app_entry_start_idx_(0),
       pressed_(false), down_x_(0), down_y_(0),
@@ -234,19 +358,27 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
     const bool cache_dir_ok = cache_.EnsureDir();
     UL_LOG_INFO("qdesktop: icon cache dir ensure result = %d", cache_dir_ok ? 1 : 0);
 
-    // Pre-populate built-in dock icons, then scan NRO files.
+    // Fix D (v1.6.12): clear the auto-folder side table before any scan so stale
+    // entries from a previous enumeration (e.g. re-init after SD remount) do not
+    // accumulate.  RegisterClassification() is called by each Scan/Populate function
+    // below immediately after constructing each entry.
+    ClearClassifications();
+
+    // Pre-populate built-in dock icons, then scan NRO files, then payloads.
     PopulateBuiltins();
     const size_t after_builtins = icon_count_;
     ScanNros();
+    const size_t after_nros = icon_count_;
+    ScanPayloads(); // Fix C (v1.6.12): Hekate payload entries with creator icons
     const size_t after_scan = icon_count_;
 
     // Record where Application entries will begin.  SetApplicationEntries() truncates
     // icon_count_ back to this index and re-appends on every call.
     app_entry_start_idx_ = icon_count_;
 
-    UL_LOG_INFO("qdesktop: builtins=%zu scan_added=%zu app_slot_start=%zu total_static=%zu",
-                after_builtins, after_scan - after_builtins,
-                app_entry_start_idx_, after_scan);
+    UL_LOG_INFO("qdesktop: builtins=%zu nros=%zu payloads=%zu app_slot_start=%zu total_static=%zu",
+                after_builtins, after_nros - after_builtins,
+                after_scan - after_nros, app_entry_start_idx_, after_scan);
 }
 
 QdDesktopIconsElement::~QdDesktopIconsElement() {
@@ -405,6 +537,14 @@ void QdDesktopIconsElement::PopulateBuiltins() {
         e.kind         = IconKind::Builtin;
         e.app_id       = 0;
         e.special_subtype = 0;
+        // Fix D (v1.6.12): stable ID for builtin entries is "builtin:<name>".
+        {
+            char stable_id[80];
+            snprintf(stable_id, sizeof(stable_id), "builtin:%s",
+                     BUILTIN_ICON_DEFS[i].name);
+            g_entry_classification_[stable_id] = ClassifyKind::Builtin;
+            RegisterClassification(stable_id, ClassifyKind::Builtin);
+        }
         ++icon_count_;
     }
 }
@@ -474,10 +614,179 @@ void QdDesktopIconsElement::ScanNros() {
         e.kind         = IconKind::Nro;
         e.app_id       = 0;
         e.special_subtype = 0;
+        // Fix D (v1.6.12): classify into the auto-folder side table.
+        // Stable ID for NRO entries is the nro_path string.
+        {
+            const ClassifyKind ck = ClassifyNroAutoFolder(e);
+            g_entry_classification_[nro_path] = ck;
+            RegisterClassification(nro_path, ck);
+        }
         ++icon_count_;
     }
 
     closedir(d);
+
+    // v1.6.11 Fix 2: also scan sdmc:/ (SD root) for top-level NRO files such as
+    // hbmenu.nro and uManager.nro.  The original loop only covers sdmc:/switch/,
+    // so SD-root NROs were never added to icons_[] and their ExtractNroIcon call
+    // was never reached -- they always fell through to the neutral-gray fallback.
+    DIR *d_root = opendir("sdmc:/");
+    if (d_root) {
+        struct dirent *ent_root;
+        while ((ent_root = readdir(d_root)) != nullptr) {
+            if (icon_count_ >= MAX_ICONS) {
+                break;
+            }
+            const char *fname = ent_root->d_name;
+
+            // Skip hidden / dot entries.
+            if (fname[0] == '.') {
+                continue;
+            }
+
+            // Accept only files whose names end in ".nro".
+            const size_t flen = strlen(fname);
+            if (flen < 5u) { // minimum: "x.nro"
+                continue;
+            }
+            if (strcmp(fname + flen - 4u, ".nro") != 0) {
+                continue;
+            }
+
+            // Full path: "sdmc:/<fname>"
+            char nro_path[768];
+            int written = snprintf(nro_path, sizeof(nro_path), "sdmc:/%s", fname);
+            if (written <= 0 || static_cast<size_t>(written) >= sizeof(nro_path)) {
+                continue; // Path too long -- skip.
+            }
+
+            // Display stem: filename without the ".nro" suffix.
+            char stem[64];
+            const size_t stem_len = flen - 4u;
+            if (stem_len == 0u || stem_len >= sizeof(stem)) {
+                continue;
+            }
+            memcpy(stem, fname, stem_len);
+            stem[stem_len] = '\0';
+
+            // Classify by stem name (no NACP available at scan time).
+            CategoryResult cat = Classify("", stem);
+
+            NroEntry &e = icons_[icon_count_];
+            snprintf(e.name,     sizeof(e.name),     "%s", stem);
+            e.glyph        = cat.glyph;
+            e.bg_r         = cat.r;
+            e.bg_g         = cat.g;
+            e.bg_b         = cat.b;
+            snprintf(e.nro_path, sizeof(e.nro_path), "%s", nro_path);
+            e.icon_path[0] = '\0';
+            e.is_builtin   = false;
+            e.dock_slot    = 0;
+            e.category     = cat.category;
+            e.icon_category = IconCategory::Homebrew;
+            e.icon_loaded  = false;
+            e.kind         = IconKind::Nro;
+            e.app_id       = 0;
+            e.special_subtype = 0;
+            // Fix D (v1.6.12): side table for auto-folder classification.
+            {
+                const ClassifyKind ck = ClassifyNroAutoFolder(e);
+                g_entry_classification_[nro_path] = ck;
+                RegisterClassification(nro_path, ck);
+            }
+            ++icon_count_;
+        }
+        closedir(d_root);
+    }
+}
+
+// ── ScanPayloads (Fix C, v1.6.12) ────────────────────────────────────────────
+// Scan sdmc:/bootloader/payloads/ for *.bin files and add each one as a
+// Payloads-category NroEntry.  icon_path is resolved via ResolvePayloadIcon()
+// so any creator-supplied .jpg/.bmp/.png is used for that payload's icon cell.
+// If no icon file is found, icon_path is left empty and the generic glyph/bg is
+// used.  This function is called once from Initialize().
+
+void QdDesktopIconsElement::ScanPayloads() {
+    DIR *d = opendir("sdmc:/bootloader/payloads/");
+    if (!d) {
+        UL_LOG_INFO("qdesktop: ScanPayloads: sdmc:/bootloader/payloads/ not found"
+                    " -- no payload entries added");
+        return;
+    }
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != nullptr) {
+        if (icon_count_ >= MAX_ICONS) {
+            break;
+        }
+        const char *fname = ent->d_name;
+
+        // Skip hidden files.
+        if (fname[0] == '.') {
+            continue;
+        }
+
+        // Skip files that don't end in ".bin" (Hekate payload extension).
+        const size_t flen = strlen(fname);
+        if (flen < 5u) { // ".bin" + at least 1 char
+            continue;
+        }
+        if (strcmp(fname + flen - 4u, ".bin") != 0) {
+            continue;
+        }
+
+        NroEntry &e = icons_[icon_count_];
+
+        // Display name: filename without the ".bin" suffix, truncated to 63 chars.
+        const size_t stem_len = flen - 4u;
+        const size_t copy_len = stem_len < (sizeof(e.name) - 1u)
+                              ? stem_len : (sizeof(e.name) - 1u);
+        memcpy(e.name, fname, copy_len);
+        e.name[copy_len] = '\0';
+
+        // Glyph: 'P' (Payload indicator visible when no icon is loaded).
+        e.glyph  = 'P';
+        // Background colour: dark amber (#4A3800) — distinct from NRO green.
+        e.bg_r   = 0x4A;
+        e.bg_g   = 0x38;
+        e.bg_b   = 0x00;
+
+        // No NRO body — this is a .bin payload.
+        e.nro_path[0] = '\0';
+
+        // Resolve creator-supplied icon; leave empty if none found.
+        const std::string resolved = ResolvePayloadIcon(fname);
+        if (!resolved.empty()) {
+            strncpy(e.icon_path, resolved.c_str(), sizeof(e.icon_path) - 1u);
+            e.icon_path[sizeof(e.icon_path) - 1u] = '\0';
+        } else {
+            e.icon_path[0] = '\0';
+        }
+
+        e.is_builtin      = false;
+        e.dock_slot       = 0xFF;             // not a dock item
+        e.category        = NroCategory::QosApp; // best fit for sort
+        e.icon_category   = IconCategory::Payloads;
+        e.icon_loaded     = false;
+        e.kind            = IconKind::Special; // no ASET, custom launch path
+        e.app_id          = 0;
+        e.special_subtype = 0;
+
+        // Fix D (v1.6.12): register payload in the auto-folder side table.
+        // Stable ID for payload entries is "payload:<fname>" (fname includes .bin).
+        {
+            char stable_id[72];
+            snprintf(stable_id, sizeof(stable_id), "payload:%s", fname);
+            g_entry_classification_[stable_id] = ClassifyKind::Payload;
+            RegisterClassification(stable_id, ClassifyKind::Payload);
+        }
+
+        ++icon_count_;
+    }
+    closedir(d);
+
+    UL_LOG_INFO("qdesktop: ScanPayloads: done, icon_count_ now %zu", icon_count_);
 }
 
 // ── HashToColor ───────────────────────────────────────────────────────────────
@@ -649,7 +958,8 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
                                            const NroEntry &entry,
                                            size_t entry_idx,
                                            s32 x, s32 y,
-                                           bool is_focused)
+                                           bool is_dpad_focused,
+                                           bool is_mouse_hovered)
 {
     // The background rect origin.
     // Rust reference: bg_x = x + ICON_BG_INSET; bg_y = y + 4 (at 1280×720).
@@ -657,9 +967,9 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     const s32 bg_x = x + ICON_BG_INSET;
     const s32 bg_y = y + 6;
 
-    // Determine whether this cell is under the touch cursor this frame.
-    // For SP1 we derive hover from focus identity only (no pointer device).
-    const bool is_hovered = is_focused;
+    // Mouse hover drives the brightness lift; D-pad focus does not
+    // (the focus ring makes selection visible without colour shift).
+    const bool is_hovered = is_mouse_hovered;
 
     // Compute the fill colour with optional hover highlight.
     const u8 base_r = entry.bg_r;
@@ -999,11 +1309,23 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
         }
     }
 
-    // ── 5. Focus ring ─────────────────────────────────────────────────────
-    if (is_focused) {
+    // ── 5. Focus / hover rings ────────────────────────────────────────────
+    // D-pad focus: full-opacity white ring (hard selection indicator).
+    if (is_dpad_focused) {
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
         SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0xFFu);
         SDL_Rect ring { bg_x - 1, bg_y - 1, ICON_BG_W + 2, ICON_BG_H + 2 };
         SDL_RenderDrawRect(r, &ring);
+    }
+    // Mouse hover: half-opacity white ring drawn 1 px further out (softer).
+    // Blended separately so both can appear simultaneously (e.g. cursor lands
+    // on the D-pad focused icon: inner hard ring + outer soft ring stack).
+    if (is_mouse_hovered) {
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0x80u);
+        SDL_Rect soft_ring { bg_x - 2, bg_y - 2, ICON_BG_W + 4, ICON_BG_H + 4 };
+        SDL_RenderDrawRect(r, &soft_ring);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }
 }
 
@@ -1031,6 +1353,18 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     }
     if (!r) {
         return;
+    }
+
+    // ── Per-frame cursor hit-test for mouse_hover_index_ ─────────────────────
+    // Track cursor position every frame so the hover ring stays in sync with
+    // the pointer even when no button is pressed.  This is a read-only operation
+    // (no launch side-effects) -- it only updates the visual highlight.
+    if (cursor_ref_ != nullptr) {
+        const s32 cx = cursor_ref_->GetCursorX();
+        const s32 cy = cursor_ref_->GetCursorY();
+        mouse_hover_index_ = HitTest(cx, cy);
+    } else {
+        mouse_hover_index_ = SIZE_MAX;
     }
 
     // ── Top bar background (translucent dark strip behind status widgets) ────
@@ -1202,8 +1536,9 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
             entry.icon_loaded = true;
         }
 
-        const bool focused = (i == focused_idx_);
-        PaintIconCell(r, entry, i, cell_x, cell_y, focused);
+        const bool dpad_focused   = (i == dpad_focus_index_);
+        const bool mouse_hovered  = (mouse_hover_index_ < icon_count_) && (i == mouse_hover_index_);
+        PaintIconCell(r, entry, i, cell_x, cell_y, dpad_focused, mouse_hovered);
     }
 }
 
@@ -1229,23 +1564,31 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
     (void)keys_up;
     (void)keys_held;
 
-    // ── A / ZR: launch icon under the cursor (or focused icon as fallback) ──
-    // ZR is the primary trigger — it mirrors the A-button action so players can
-    // use either the face button or the shoulder trigger to launch.
-    if ((keys_down & HidNpadButton_A) || (keys_down & HidNpadButton_ZR)) {
+    // ── A: launch the D-pad focused icon (keyboard / controller nav) ─────────
+    // A-button always targets dpad_focus_index_, never the cursor position.
+    // This keeps controller and pointer input streams fully independent.
+    if (keys_down & HidNpadButton_A) {
+        if (dpad_focus_index_ < icon_count_) {
+            LaunchIcon(dpad_focus_index_);
+        }
+    }
+
+    // ── ZR: launch the icon under the cursor (pointer / hover nav) ───────────
+    // ZR performs a fresh hit-test against the current cursor position so the
+    // trigger works correctly even when the cursor moved since the last frame.
+    // Updates mouse_hover_index_ as a side effect so OnRender reflects reality.
+    // No-op if cursor is not wired or cursor is not over any icon.
+    if (keys_down & HidNpadButton_ZR) {
         if (cursor_ref_ != nullptr) {
             const s32 cx = cursor_ref_->GetCursorX();
             const s32 cy = cursor_ref_->GetCursorY();
             const size_t hit = HitTest(cx, cy);
+            mouse_hover_index_ = hit;
             if (hit < icon_count_) {
                 LaunchIcon(hit);
             }
-        } else {
-            // cursor_ref_ not yet wired — fall back to D-pad focused index.
-            // This path is not reachable in normal QDESKTOP_MODE operation
-            // because MainMenuLayout::Initialize() calls SetCursorRef().
-            LaunchIcon(focused_idx_);
         }
+        // ZR is intentionally a no-op when cursor_ref_ is not wired.
     }
 
     // ── ZL / Y: right-click / context menu on the icon under the cursor ──
@@ -1268,7 +1611,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
             ctx_idx = HitTest(cx, cy);
         }
         if (ctx_idx >= icon_count_) {
-            ctx_idx = focused_idx_;
+            ctx_idx = dpad_focus_index_;
         }
         if (ctx_idx < icon_count_ && g_MenuApplication != nullptr) {
             const NroEntry &entry = icons_[ctx_idx];
@@ -1350,6 +1693,37 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                 }
             }
         }
+    }
+
+    // ── D-pad navigation ─────────────────────────────────────────────────────
+
+    if (keys_down & HidNpadButton_Up) {
+        if (dpad_focus_index_ >= static_cast<size_t>(ICON_GRID_COLS)) {
+            dpad_focus_index_ -= static_cast<size_t>(ICON_GRID_COLS);
+        } else {
+            dpad_focus_index_ = 0u;
+        }
+        UL_LOG_INFO("qdesktop: dpad dpad_focus=%zu", dpad_focus_index_);
+    }
+    if (keys_down & HidNpadButton_Down) {
+        if (dpad_focus_index_ + static_cast<size_t>(ICON_GRID_COLS) < icon_count_) {
+            dpad_focus_index_ += static_cast<size_t>(ICON_GRID_COLS);
+        } else {
+            dpad_focus_index_ = (icon_count_ > 0u) ? icon_count_ - 1u : 0u;
+        }
+        UL_LOG_INFO("qdesktop: dpad dpad_focus=%zu", dpad_focus_index_);
+    }
+    if (keys_down & HidNpadButton_Left) {
+        if (dpad_focus_index_ > 0u) {
+            dpad_focus_index_ -= 1u;
+        }
+        UL_LOG_INFO("qdesktop: dpad dpad_focus=%zu", dpad_focus_index_);
+    }
+    if (keys_down & HidNpadButton_Right) {
+        if (dpad_focus_index_ + 1u < icon_count_) {
+            dpad_focus_index_ += 1u;
+        }
+        UL_LOG_INFO("qdesktop: dpad dpad_focus=%zu", dpad_focus_index_);
     }
 
     // ── Touch click-vs-drag state machine ─────────────────────────────────────
@@ -1747,6 +2121,20 @@ void QdDesktopIconsElement::SetApplicationEntries(
         // can apply the title-id heuristic.
         e.icon_category = ClassifyEntry(e);
         e.icon_loaded = false; // forces lazy load on first OnRender pass
+
+        // Fix D (v1.6.12): populate auto-folder side table.
+        // Stable ID for Application entries is "app:<hex16>".
+        {
+            char stable_id[32];
+            snprintf(stable_id, sizeof(stable_id), "app:%016llx",
+                     static_cast<unsigned long long>(e.app_id));
+            const ClassifyKind ck =
+                IsNintendoPublisher(e.app_id)
+                ? ClassifyKind::NintendoGame
+                : ClassifyKind::ThirdPartyGame;
+            g_entry_classification_[stable_id] = ck;
+            RegisterClassification(stable_id, ck);
+        }
 
         ++icon_count_;
         ++added;

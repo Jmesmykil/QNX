@@ -52,16 +52,15 @@ void HslToRgb(u32 h_deg, float s, float l,
 }
 
 u8 *MakeFallbackIcon(const char *nro_path) {
-    u32 h = Djb2Hash32(nro_path);
-    u32 hue = h % 360u;
-    u8 r, g, b;
-    HslToRgb(hue, 0.55f, 0.40f, r, g, b);
+    // v1.6.11: neutral gray #3A3A3A -- no more random HSL colouring.
+    (void)nro_path;
+    constexpr u8 kGray = 0x3A;
     constexpr size_t N = 64 * 64 * 4;
     u8 *buf = new u8[N];
     for (size_t i = 0; i < 64 * 64; ++i) {
-        buf[i * 4 + 0] = r;
-        buf[i * 4 + 1] = g;
-        buf[i * 4 + 2] = b;
+        buf[i * 4 + 0] = kGray;
+        buf[i * 4 + 1] = kGray;
+        buf[i * 4 + 2] = kGray;
         buf[i * 4 + 3] = 0xFF;
     }
     return buf;
@@ -256,40 +255,88 @@ static void test_make_fallback_icon_deterministic() {
     TEST_PASS("make_fallback_icon_deterministic");
 }
 
-static void test_make_fallback_icon_distinct_paths() {
-    // Two different paths should (with high probability) produce different colors.
-    // This test uses paths whose DJB2 hashes we can verify produce hues >= 60 apart.
+static void test_make_fallback_icon_neutral_gray_both_paths() {
+    // v1.6.11: fallback is always #3A3A3A regardless of the NRO path.
+    // Two different paths must produce identical neutral-gray pixels.
     u8 *a = MakeFallbackIcon("sdmc:/switch/hbmenu.nro");
     u8 *b = MakeFallbackIcon("sdmc:/switch/ftpd.nro");
     ASSERT_TRUE(a != nullptr);
     ASSERT_TRUE(b != nullptr);
-    // At least one channel must differ.
-    const bool differs = (a[0] != b[0]) || (a[1] != b[1]) || (a[2] != b[2]);
-    ASSERT_TRUE(differs);
+    // Both must be identical neutral gray.
+    ASSERT_EQ(a[0], 0x3Au);
+    ASSERT_EQ(a[1], 0x3Au);
+    ASSERT_EQ(a[2], 0x3Au);
+    ASSERT_EQ(b[0], 0x3Au);
+    ASSERT_EQ(b[1], 0x3Au);
+    ASSERT_EQ(b[2], 0x3Au);
     delete[] a;
     delete[] b;
-    TEST_PASS("make_fallback_icon_distinct_paths");
+    TEST_PASS("make_fallback_icon_neutral_gray_both_paths");
 }
 
-static void test_make_fallback_icon_matches_manual_calc() {
-    // Path "" → Djb2Hash32("") = 5381; hue = 5381 % 360 = 5381 - 14*360 = 5381-5040=341.
-    // HslToRgb(341, 0.55, 0.40):
-    //   h=341 (sextant 5: 300<=h<360): r1=c, g1=0, b1=x
-    //   c = (1-|0.8-1|)*0.55 = 0.8*0.55 = 0.44
-    //   h60 = 341/60 = 5.6833...
-    //   mod2 = 5.6833 - 2*floor(5.6833/2) = 5.6833 - 2*2 = 1.6833
-    //   x = 0.44*(1-|1.6833-1|) = 0.44*(1-0.6833) = 0.44*0.3167 = 0.13934...
-    //   m = 0.40 - 0.22 = 0.18
-    //   R = (0.44+0.18)*255 = 158, G = (0+0.18)*255 = 45, B = (0.1393+0.18)*255 = 0.3193*255 = 81
+static void test_make_fallback_icon_neutral_gray_exact_value() {
+    // v1.6.11: any path → R=G=B=0x3A, A=0xFF for every pixel.
     u8 *buf = MakeFallbackIcon("");
     ASSERT_TRUE(buf != nullptr);
-    ASSERT_EQ(buf[0], 158u); // R
-    ASSERT_EQ(buf[1], 45u);  // G
-    // B is approximately 81 — allow ±1 for float rounding.
-    ASSERT_TRUE(buf[2] == 81u || buf[2] == 80u || buf[2] == 82u);
+    ASSERT_EQ(buf[0], 0x3Au); // R
+    ASSERT_EQ(buf[1], 0x3Au); // G
+    ASSERT_EQ(buf[2], 0x3Au); // B
     ASSERT_EQ(buf[3], 0xFFu); // A
+    // Verify last pixel too.
+    ASSERT_EQ(buf[(64 * 64 - 1) * 4 + 0], 0x3Au);
+    ASSERT_EQ(buf[(64 * 64 - 1) * 4 + 1], 0x3Au);
+    ASSERT_EQ(buf[(64 * 64 - 1) * 4 + 2], 0x3Au);
+    ASSERT_EQ(buf[(64 * 64 - 1) * 4 + 3], 0xFFu);
     delete[] buf;
-    TEST_PASS("make_fallback_icon_matches_manual_calc");
+    TEST_PASS("make_fallback_icon_neutral_gray_exact_value");
+}
+
+// ── v1.6.11 Fix 2: SD-root NRO path construction tests ───────────────────────
+
+static void test_sdroot_nro_path_hbmenu() {
+    const char *fname = "hbmenu.nro";
+    char nro_path[768];
+    int written = snprintf(nro_path, sizeof(nro_path), "sdmc:/%s", fname);
+    ASSERT_TRUE(written > 0);
+    ASSERT_TRUE(static_cast<size_t>(written) < sizeof(nro_path));
+    ASSERT_TRUE(strncmp(nro_path, "sdmc:/", 6) == 0);
+    const size_t plen = strlen(nro_path);
+    ASSERT_TRUE(plen >= 4u);
+    ASSERT_TRUE(strcmp(nro_path + plen - 4u, ".nro") == 0);
+    ASSERT_TRUE(strcmp(nro_path, "sdmc:/hbmenu.nro") == 0);
+    TEST_PASS("sdroot_nro_path_hbmenu");
+}
+
+static void test_sdroot_nro_path_umanager() {
+    const char *fname = "uManager.nro";
+    char nro_path[768];
+    int written = snprintf(nro_path, sizeof(nro_path), "sdmc:/%s", fname);
+    ASSERT_TRUE(written > 0);
+    ASSERT_TRUE(static_cast<size_t>(written) < sizeof(nro_path));
+    ASSERT_TRUE(strcmp(nro_path, "sdmc:/uManager.nro") == 0);
+    TEST_PASS("sdroot_nro_path_umanager");
+}
+
+static void test_sdroot_nro_path_distinct_from_switch_dir() {
+    const char *fname = "hbmenu.nro";
+    char root_path[768];
+    char switch_path[768];
+    snprintf(root_path,   sizeof(root_path),   "sdmc:/%s",        fname);
+    snprintf(switch_path, sizeof(switch_path),  "sdmc:/switch/%s", fname);
+    ASSERT_TRUE(strcmp(root_path, switch_path) != 0);
+    TEST_PASS("sdroot_nro_path_distinct_from_switch_dir");
+}
+
+static void test_sdroot_nro_stem_extraction() {
+    const char *fname = "hbmenu.nro";
+    const size_t flen = strlen(fname);
+    const size_t stem_len = flen - 4u;
+    char stem[64];
+    ASSERT_TRUE(stem_len > 0u && stem_len < sizeof(stem));
+    memcpy(stem, fname, stem_len);
+    stem[stem_len] = '\0';
+    ASSERT_TRUE(strcmp(stem, "hbmenu") == 0);
+    TEST_PASS("sdroot_nro_stem_extraction");
 }
 
 int main() {
@@ -310,8 +357,13 @@ int main() {
     test_make_fallback_icon_size_64x64();
     test_make_fallback_icon_uniform_color();
     test_make_fallback_icon_deterministic();
-    test_make_fallback_icon_distinct_paths();
-    test_make_fallback_icon_matches_manual_calc();
+    test_make_fallback_icon_neutral_gray_both_paths();
+    test_make_fallback_icon_neutral_gray_exact_value();
+    // v1.6.11 Fix 2: SD-root NRO path construction.
+    test_sdroot_nro_path_hbmenu();
+    test_sdroot_nro_path_umanager();
+    test_sdroot_nro_path_distinct_from_switch_dir();
+    test_sdroot_nro_stem_extraction();
     fprintf(stderr, "All QdNroAsset tests PASSED\n");
     return 0;
 }

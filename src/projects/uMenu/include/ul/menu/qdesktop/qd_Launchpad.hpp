@@ -1,4 +1,4 @@
-// qd_Launchpad.hpp — Full-screen app-grid overlay for Q OS uMenu (v1.0.0).
+// qd_Launchpad.hpp - Full-screen app-grid overlay for Q OS uMenu (v1.0.0).
 // Ported from tools/mock-nro-desktop-gui/src/launchpad.rs (v1.1.0).
 //
 // The Launchpad is a full-screen opaque overlay that shows every installed
@@ -16,7 +16,7 @@
 //
 // Open() deep-copies the current icon list from QdDesktopIconsElement::icons_[]
 // into a local std::vector<LpItem>.  All subsequent rendering and navigation
-// operate on this private snapshot — the desktop array is not read again until
+// operate on this private snapshot; the desktop array is not read again until
 // the next Open() call.  The original index of each snapshot entry in the
 // desktop array is preserved in LpItem::desktop_idx so FocusedDesktopIdx()
 // can return a stable index for the host to call
@@ -33,7 +33,7 @@
 // PushQueryChar() / PopQueryChar() / ClearQuery() are the entry points for
 // future OSK integration.  In v1.0 no gamepad key is bound to PushQueryChar
 // because the on-screen keyboard ships in the next batch.  The entry points are
-// fully implemented — they are not stubs — they simply have no caller yet.
+// fully implemented; they simply have no caller yet.
 //
 // # Integration checklist (for MainMenuLayout)
 //   1. Add member:  QdLaunchpadElement::Ref launchpad_;
@@ -73,6 +73,7 @@
 #include <ul/menu/qdesktop/qd_Theme.hpp>
 #include <ul/menu/qdesktop/qd_IconCache.hpp>
 #include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
+#include <ul/menu/qdesktop/qd_AutoFolders.hpp>  // Fix D (v1.6.12): auto-folder buckets
 #include <string>
 #include <vector>
 #include <cstddef>
@@ -80,7 +81,7 @@
 namespace ul::menu::qdesktop {
 
 // ── Layout constants (×1.5 from Rust 1280×720) ───────────────────────────────
-// Rust LP_COLS=10 unchanged — 10 columns at 1920 px.
+// Rust LP_COLS=10 unchanged: 10 columns at 1920 px.
 // Rust LP_CELL_W=104 → C++: 156.
 // Rust LP_CELL_H=100 → C++: 150.
 // Rust LP_GAP_X=8    → C++: 12.
@@ -105,7 +106,7 @@ constexpr s32 LP_HOTCORNER_H   = 48;    // = TOPBAR_H
 
 // Icon art dimensions within each grid cell.
 // Matches PaintIconCell pattern from qd_DesktopIcons.cpp (bg rect proportions).
-constexpr s32 LP_ICON_W  = 104;  // art width  (slightly smaller than cell — centred)
+constexpr s32 LP_ICON_W  = 104;  // art width  (slightly smaller than cell; centred)
 constexpr s32 LP_ICON_H  = 104;  // art height (square; label below)
 
 // ── LpSortKind ────────────────────────────────────────────────────────────────
@@ -197,7 +198,7 @@ public:
 
     // ── Query entry points ───────────────────────────────────────────────────
     // These are the OSK wire-up entry points.  In v1.0 no gamepad key calls
-    // PushQueryChar() — the OSK integration is the next batch.  The functions
+    // PushQueryChar(); the OSK integration is the next batch.  The functions
     // are fully implemented; they simply have no gamepad caller yet.
     void PushQueryChar(char c);
     void PopQueryChar();
@@ -210,17 +211,18 @@ public:
     // the result to QdDesktopIconsElement::LaunchIcon(idx).
     size_t FocusedDesktopIdx() const;
 
-    // Returns true when the user pressed A or ZR on a valid item this input
-    // frame.  The host calls DispatchPendingLaunch() to actually fire the
-    // launch through the desktop icons element, then Close().
-    // Cleared on the next call to OnInput.
+    // Returns true when the user pressed A (D-pad focus) or ZR (mouse hover)
+    // on a valid item this input frame.  The host calls DispatchPendingLaunch()
+    // to actually fire the launch through the desktop icons element, then
+    // Close().  Cleared on the next call to OnInput.
     bool IsPendingLaunch() const { return pending_launch_; }
 
-    // Forwards to desktop_icons_ptr_->LaunchIcon(FocusedDesktopIdx()) when
-    // the focused index is valid. No-op when desktop_icons_ptr_ is null,
-    // when the focused index is out of range, or when the Launchpad is
-    // closed. The launch path itself owns any subsequent menu transition
-    // (FadeOut for app launches, LoadMenu for builtin specials).
+    // Fix B (v1.6.12): Forwards to desktop_icons_ptr_->LaunchIcon() using the
+    // appropriate index:
+    //   - A button pressed -> uses dpad_focus_index_ (FocusedDesktopIdx())
+    //   - ZR button pressed -> uses mouse_hover_index_
+    // No-op when desktop_icons_ptr_ is null, the chosen index is out of range,
+    // or the Launchpad is closed.
     void DispatchPendingLaunch();
 
     // ── Frame tick ───────────────────────────────────────────────────────────
@@ -232,6 +234,10 @@ private:
     QdTheme                 theme_;
     bool                    is_open_;
     bool                    pending_launch_;
+    // Fix B (v1.6.12): distinguishes A (D-pad launch) from ZR (mouse launch)
+    // so DispatchPendingLaunch can pick the correct index without changing the
+    // host-facing IsPendingLaunch()/DispatchPendingLaunch() interface.
+    bool                    pending_launch_from_mouse_;
 
     // Non-owning pointer set by Open(); cleared on Close(). Used by
     // DispatchPendingLaunch to fire LaunchIcon on the focused entry.
@@ -241,9 +247,12 @@ private:
     // Snapshot of all items, sorted as described in LpSortKind.
     std::vector<LpItem>     items_;
 
-    // D-pad focus index into the *filtered* item list.
-    // Index 0 refers to filtered_items_[0] (not items_[0]).
-    size_t                  focus_filtered_;
+    // Fix B (v1.6.12): input separation. D-pad and ZR/mouse are independent.
+    // dpad_focus_index_: navigated by Up/Down/Left/Right + launched by A button.
+    // mouse_hover_index_: driven by ZR/cursor position + launched by ZR button.
+    // Both index into the *filtered* item list (filtered_idxs_).
+    size_t                  dpad_focus_index_;
+    size_t                  mouse_hover_index_;
 
     // Current ASCII search query.
     std::string             query_;
@@ -258,7 +267,13 @@ private:
     // Monotonic frame counter for the search-bar caret blink (30-frame phase).
     s32                     frame_tick_;
 
-    // Per-slot cached text and icon textures — same pattern as DesktopIcons.
+    // Fix D (v1.6.12): active auto-folder filter.
+    // AutoFolderIdx::None = show all items (default).
+    // Any other value = show only items whose stable ID maps to that folder bucket.
+    // Set by tapping a folder tile; cleared on Close() and on re-Open().
+    AutoFolderIdx           active_folder_;
+
+    // Per-slot cached text and icon textures; same pattern as DesktopIcons.
     // Max LP items == MAX_ICONS == 48; vector index mirrors items_ index.
     std::vector<SDL_Texture *> name_tex_;
     std::vector<SDL_Texture *> glyph_tex_;
@@ -266,7 +281,7 @@ private:
     // True when the icon cache has been checked for this slot.
     std::vector<bool>          icon_loaded_;
 
-    // Shared icon cache reference (borrowed — host owns QdIconCache lifetime).
+    // Shared icon cache reference (borrowed; host owns QdIconCache lifetime).
     // Set by Open() from the desktop_icons parameter.  Reset to nullptr on Close().
     // We store a non-owning pointer; the cache lives in QdDesktopIconsElement
     // which outlives all Launchpad open/close cycles.
@@ -298,6 +313,26 @@ private:
     // Build a section header label string for the given LpSortKind.
     // Returns a pointer to a static string (no allocation).
     static const char *SectionLabel(LpSortKind kind);
+
+    // Fix D (v1.6.12): reconstruct the stable ID string for an LpItem so that
+    // LookupFolderIdx() can be called without extending LpItem (struct extension
+    // corrupted the libnx IPC command table in v1.6.10 and is permanently banned).
+    // Stable ID format mirrors the four forms registered in qd_DesktopIcons.cpp:
+    //   Builtin    -> "builtin:<name>"
+    //   Application -> "app:<hex16>"
+    //   Payload    -> "payload:<basename(nro_path)>"
+    //   NRO        -> nro_path verbatim
+    static std::string StableIdForItem(const LpItem &item);
+
+    // Fix D (v1.6.12): paint one auto-folder tile at screen position (tx, ty).
+    // tile_w / tile_h define the tile bounding rectangle.
+    // is_active: true when this folder is the currently active filter; the tile
+    // receives an accent border and a brightened background in that state.
+    void PaintFolderTile(SDL_Renderer *r,
+                         s32 tx, s32 ty, s32 tile_w, s32 tile_h,
+                         const char *label,
+                         size_t item_count,
+                         bool is_active) const;
 
     // Paint the status line at the bottom of the overlay.
     void PaintStatusLine(SDL_Renderer *r, size_t total_nintendo,

@@ -143,6 +143,11 @@ namespace ul::menu::qdesktop {
             // author field: entry_buf[520..776] (256 bytes)
             const u64 icon_size = ReadU64LE(entry_buf + 776);
 
+            // v1.6.11 Fix 3: extract name early so the icon_size==0 / empty-name
+            // guard below can read it before the Entry is synthesised.
+            const std::string name_str   = FieldToString(entry_buf +   8, 512);
+            const std::string author_str = FieldToString(entry_buf + 520, 256);
+
             if (icon_size > QAPP_MAX_ICON_BYTES) {
                 UL_LOG_WARN("qdesktop: LoadEntriesFromRecordsBin: entry %u"
                             " app_id=0x%016llx has icon_size %llu > cap %llu"
@@ -169,22 +174,48 @@ namespace ul::menu::qdesktop {
                 }
             }
 
+            // ── v1.6.11 Fix 3: sentinel for icon_size==0 + empty name ─────────
+            // Entries with icon_size==0 and an all-zero name field (e.g. phantom
+            // app-id 059f5d7989168000) would reach OnRender with an empty
+            // icon_path, causing SetApplicationEntries to display a raw hex ID
+            // "App 0x..." and OnRender to attempt an NS service call that always
+            // fails in library-applet mode.
+            //
+            // When both conditions are true:
+            //   - Set the display name to "Unknown Title" instead of the empty string.
+            //   - Set icon_path to a stable per-app_id sentinel string so that
+            //     OnRender routes through LoadJpegIconToCache (IMG_Load fails, calls
+            //     MakeFallbackIcon, inserts neutral gray into the cache) rather than
+            //     LoadNsIconToCache.  No NS service call is ever attempted.
+            const bool phantom = (icon_size == 0u && name_str.empty());
+            char sentinel_path[40];
+            if (phantom) {
+                snprintf(sentinel_path, sizeof(sentinel_path),
+                         "qos-noicon:%016llx",
+                         static_cast<unsigned long long>(app_id));
+            }
+
             // ── Synthesise ul::menu::Entry ──────────────────────────────
             ul::menu::Entry e{};
             e.type       = ul::menu::EntryType::Application;
-            e.entry_path = ""; // synthetic — not on disk
+            e.entry_path = ""; // synthetic -- not on disk
             e.index      = i;
 
             // Control data: name / author / icon path.
-            e.control.name             = FieldToString(entry_buf + 8,   512);
+            e.control.name             = phantom ? "Unknown Title" : name_str;
             e.control.custom_name      = false;
-            e.control.author           = FieldToString(entry_buf + 520, 256);
+            e.control.author           = author_str;
             e.control.custom_author    = false;
             e.control.version          = "";
             e.control.custom_version   = false;
-            e.control.icon_path        = (icon_size > 0) ? MakeIconPath(app_id)
-                                                          : std::string();
-            e.control.custom_icon_path = (icon_size > 0);
+            if (phantom) {
+                e.control.icon_path        = sentinel_path;
+                e.control.custom_icon_path = true;
+            } else {
+                e.control.icon_path        = (icon_size > 0u) ? MakeIconPath(app_id)
+                                                               : std::string();
+                e.control.custom_icon_path = (icon_size > 0u);
+            }
 
             // Application info — set view flags so CanBeLaunched() returns true.
             // Flag bitset = IsValid | HasMainContents | HasContentsInstalled |

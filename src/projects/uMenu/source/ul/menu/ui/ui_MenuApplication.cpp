@@ -599,16 +599,31 @@ namespace ul::menu::ui {
     }
 
     void MenuApplication::StartPlayBgm() {
+        // Fix A (v1.6.12): The Startup BGM is the login chime (75% volume).
+        // LoadMenu() calls StartPlayBgm() on every navigation, so without a
+        // guard the chime replays whenever the Startup screen is revisited
+        // (lockscreen cycle, Settings return, etc.).  Play exactly once per
+        // process lifetime.
+        static bool g_login_chime_played = false;
+        if(this->loaded_menu == MenuType::Startup && g_login_chime_played) {
+            return;
+        }
+
         const auto &bgm = this->GetCurrentMenuBgm();
         if(bgm.bgm != nullptr) {
             pu::audio::SetMusicVolume(ComputeVolume(this->loaded_menu));
 
-            const int loops = bgm.bgm_loop ? -1 : 1;
+            const bool force_one_shot = (this->loaded_menu == MenuType::Startup);
+            const int loops = force_one_shot ? 1 : (bgm.bgm_loop ? -1 : 1);
             if(bgm.bgm_fade_in_ms > 0) {
                 pu::audio::PlayMusicWithFadeIn(bgm.bgm, loops, bgm.bgm_fade_in_ms);
             }
             else {
                 pu::audio::PlayMusic(bgm.bgm, loops);
+            }
+
+            if(this->loaded_menu == MenuType::Startup) {
+                g_login_chime_played = true;
             }
         }
     }

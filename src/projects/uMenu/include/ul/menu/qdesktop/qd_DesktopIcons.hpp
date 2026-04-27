@@ -125,6 +125,28 @@ struct NroEntry {
     u16      special_subtype;
 };
 
+// ── Fix D (v1.6.12): Auto-folder classification kind ──────────────────────
+// Finer-grained per-entry classification used to drive folder assignment in
+// the K+1 Phase 2 folder system.  Stored in a static side table keyed by a
+// stable ID string so NroEntry and LpItem are NOT extended (struct extension
+// corrupts the libnx IPC command table).
+//
+// Stable ID convention per entry kind:
+//   NRO       -> nro_path string  (e.g. "sdmc:/switch/sys-clk.nro")
+//   Application -> "app:<hex16>"  (e.g. "app:01007ef000118000")
+//   Payload   -> "payload:<fname>" (e.g. "payload:Atmosphere.bin")
+//   Builtin   -> "builtin:<name>" (e.g. "builtin:Vault")
+enum class ClassifyKind : u8 {
+    Unknown        = 0,
+    NintendoGame   = 1,
+    ThirdPartyGame = 2,
+    HomebrewTool   = 3,
+    Emulator       = 4,
+    SystemUtil     = 5,
+    Payload        = 6,
+    Builtin        = 7,
+};
+
 // ── QdDesktopIconsElement ─────────────────────────────────────────────────
 
 // Pu Element that renders the full auto-grid of desktop icons.
@@ -200,11 +222,18 @@ public:
     // the updated catalog.
     static void InvalidateNintendoClassifyCache();
 
+    // Fix D (v1.6.12): Look up the auto-folder ClassifyKind for an entry by its
+    // stable ID string.  Returns ClassifyKind::Unknown if the ID is not in the
+    // side table (e.g. entry was added outside the three scan functions).
+    // Stable ID format: see ClassifyKind comment above.
+    static ClassifyKind GetAutoFolderKind(const std::string &stable_id);
+
 private:
     QdTheme theme_;
     std::array<NroEntry, MAX_ICONS> icons_;
     size_t icon_count_;
-    size_t focused_idx_;        // D-pad focused icon (keyboard nav, not SP1)
+    size_t dpad_focus_index_;   // D-pad focused icon (keyboard nav); mutated only by D-pad/stick
+    size_t mouse_hover_index_;  // Cursor-hover icon; mutated only by cursor hit-test (ZR path)
     QdIconCache cache_;
 
     // SP2-F13: sentinel pattern — -1 means "no previous magnify center".
@@ -284,6 +313,12 @@ private:
     // Called once from constructor.
     void ScanNros();
 
+    // Fix C (v1.6.12): scan sdmc:/bootloader/payloads/ for *.bin files and
+    // append entries to icons_ with category=Payloads.  icon_path is resolved
+    // via ResolvePayloadIcon() so creator-supplied art is used when available.
+    // Called once from Initialize(), after ScanNros().
+    void ScanPayloads();
+
     // Pre-populate Q OS built-in dock icons before NRO scan.
     // Fills the first BUILTIN_ICON_COUNT slots of icons_.
     void PopulateBuiltins();
@@ -292,11 +327,14 @@ private:
     // Uses QdIconCache for real JPEG data; falls back to category colour.
     // entry_idx indexes name_text_tex_/glyph_text_tex_ for the cached text
     // textures rendered lazily by this method.
+    // is_dpad_focused: D-pad ring (full-opacity white ring, hard focus).
+    // is_mouse_hovered: cursor-hover indicator (half-opacity ring, softer).
     void PaintIconCell(SDL_Renderer *r,
                        const NroEntry &entry,
                        size_t entry_idx,
                        s32 x, s32 y,
-                       bool is_focused);
+                       bool is_dpad_focused,
+                       bool is_mouse_hovered);
 
     // Free a cached name/glyph text texture pair (no-op if both null).
     // Called by the destructor and when an Application slot is reused after

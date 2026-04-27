@@ -45,6 +45,7 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
       filter_dirty_(false),
       frame_tick_(0),
       active_folder_(AutoFolderIdx::None),
+      lp_was_touch_active_last_frame_(false),
       icon_cache_(nullptr)
 {
     // items_, filtered_idxs_, query_ default-initialise to empty.
@@ -86,6 +87,11 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     pending_launch_from_mouse_ = false;
     filter_dirty_              = false;
     active_folder_             = AutoFolderIdx::None;  // Fix D (v1.6.12): show all by default
+    // v1.7.0-stabilize-2: reset edge-trigger latch so the same finger-down
+    // that triggered Open() does not immediately fire the close handler on
+    // the very next frame. The latch must be true while a still-down finger
+    // is sliding off the corner, then drop to false when the finger lifts.
+    lp_was_touch_active_last_frame_ = true;
     desktop_icons_ptr_         = desktop_icons;
     icon_cache_                = &desktop_icons->cache_;
 
@@ -258,6 +264,10 @@ void QdLaunchpadElement::Close() {
     pending_launch_from_mouse_ = false;
     filter_dirty_              = false;
     active_folder_             = AutoFolderIdx::None;  // Fix D (v1.6.12)
+    // v1.7.0-stabilize-2: clear edge-trigger latch on close so a re-Open later
+    // starts from a known state. The latch is reset to true again at Open()
+    // so the still-down finger does not retrigger the close handler.
+    lp_was_touch_active_last_frame_ = false;
     icon_cache_                = nullptr;
     desktop_icons_ptr_         = nullptr;
     is_open_                   = false;
@@ -382,6 +392,46 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         return;
     }
 
+    // ── v1.7.0-stabilize-2: edge-triggered hot-corner CLOSE ──────────────────
+    // The hot-corner widget is a 96x72 box at the top-left of the screen
+    // (LP_HOTCORNER_W x LP_HOTCORNER_H, defined in qd_Launchpad.hpp). Tapping
+    // it from the desktop opens the Launchpad (handled in qd_DesktopIcons.cpp);
+    // tapping it from inside the Launchpad must close back to desktop.
+    //
+    // The handler is edge-triggered: it fires only on the frame where the
+    // finger first enters the corner (touch_corner_now && !was_active_last_frame).
+    // Without the edge gate, holding the finger inside the corner for several
+    // frames would re-fire Close() every frame -- the same level-trigger bug
+    // pattern the v2 plan section 2.2.1 describes.
+    //
+    // The reference implementation for this convention lives in
+    // qd_DesktopIcons.cpp around lines 1737-1786 (the touch state machine
+    // there uses `was_touch_active_last_frame_` to gate TouchDown vs
+    // TouchMove). We mirror that exact pattern here for the close path, with
+    // its own per-element latch (`lp_was_touch_active_last_frame_`) so the
+    // two state machines do not interfere.
+    {
+        const bool touch_active_now = (touch_pos.x != 0 || touch_pos.y != 0);
+        const s32  tx               = static_cast<s32>(touch_pos.x);
+        const s32  ty               = static_cast<s32>(touch_pos.y);
+        const bool touch_corner_now = touch_active_now
+                                      && tx >= 0 && tx < LP_HOTCORNER_W
+                                      && ty >= 0 && ty < LP_HOTCORNER_H;
+        const bool touch_corner_edge = touch_corner_now
+                                       && !lp_was_touch_active_last_frame_;
+        if (touch_corner_edge) {
+            UL_LOG_INFO("qdesktop: Launchpad hot-corner CLOSE tap edge tx=%d ty=%d", tx, ty);
+            Close();
+            SetVisible(false);
+            // Latch is cleared by Close(); the next frame will re-arm it on
+            // the next finger-down. No further state update needed here.
+            return;
+        }
+        // Update the latch every frame so subsequent Open/Close calls see a
+        // consistent edge boundary.
+        lp_was_touch_active_last_frame_ = touch_active_now;
+    }
+
     const size_t n = FilteredCount();
 
     // ── StickL: backspace on query ────────────────────────────────────────────
@@ -391,6 +441,9 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         return;
     }
 
+#if 0  // v1.7.0-stabilize-3: auto-folder tile strip deferred to v1.7.1 K+1 phase 2.
+       // Cause: v1.6.12 instability (creator-reported "way too many icons", regressed
+       // hot corner / default icons). Re-enable when QdFolderSheet modal lands.
     // ── Fix D (v1.6.12): Touch tap on the auto-folder tile strip ─────────────
     // The folder tile strip occupies a horizontal band starting at:
     //   y = LP_SEARCH_BAR_Y + LP_SEARCH_BAR_H + 6 = 138 px
@@ -462,6 +515,7 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
             }
         }
     }
+#endif
 
     if (n == 0u) {
         return;  // Nothing to navigate.
@@ -651,6 +705,9 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         }
     }
 
+#if 0  // v1.7.0-stabilize-3: auto-folder tile strip deferred to v1.7.1 K+1 phase 2.
+       // Cause: v1.6.12 instability (creator-reported "way too many icons", regressed
+       // hot corner / default icons). Re-enable when QdFolderSheet modal lands.
     // ── 3.5. Fix D (v1.6.12): Auto-folder tile strip ─────────────────────────
     // Render up to kTopLevelFolderCount tiles in a horizontal strip between the
     // search bar and the icon grid.  Only tiles for non-empty buckets are drawn;
@@ -703,6 +760,7 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
                             all_active);
         }
     }
+#endif
 
     // ── 4. Section headers ────────────────────────────────────────────────────
     // Walk the filtered list and emit a section label wherever LpSortKind

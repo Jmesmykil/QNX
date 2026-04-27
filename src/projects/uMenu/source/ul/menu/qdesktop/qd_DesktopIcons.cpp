@@ -6,6 +6,7 @@
 //   via LoadJpegIconToCache(); LaunchIcon() dispatches smi::LaunchApplication for apps.
 
 #include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
+#include <ul/menu/qdesktop/qd_Launchpad.hpp>     // LP_HOTCORNER_W/H (hot corner geometry SSOT)
 #include <ul/menu/qdesktop/qd_AutoFolders.hpp>  // Fix D (v1.6.12): auto-folder side table
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
 #include <ul/menu/qdesktop/qd_IconCategory.hpp>
@@ -318,6 +319,12 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
       pressed_(false), down_x_(0), down_y_(0),
       last_touch_x_(0), last_touch_y_(0),
       down_idx_(MAX_ICONS), was_touch_active_last_frame_(false),
+      // v1.7.0-stabilize-2 (REC-02): default to cursor mode at boot. Cursor
+      // is positioned at screen centre on entry; D-pad has not been pressed.
+      // Hover ring is enabled until the first D-pad/A press flips the flag.
+      last_input_was_dpad_(false),
+      prev_cursor_x_(-1),
+      prev_cursor_y_(-1),
       cursor_ref_(nullptr)
 {
     UL_LOG_INFO("qdesktop: QdDesktopIconsElement ctor entry");
@@ -352,6 +359,10 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
         name_text_h_[i]   = 0;
         glyph_text_w_[i]  = 0;
         glyph_text_h_[i]  = 0;
+        // v1.7.0-stabilize-2 (REC-03 option B): no slot has a fallback PNG yet,
+        // so nothing is replaceable at boot. The flag flips to true the first
+        // time PaintIconCell installs a Default*.png fallback.
+        texture_replaceable_[i] = false;
     }
 
     // Ensure icon cache dir exists before any icon I/O.
@@ -420,6 +431,16 @@ void QdDesktopIconsElement::FreeCachedText(size_t entry_idx) {
     if (icon_tex_[entry_idx] != nullptr) {
         SDL_DestroyTexture(icon_tex_[entry_idx]);
         icon_tex_[entry_idx] = nullptr;
+    }
+    // v1.7.0-stabilize-2 (REC-03 option B): clear the replaceable-flag so the
+    // next paint of this slot starts from a known state. Either:
+    //   - the slot will be rebuilt from BGRA on the next frame and the flag
+    //     stays false (real icon path), or
+    //   - PaintIconCell will install a Default*.png fallback again and flip
+    //     the flag back to true. Either way, the slot's "needs replacement"
+    //     state is recomputed from scratch.
+    if (entry_idx < MAX_ICONS) {
+        texture_replaceable_[entry_idx] = false;
     }
 }
 
@@ -1081,10 +1102,21 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     // Determine which path string to use as the cache key:
     //   - NRO entries    → nro_path  (ASET JPEG encoded per NRO spec)
     //   - Application    → icon_path (SD-card JPEG, may be empty)
-    //   - Special        → already loaded into icon_tex_[entry_idx] above
+    //   - Special PNG    → already loaded into icon_tex_[entry_idx] above
+    //                      (Settings/Album/Themes/etc. via 2a TryFindLoadImage)
+    //   - Special JPEG   → icon_path (creator-supplied payload icon, hbmenu/
+    //                      uManager/Hekate; path was set by ScanPayloads or
+    //                      qd_HekateIni; populated into the cache by the
+    //                      lazy-load branch in OnRender)
     //   - Builtin        → no icon (nro_path and icon_path are both empty)
     const u8 *bgra = nullptr;
     if (entry.kind == IconKind::Application && entry.icon_path[0] != '\0') {
+        bgra = cache_.Get(entry.icon_path);
+    } else if (entry.kind == IconKind::Special && entry.icon_path[0] != '\0') {
+        // v1.7.0-stabilize-2: Special entries with a JPEG icon_path go through
+        // the BGRA cache, same as Applications. Without this branch ScanPayloads
+        // and qd_HekateIni entries fell through to the gray-square fallback
+        // because section 2a only handles romfs PNGs (special_subtype-keyed).
         bgra = cache_.Get(entry.icon_path);
     } else if (entry.nro_path[0] != '\0') {
         bgra = cache_.Get(entry.nro_path);
@@ -1095,6 +1127,30 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     const bool special_tex_ready = (entry.kind == IconKind::Special
                                     && entry_idx < MAX_ICONS
                                     && icon_tex_[entry_idx] != nullptr);
+
+    // ── 2b'. v1.7.0-stabilize-2 (REC-03 option B): frame-race replacement ──
+    // If we have a fallback PNG installed in icon_tex_[entry_idx] (the cold-
+    // load path on a prior frame ran before BGRA was ready) AND the BGRA
+    // cache has now populated for this slot, replace the texture in place.
+    // Without this guard, the slot is permanently locked to the fallback.
+    //
+    // Note: Special slots are NOT replaceable -- their texture is the real
+    // PNG (Settings.png, Album.png, etc.), not a fallback. We gate on
+    // texture_replaceable_[entry_idx] which is only true after a Default*
+    // PNG was installed in section 2c on a prior frame.
+    if (bgra != nullptr
+            && entry_idx < MAX_ICONS
+            && texture_replaceable_[entry_idx]
+            && icon_tex_[entry_idx] != nullptr) {
+        UL_LOG_INFO("qdesktop: REC-03 frame-race replace slot=%zu kind=%u name='%s'"
+                    " (default fallback -> real BGRA)",
+                    entry_idx, static_cast<unsigned>(entry.kind), entry.name);
+        SDL_DestroyTexture(icon_tex_[entry_idx]);
+        icon_tex_[entry_idx] = nullptr;
+        texture_replaceable_[entry_idx] = false;
+        // The streaming-texture rebuild in section 2b below sees the null
+        // pointer and rebuilds from BGRA on the same frame.
+    }
 
     // ── 2c. Default-icon fallback (Cycle K-defaulticons) ──────────────────
     // When a non-Special entry has no BGRA in the cache (NRO with no embedded
@@ -1142,10 +1198,16 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
                     UL_LOG_INFO("qdesktop: dock icon loaded for '%s' path=%s",
                                 entry.name, dock_path);
                     builtin_handled = true;
+                    // Builtin Dock<Name>.png is the REAL icon for that slot --
+                    // not a fallback waiting to be replaced. Leave the
+                    // replaceable flag clear so 2b' does not destroy it.
                 } else {
                     UL_LOG_WARN("qdesktop: Dock%s.png missing — falling back"
                                 " to DefaultApplication.png", entry.name);
                     fallback_path = "ui/Main/EntryIcon/DefaultApplication";
+                    // The Default* PNG IS a fallback. Mark the slot for
+                    // replacement once real BGRA arrives. The actual texture
+                    // load happens below in `if (!builtin_handled) { ... }`.
                 }
                 break;
             }
@@ -1160,6 +1222,12 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
                             entry.name,
                             static_cast<unsigned>(entry.kind),
                             fallback_path);
+                // v1.7.0-stabilize-2 (REC-03 option B): the Default* / Empty PNG
+                // is a fallback only -- the real icon may arrive later when the
+                // BGRA cache populates from a NACP/ASET load. Mark the slot
+                // replaceable so section 2b' destroys this texture once real
+                // data arrives.
+                texture_replaceable_[entry_idx] = true;
             } else {
                 // No PNG asset on disk — colored-square fallback will fire below.
                 UL_LOG_WARN("qdesktop: default icon MISSING for '%s' kind=%u path=%s"
@@ -1320,7 +1388,14 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     // Mouse hover: half-opacity white ring drawn 1 px further out (softer).
     // Blended separately so both can appear simultaneously (e.g. cursor lands
     // on the D-pad focused icon: inner hard ring + outer soft ring stack).
-    if (is_mouse_hovered) {
+    //
+    // v1.7.0-stabilize-2 (REC-02 corrected): suppress the hover ring when the
+    // last meaningful input was a D-pad press. This kills the "double-
+    // highlight" visual artefact where both rings showed at once during
+    // controller navigation. The flag flips back to false on cursor motion or
+    // touch arrival so ZR-launches-cursor-target keeps working in mouse mode.
+    const bool show_hover_ring = is_mouse_hovered && !last_input_was_dpad_;
+    if (show_hover_ring) {
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
         SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0x80u);
         SDL_Rect soft_ring { bg_x - 2, bg_y - 2, ICON_BG_W + 4, ICON_BG_H + 4 };
@@ -1363,6 +1438,19 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         const s32 cx = cursor_ref_->GetCursorX();
         const s32 cy = cursor_ref_->GetCursorY();
         mouse_hover_index_ = HitTest(cx, cy);
+
+        // v1.7.0-stabilize-2 (REC-02 corrected): cursor motion flips the
+        // input-modality flag back to "mouse" so the hover ring renders
+        // again after a stretch of D-pad navigation. The first call sees
+        // the -1 sentinel (uninitialized) and only seeds prev_cursor_*;
+        // subsequent calls compare against the previous frame's sample.
+        if (prev_cursor_x_ != -1 && prev_cursor_y_ != -1) {
+            if (cx != prev_cursor_x_ || cy != prev_cursor_y_) {
+                last_input_was_dpad_ = false;
+            }
+        }
+        prev_cursor_x_ = cx;
+        prev_cursor_y_ = cy;
     } else {
         mouse_hover_index_ = SIZE_MAX;
     }
@@ -1500,6 +1588,24 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
                 if (cached == nullptr) {
                     LoadNroIconToCache(entry.nro_path, entry.nro_path);
                 }
+            } else if (entry.kind == IconKind::Special && entry.icon_path[0] != '\0') {
+                // v1.7.0-stabilize-2: Special entries with a creator-supplied
+                // JPEG (Hekate payloads from ScanPayloads, Hekate special
+                // entries from qd_HekateIni, etc.) load through the same JPEG
+                // pipeline as Applications. Without this branch the cache
+                // entry is never populated, PaintIconCell sees bgra==nullptr,
+                // and the slot falls through to the gray colored-square
+                // fallback ("payload entries showing gray squares" regression
+                // creator reported).
+                //
+                // PNG-backed Special entries (Settings/Album/Themes/etc.)
+                // load via TryFindLoadImage in PaintIconCell section 2a; they
+                // do NOT go through this branch because they have empty
+                // icon_path (the PNG path is hard-coded by special_subtype).
+                const u8 *cached = cache_.Get(entry.icon_path);
+                if (cached == nullptr) {
+                    LoadJpegIconToCache(entry.icon_path, entry.icon_path);
+                }
             } else if (entry.kind == IconKind::Application) {
                 if (entry.icon_path[0] != '\0') {
                     // Application has a custom JPEG icon on the SD card.
@@ -1539,6 +1645,63 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         const bool dpad_focused   = (i == dpad_focus_index_);
         const bool mouse_hovered  = (mouse_hover_index_ < icon_count_) && (i == mouse_hover_index_);
         PaintIconCell(r, entry, i, cell_x, cell_y, dpad_focused, mouse_hovered);
+    }
+
+    // ── v1.7.0-stabilize-2: hot-corner widget at top-left (96x72) ────────────
+    // The widget is a small visual affordance that tells the user where to
+    // tap to open the Launchpad. Renders LAST (after the icon loop and after
+    // the topbar) so it is on top in z-order; the OnInput handler at the
+    // matching geometry edge-triggers LoadMenu(MenuType::Launchpad) on tap.
+    //
+    // Geometry: 96 wide x 72 tall, anchored at (x, y) (the layout's origin,
+    // typically (0, 0)). Width matches LP_HOTCORNER_W (96) so the close-side
+    // handler in qd_Launchpad.cpp uses the same hit-box dimensions.
+    //
+    // Visual: translucent dark fill + 1px white-alpha border + a small
+    // 4-dot grid glyph (placeholder until the real icon asset lands). The
+    // dot grid is drawn as four 12x12 SDL_Rects in a 2x2 layout centred in
+    // the box, giving a recognisable "all programs / launchpad" affordance.
+    {
+        constexpr s32 HC_W = LP_HOTCORNER_W;  // 96 (defined in qd_Launchpad.hpp)
+        constexpr s32 HC_H = LP_HOTCORNER_H;  // 72
+        const s32 hcx = x;
+        const s32 hcy = y;
+
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        // Fill: dark translucent so wallpaper shows through.
+        SDL_SetRenderDrawColor(r, 0x10u, 0x10u, 0x14u, 0xC0u);
+        SDL_Rect hc_bg { hcx, hcy, HC_W, HC_H };
+        SDL_RenderFillRect(r, &hc_bg);
+        // Border: 1px white-alpha so the box is visible against any wallpaper.
+        SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0x40u);
+        SDL_Rect hc_top    { hcx,            hcy,            HC_W, 1 };
+        SDL_Rect hc_bottom { hcx,            hcy + HC_H - 1, HC_W, 1 };
+        SDL_Rect hc_left   { hcx,            hcy,            1,    HC_H };
+        SDL_Rect hc_right  { hcx + HC_W - 1, hcy,            1,    HC_H };
+        SDL_RenderFillRect(r, &hc_top);
+        SDL_RenderFillRect(r, &hc_bottom);
+        SDL_RenderFillRect(r, &hc_left);
+        SDL_RenderFillRect(r, &hc_right);
+        // 2x2 dot grid centred in the box (Launchpad affordance).
+        constexpr s32 DOT_W = 12;
+        constexpr s32 DOT_H = 12;
+        constexpr s32 DOT_GAP = 6;
+        const s32 grid_w = DOT_W * 2 + DOT_GAP;
+        const s32 grid_h = DOT_H * 2 + DOT_GAP;
+        const s32 grid_x = hcx + (HC_W - grid_w) / 2;
+        const s32 grid_y = hcy + (HC_H - grid_h) / 2;
+        SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0xC0u);
+        for (s32 row = 0; row < 2; ++row) {
+            for (s32 col = 0; col < 2; ++col) {
+                SDL_Rect dot {
+                    grid_x + col * (DOT_W + DOT_GAP),
+                    grid_y + row * (DOT_H + DOT_GAP),
+                    DOT_W, DOT_H
+                };
+                SDL_RenderFillRect(r, &dot);
+            }
+        }
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }
 }
 
@@ -1695,7 +1858,46 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
         }
     }
 
+    // ── v1.7.0-stabilize-2: hot-corner OPEN edge-trigger ─────────────────────
+    // The hot-corner widget rendered at the end of OnRender is a 96x72 box
+    // anchored at the layout origin. A single tap inside it opens the
+    // Launchpad. Edge-triggered using `was_touch_active_last_frame_` so the
+    // open fires once on finger-down, not every frame the finger is held.
+    //
+    // Reference convention: this matches the close-side handler in
+    // qd_Launchpad.cpp (added in the same v1.7.0-stabilize-2 batch). Both
+    // sides of the toggle use the same edge-trigger pattern so a quick tap
+    // anywhere in the corner gives a clean open/close transition.
+    {
+        const bool touch_active_now = !touch_pos.IsEmpty();
+        if (touch_active_now && !was_touch_active_last_frame_) {
+            const s32 tx = static_cast<s32>(touch_pos.x);
+            const s32 ty = static_cast<s32>(touch_pos.y);
+            if (tx >= 0 && tx < LP_HOTCORNER_W
+                    && ty >= 0 && ty < LP_HOTCORNER_H
+                    && g_MenuApplication != nullptr) {
+                UL_LOG_INFO("qdesktop: hot-corner OPEN tap edge tx=%d ty=%d -> LoadMenu(Launchpad)",
+                            tx, ty);
+                g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Launchpad);
+                // Update the latch so the same finger-down does not re-fire.
+                was_touch_active_last_frame_ = touch_active_now;
+                return;
+            }
+        }
+    }
+
     // ── D-pad navigation ─────────────────────────────────────────────────────
+    // v1.7.0-stabilize-2 (REC-02 corrected): any D-pad/A press flips the
+    // last_input_was_dpad_ flag so PaintIconCell suppresses the cursor-hover
+    // ring while the user is on the controller. The flag is cleared on the
+    // first cursor or touch event below so ZR-launches-cursor-target keeps
+    // working in mouse mode.
+    const u64 dpad_a_mask = HidNpadButton_Up | HidNpadButton_Down
+                          | HidNpadButton_Left | HidNpadButton_Right
+                          | HidNpadButton_A;
+    if (keys_down & dpad_a_mask) {
+        last_input_was_dpad_ = true;
+    }
 
     if (keys_down & HidNpadButton_Up) {
         if (dpad_focus_index_ >= static_cast<size_t>(ICON_GRID_COLS)) {
@@ -1742,6 +1944,11 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
             last_touch_x_ = tx;
             last_touch_y_ = ty;
             down_idx_   = HitTest(tx, ty);
+            // v1.7.0-stabilize-2 (REC-02 corrected): touch arrival flips the
+            // input-modality flag back to "mouse/touch" so the hover ring
+            // (which doubles as the touch-pressed visual cue) renders again
+            // after a stretch of D-pad navigation.
+            last_input_was_dpad_ = false;
             UL_LOG_INFO("qdesktop: touch_down x=%d y=%d hit=%zu", tx, ty, down_idx_);
         } else {
             // ── TouchMove ──────────────────────────────────────────────────

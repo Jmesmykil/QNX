@@ -609,6 +609,17 @@ namespace ul::menu::ui {
             return;
         }
 
+        // v1.7.0-stabilize-2 REC-01: arm the gate BEFORE the bgm-null check.
+        // Previously the gate was only armed inside `if (bgm.bgm != nullptr)`,
+        // which meant a failed audio load on first Startup entry left the gate
+        // un-armed; subsequent LoadMenu(Startup) calls would re-trigger the
+        // chime path and replay the audio when it finally loaded. Arming the
+        // gate first guarantees "exactly once per process lifetime" regardless
+        // of whether the audio resource was available at first attempt.
+        if(this->loaded_menu == MenuType::Startup) {
+            g_login_chime_played = true;
+        }
+
         const auto &bgm = this->GetCurrentMenuBgm();
         if(bgm.bgm != nullptr) {
             pu::audio::SetMusicVolume(ComputeVolume(this->loaded_menu));
@@ -620,10 +631,6 @@ namespace ul::menu::ui {
             }
             else {
                 pu::audio::PlayMusic(bgm.bgm, loops);
-            }
-
-            if(this->loaded_menu == MenuType::Startup) {
-                g_login_chime_played = true;
             }
         }
     }

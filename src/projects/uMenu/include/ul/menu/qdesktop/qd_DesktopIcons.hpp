@@ -125,6 +125,33 @@ struct NroEntry {
     u16      special_subtype;
 };
 
+// ── v1.7.0-stabilize-2: NroEntry struct-size pin (A7 + A8) ────────────────
+// The 2026-04-13 v1.6.10 hard-crash on hardware traced to a struct shift in
+// either NroEntry or LpItem -- the libnx IPC command table is allocated by
+// pluton:gen with a hard-coded sizeof(NroEntry); growing the struct silently
+// corrupts the table at runtime (hbsrv->launch fails, applet sequence aborts,
+// uSystem panics with LibnxError_AppletCmdidNotFound). To prevent any
+// future regression of that exact failure mode, this assert pins the size
+// at the v1.6.x reconstruction-snapshot value (HEAD 562e554, 2026-04-26).
+//
+// If this assert fires:
+//   1. Do NOT change the constant -- the goal is to detect changes, not absorb them.
+//   2. Audit the diff for new fields. Move them to a side table keyed by
+//      stable_id (see ClassifyKind comment above for the convention).
+//   3. Only update the pinned value as part of a deliberately co-ordinated
+//      libnx-ext IPC table bump, never as a side effect of a feature commit.
+//
+// Computed value: 1632 bytes on aarch64 ARM64 with GCC's standard layout,
+// derived from a host-side probe (/tmp/sizeof_probe) that mirrors the
+// struct verbatim. The host probe and devkitA64 produce the same layout
+// because every field is a primitive type or a fixed-size char array; both
+// targets use 8-byte alignment for u64.
+static_assert(sizeof(NroEntry) == 1632,
+              "NroEntry size shifted -- v1.6.10 IPC crash risk; "
+              "use a side table for new state, do not extend the struct");
+static_assert(alignof(NroEntry) == 8,
+              "NroEntry alignment shifted -- IPC layout assumption violated");
+
 // ── Fix D (v1.6.12): Auto-folder classification kind ──────────────────────
 // Finer-grained per-entry classification used to drive folder assignment in
 // the K+1 Phase 2 folder system.  Stored in a static side table keyed by a
@@ -259,6 +286,30 @@ private:
     size_t down_idx_;                 // HitTest result at TouchDown (MAX_ICONS = no hit)
     bool   was_touch_active_last_frame_; // previous frame's touch-active flag
 
+    // v1.7.0-stabilize-2 (REC-02 corrected): tracks which input modality
+    // produced the most recent meaningful event.
+    //   true  = last meaningful input was a D-pad direction or A button press;
+    //           PaintIconCell SUPPRESSES the cursor-hover ring so only ONE
+    //           highlight (the dpad-focus ring) is visible during pad nav.
+    //   false = last meaningful input was a cursor motion or a touch event;
+    //           the cursor-hover ring is rendered normally so ZR-launches-
+    //           cursor-target keeps working.
+    // Set true on Up/Down/Left/Right/A press; set false on cursor.x/y change
+    // (delta != 0) or any touch arrival. Initial state is false because boot
+    // begins in cursor mode (cursor at screen centre).
+    //
+    // Not the same as `dpad_focus_index_ < icon_count_` (which would default
+    // to slot 0 and permanently kill the hover ring) -- this is an explicit
+    // input-modality flag that never confuses "no D-pad press yet" with
+    // "D-pad active".
+    bool   last_input_was_dpad_;
+
+    // v1.7.0-stabilize-2 (REC-02 helper): cached previous-frame cursor X/Y so
+    // the OnInput delta check can detect motion without polling cursor_ref_
+    // every cell. -1 sentinel = "no previous sample yet" (first frame).
+    s32    prev_cursor_x_;
+    s32    prev_cursor_y_;
+
     // Optional cursor reference for A-button-as-click (injected by layout).
     QdCursorElement::Ref cursor_ref_;
 
@@ -298,6 +349,34 @@ private:
     // Freed alongside name_text_tex_/glyph_text_tex_ in FreeCachedText() so the
     // same icon-reload reset path invalidates all three per-slot textures atomically.
     std::array<SDL_Texture *, MAX_ICONS> icon_tex_;
+
+    // v1.7.0-stabilize-2 (REC-03 option B): per-slot "this texture is the
+    // DefaultHomebrew/DefaultApplication fallback PNG and should be replaced
+    // when real BGRA arrives" flag.
+    //
+    // Why this exists: the cold-load lazy fallback in PaintIconCell installs
+    // a default PNG into icon_tex_[slot] when the cache lookup misses
+    // (NACP or NRO ASET hasn't returned yet). Without this flag the slot is
+    // permanently stuck on the default icon: the BGRA cache may populate
+    // milliseconds later, but icon_tex_[slot] is already non-null so the
+    // replacement guard at lines ~1190-1194 of qd_DesktopIcons.cpp keeps
+    // the placeholder forever -- the v1.6.x "first frame wins" frame race
+    // creator reported.
+    //
+    // The fix flagged by REC-03 option (a) -- pre-warm extension to NROs at
+    // Initialize() -- adds 6-20 s of boot delay (per A9 audit) and busts the
+    // 15 s boot budget. Option (b) (this flag) keeps the fast cold-load path
+    // and only replaces the texture once when real data arrives.
+    //
+    // Lifecycle:
+    //   - Set to true in PaintIconCell at the moment a Default*.png fallback
+    //     is loaded into icon_tex_[slot].
+    //   - On the NEXT frame, if `bgra` from cache_.Get(...) is non-null AND
+    //     this flag is true, free icon_tex_[slot], rebuild from BGRA, and
+    //     clear the flag. The slot now displays the real icon.
+    //   - Reset to false when the slot is reused (FreeCachedText path) or
+    //     when SetApplicationEntries truncates icon_count_.
+    std::array<bool, MAX_ICONS> texture_replaceable_;
 
     // Cycle I (boot speed): cached white rounded-rect mask texture rendered ONCE
     // per Element. PaintIconCell uses SDL_SetTextureColorMod + SDL_RenderCopy

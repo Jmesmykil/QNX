@@ -11,6 +11,16 @@
 
 </div>
 
+## See it running
+
+<div align="center">
+
+https://github.com/Jmesmykil/uLaunch/raw/unew/assets/branding/qos-demo.mp4
+
+[Download / view the demo video](assets/branding/qos-demo.mp4) (10 MB, 1080p, 64 seconds, 3x speed, no audio)
+
+</div>
+
 ## What this is
 
 This is a fork of XorTroll's uLaunch. uLaunch replaces the Switch home menu (qlaunch) so you can boot straight into a custom launcher instead of the stock Nintendo one. We took that base and reskinned it with the Q OS look, added a few new surfaces (Vault, Monitor, About, Launchpad), a top bar that actually fits the screen, and a desktop dock that works the way you expect a dock to work.
@@ -75,8 +85,7 @@ This release ships the K cycle work as of 2026-04-25. What that means concretely
 * K+2 Settings and Filter chain (icon size picker, hide entries, favorites)
 * K+3 Long press iPhone style edit mode with drag reorder
 * K+4 Recent app LRU tracking
-* QOS Mirror.app native macOS Swift companion (replaces upstream Java uScreen)
-* QOS Theme Designer.app native macOS Swift companion (replaces upstream WASM uDesigner)
+* Native companion apps to replace the upstream Java uScreen and WASM uDesigner (post-1.0 scope, tracked in ROADMAP.md)
 * L cycle Window Manager, Homebrew Window Launcher, Task Manager (the next big thing)
 
 Design SSOTs for everything in the "designed not implemented" list live under [docs/](./docs/). Read those before opening implementation issues so you know what is on the plan and what is open.
@@ -90,6 +99,22 @@ The Q OS look. Cyan accent, deep navy base, magenta and lavender pops. The wallp
 ![SpecialEntry icons](assets/branding/icons-row.png)
 
 Settings, Album, Themes, Controllers, MiiEdit, WebBrowser, Amiibo, and the Empty slot placeholder. All eight rebuilt as Q OS originals. The upstream uLaunch icons are archived under `archive/upstream-art-p2/` for the full historical record.
+
+## What ships in qos-umenu-v1.2.3
+
+The release bundle is `qos-umenu-v1.2.3.zip` (and `.7z`). It contains exactly these artifacts:
+
+| Artifact | Path on SD card | Notes |
+|---|---|---|
+| `exefs.nsp` | `atmosphere/contents/0100000000001000/exefs.nsp` | uSystem, replaces qlaunch |
+| `main` | `ulaunch/bin/uMenu/main` | Q OS menu binary |
+| `main.npdm` | `ulaunch/bin/uMenu/main.npdm` | Access control descriptor |
+| `romfs.bin` | `ulaunch/bin/uMenu/romfs.bin` | Theme assets (29 Q OS original PNGs) |
+| `uManager/` | `ulaunch/bin/uManager/` | Installer NRO assets |
+| `uLoader/` | `ulaunch/bin/uLoader/` | hbloader replacement |
+| `uManager.nro` | `switch/uManager.nro` | Homebrew management app |
+
+The 29 original PNGs in `romfs.bin` are P1 through P4 of the rebrand: 5 hero assets, 8 SpecialEntry icons, 9 defaults and chrome pieces, and 7 status overlays. All generated in the Q OS brand palette and released under GPLv2.
 
 ## Install
 

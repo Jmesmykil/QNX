@@ -13,7 +13,9 @@ INCLUDES := -I../../include -I.
 
 TESTS := test_QdTheme test_QdPixelCanvas test_QdIconCache test_QdNroAsset test_QdIconCategory \
          test_QdAnim test_QdCurve test_QdDockMagnify \
-         test_QdMultitouch test_QdInput test_QdWmConstants
+         test_QdMultitouch test_QdInput test_QdWmConstants \
+         test_QdLaunchpad_HotCorner test_LoginChime test_QdDesktopIcons_Hover \
+         test_StructSize_Pinning
 
 # Real production source directory (relative to this Makefile's location).
 PROD_SRC := ../../source/ul/menu/qdesktop
@@ -83,6 +85,27 @@ test_QdInput: test_QdInput.cpp $(PROD_SRC)/qd_Input.cpp \
 # SP3: WM constants + focus model — header-only; no production .cpp needed.
 test_QdWmConstants: test_QdWmConstants.cpp test_host_stubs.hpp pu/Plutonium
 	$(CXX) $(CXXFLAGS) $(INCLUDES) test_QdWmConstants.cpp -o $@
+
+# v1.7.0-stabilize-2: hot-corner geometry pin + edge-trigger state machine.
+# Cannot include qd_Launchpad.hpp directly because it transitively pulls
+# real SDL2 (via qd_DesktopIcons.hpp -> qd_Cursor.hpp). Test mirrors the
+# constants and exercises the FSM contract.
+test_QdLaunchpad_HotCorner: test_QdLaunchpad_HotCorner.cpp test_host_stubs.hpp pu/Plutonium
+	$(CXX) $(CXXFLAGS) $(INCLUDES) test_QdLaunchpad_HotCorner.cpp -o $@
+
+# v1.7.0-stabilize-2: REC-01 chime gate. Models the StartPlayBgm() control
+# flow with the gate armed BEFORE the bgm-null check.
+test_LoginChime: test_LoginChime.cpp test_host_stubs.hpp pu/Plutonium
+	$(CXX) $(CXXFLAGS) $(INCLUDES) test_LoginChime.cpp -o $@
+
+# v1.7.0-stabilize-2: REC-02 hover-ring suppression during D-pad nav.
+test_QdDesktopIcons_Hover: test_QdDesktopIcons_Hover.cpp test_host_stubs.hpp pu/Plutonium
+	$(CXX) $(CXXFLAGS) $(INCLUDES) test_QdDesktopIcons_Hover.cpp -o $@
+
+# v1.7.0-stabilize-2: A7+A8 struct-size pinning. Mirrors NroEntry/LpItem
+# layouts and asserts sizes match the v1.6.x reconstruction snapshot.
+test_StructSize_Pinning: test_StructSize_Pinning.cpp test_host_stubs.hpp pu/Plutonium
+	$(CXX) $(CXXFLAGS) $(INCLUDES) test_StructSize_Pinning.cpp -o $@
 
 run: $(TESTS)
 	@for t in $(TESTS); do \

@@ -101,8 +101,14 @@ constexpr s32 LP_SEARCH_BAR_X  = 300;
 constexpr s32 LP_SEARCH_BAR_Y  = 84;
 constexpr s32 LP_SEARCH_BAR_W  = 1320;
 constexpr s32 LP_SEARCH_BAR_H  = 48;
-constexpr s32 LP_HOTCORNER_W   = 60;    // top-left widget width = safe-left
-constexpr s32 LP_HOTCORNER_H   = 48;    // = TOPBAR_H
+// v1.7.0-stabilize-2: hot-corner geometry widened from 60x48 to 96x72.
+// Switch Erista capacitive screen has a ~20-30 px corner dead zone that
+// suppresses touch events along the extreme edges; the widened box pushes the
+// active hit area inward enough to be reliably tappable. The widget is shared
+// between qd_DesktopIcons (open Launchpad) and qd_Launchpad (close Launchpad)
+// so a single SSOT here drives both render and input sites.
+constexpr s32 LP_HOTCORNER_W   = 96;    // top-left widget width (was 60)
+constexpr s32 LP_HOTCORNER_H   = 72;    // top-left widget height (was 48 = TOPBAR_H)
 
 // Icon art dimensions within each grid cell.
 // Matches PaintIconCell pattern from qd_DesktopIcons.cpp (bg rect proportions).
@@ -152,6 +158,25 @@ struct LpItem {
     // Returned by FocusedDesktopIdx() so the host can dispatch LaunchIcon(idx).
     size_t  desktop_idx;
 };
+
+// ── v1.7.0-stabilize-2: LpItem struct-size pin (A7 + A8) ──────────────────
+// Companion to the NroEntry pin in qd_DesktopIcons.hpp. LpItem is the
+// snapshot copy created by Launchpad::Open() and traversed by every render
+// frame; like NroEntry, growing this struct will silently shift the layout
+// the cache traversal depends on (vector<LpItem>, indexed by size_t).
+//
+// LpItem is NOT a libnx IPC structure (it lives entirely inside
+// QdLaunchpadElement), so the failure mode is not a crash -- it would be
+// a heap-allocator pressure spike on Open() and a per-render cache stride
+// regression. Pin it so any unintentional growth surfaces at compile time.
+//
+// Computed value: 1632 bytes on aarch64 ARM64 with GCC's standard layout
+// (same probe as NroEntry; see qd_DesktopIcons.hpp comment).
+static_assert(sizeof(LpItem) == 1632,
+              "LpItem size shifted -- v1.7.0 cache-stride regression risk; "
+              "use a side table for new state, do not extend the struct");
+static_assert(alignof(LpItem) == 8,
+              "LpItem alignment shifted -- vector<LpItem> stride assumption violated");
 
 // ── QdLaunchpadElement ────────────────────────────────────────────────────────
 // Pu Element rendering the full-screen Launchpad overlay.
@@ -272,6 +297,13 @@ private:
     // Any other value = show only items whose stable ID maps to that folder bucket.
     // Set by tapping a folder tile; cleared on Close() and on re-Open().
     AutoFolderIdx           active_folder_;
+
+    // v1.7.0-stabilize-2: edge-trigger state for the hot-corner CLOSE handler.
+    // Mirrors `was_touch_active_last_frame_` in QdDesktopIconsElement -- both
+    // sides use the same convention so a single tap fires open OR close exactly
+    // once per finger-down. Initialized to false so the first frame after
+    // Open() does not immediately self-close on a still-down finger.
+    bool                    lp_was_touch_active_last_frame_;
 
     // Per-slot cached text and icon textures; same pattern as DesktopIcons.
     // Max LP items == MAX_ICONS == 48; vector index mirrors items_ index.

@@ -796,7 +796,10 @@ namespace ul::menu::ui {
             // this->Add(time_mtext) and this->Add(time_mtext->Get(0/1)) internally
             // — do NOT call Add again for time_mtext or you get a double-add.
 
-            constexpr s32 TOPBAR_SAFE_LEFT  = 12;
+            // v1.7.0-stabilize-2: TOPBAR_SAFE_LEFT removed -- TOPBAR_TIME_X
+            // is now anchored explicitly to LP_HOTCORNER_W + TOPBAR_GUTTER
+            // (= 112) instead of the legacy SAFE_LEFT margin (12). Removing
+            // the unused constant avoids -Werror=unused-variable.
             constexpr s32 TOPBAR_SAFE_RIGHT = 24;
             constexpr s32 TOPBAR_ICON_W     = 32;   // square — width == height
             constexpr s32 TOPBAR_ICON_H     = 32;
@@ -813,8 +816,13 @@ namespace ul::menu::ui {
             constexpr s32 BATT_ICON_X        = BATT_TEXT_X - TOPBAR_GUTTER - TOPBAR_ICON_W;       // 1800
             constexpr s32 CONN_ICON_X        = BATT_ICON_X - TOPBAR_GUTTER - TOPBAR_ICON_W;       // 1752
             constexpr s32 BT_ICON_X          = CONN_ICON_X - TOPBAR_GUTTER - TOPBAR_ICON_W;       // 1704
-            constexpr s32 TOPBAR_TIME_X      = TOPBAR_SAFE_LEFT;        // 12
-            constexpr s32 TOPBAR_DATE_X      = TOPBAR_SAFE_LEFT + 188;  // 200 (12-char Medium block)
+            // v1.7.0-stabilize-2: time/date widgets shifted right past the
+            // hot-corner widget so a 96x72 widget at (0,0) does not overlap
+            // the time text. 96 (LP_HOTCORNER_W) + 16 (TOPBAR_GUTTER) = 112.
+            // The date offset stays the same delta from time (188 px) so the
+            // 12-char Medium block layout is preserved verbatim.
+            constexpr s32 TOPBAR_TIME_X      = 112;                     // was TOPBAR_SAFE_LEFT (12)
+            constexpr s32 TOPBAR_DATE_X      = TOPBAR_TIME_X + 188;     // 300 (was 200)
 
             // ── time (left, large) ────────────────────────────────────────────
             this->InitializeTimeText(this->time_mtext, "main_menu", "time_text");

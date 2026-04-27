@@ -19,6 +19,13 @@
 
 namespace ul::menu::qdesktop {
 
+// v1.7.0-stabilize-7 Slice 4 (O-B): forward declaration so the
+// ConsumePendingLaunchpadFolder() static accessor in QdDesktopIconsElement
+// can return an AutoFolderIdx without including qd_AutoFolders.hpp here
+// (which would create a circular include — qd_AutoFolders.hpp itself
+// #includes this file for ClassifyKind).
+enum class AutoFolderIdx : u8;
+
 // ── Icon kind discriminant ─────────────────────────────────────────────────
 // Distinguishes the three sources of desktop entries.
 enum class IconKind : u8 {
@@ -289,6 +296,18 @@ private:
     // Returns the icons_[] index whose favorite tile contains (tx, ty), or
     // SIZE_MAX if no tile matches.  Layout-relative; caller adds (x, y).
     size_t HitTestFavorites(s32 tx, s32 ty) const;
+
+    // v1.7.0-stabilize-7 Slice 4 (O-B): unified focus-ring hit-test.
+    // Returns:
+    //   0..(kDesktopFolderCount-1)                          -> desktop folder fi
+    //   kDesktopFolderCount..kDesktopFolderCount+BIC-1       -> dock slot
+    //                                                          (subtract kDesktopFolderCount
+    //                                                          for the icons_[] index)
+    //   SIZE_MAX                                            -> no hit
+    // Where BIC = BUILTIN_ICON_COUNT.  This replaces the old icons_[]-indexed
+    // HitTest for the desktop's primary input path now that the per-icon
+    // grid is gone (Slice 4 Phase 1 strip).
+    size_t HitTestDesktop(s32 tx, s32 ty) const;
     QdTheme theme_;
     std::array<NroEntry, MAX_ICONS> icons_;
     size_t icon_count_;

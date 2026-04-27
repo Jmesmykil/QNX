@@ -37,6 +37,14 @@ extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
 
 namespace ul::menu::qdesktop {
 
+// v1.7.0-stabilize-7 Slice 5 (O-F Patch 2): forward declarations for the
+// favorites shims defined in qd_DesktopIcons.cpp.  The shims accept an LpItem
+// by reference and reconstruct the stable id using is_builtin / app_id /
+// nro_path / name fields. Defined where they can access the file-scope
+// FavoriteEntry / g_favorites_* state.
+bool ToggleFavoriteByLpItem(const LpItem &item);
+bool IsFavoriteByLpItem(const LpItem &item);
+
 // ── Constructor ───────────────────────────────────────────────────────────────
 
 QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
@@ -94,6 +102,21 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     pending_launch_from_mouse_ = false;
     filter_dirty_              = false;
     active_folder_             = AutoFolderIdx::None;  // Fix D (v1.6.12): show all by default
+    // v1.7.0-stabilize-7 Slice 4 (O-B Phase 3): consume any pending pre-filter
+    // set by a desktop folder tap. ConsumePendingLaunchpadFolder() is a single
+    // u8 side-table read+reset; it does NOT clear filter state for the next
+    // Open call when the desktop didn't request a pre-filter (then the call
+    // returns AutoFolderIdx::None and is a no-op).
+    {
+        const AutoFolderIdx pending =
+            QdDesktopIconsElement::ConsumePendingLaunchpadFolder();
+        if (pending != AutoFolderIdx::None) {
+            active_folder_ = pending;
+            filter_dirty_  = true;
+            UL_LOG_INFO("qdesktop: Launchpad Open consumed pending folder=%u",
+                        static_cast<unsigned>(pending));
+        }
+    }
     page_index_                = 0;  // F10 (stabilize-5): always start at first page
     page_count_                = 1;  // F10 (stabilize-5): recalculated in RebuildFilter
     // v1.7.0-stabilize-2: reset edge-trigger latch so the same finger-down
@@ -615,6 +638,19 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         if (mouse_hover_index_ < n) {
             pending_launch_            = true;
             pending_launch_from_mouse_ = true;
+        }
+    }
+
+    // ── v1.7.0-stabilize-7 Slice 5 (O-F Patch 2): Y toggles favorite ─────────
+    // Mirrors qd_DesktopIcons.cpp:Y handling at the focused-tile level.
+    // Y on the dpad-focused item flips its favorite state. Star overlay (in
+    // PaintCell) reflects the new state on the next paint via the lazy build.
+    if (keys_down & HidNpadButton_Y) {
+        if (dpad_focus_index_ < n) {
+            const size_t item_idx = filtered_idxs_[dpad_focus_index_];
+            if (item_idx < items_.size()) {
+                ToggleFavoriteByLpItem(items_[item_idx]);
+            }
         }
     }
 
@@ -1342,6 +1378,29 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
         // Second ring (thicker visual) one pixel inside.
         SDL_Rect ring2 { icon_x - 1, icon_y - 1, LP_ICON_W + 2, LP_ICON_H + 2 };
         SDL_RenderDrawRect(r, &ring2);
+    }
+
+    // ── v1.7.0-stabilize-7 Slice 5 (O-F Patch 2): star overlay ────────────────
+    // ASCII '*' rendered top-right of the icon when this entry is favorited.
+    // Cached statically so RenderText runs at most once per process.
+    if (IsFavoriteByLpItem(item)) {
+        static SDL_Texture *star_tex = nullptr;
+        if (star_tex == nullptr) {
+            const pu::ui::Color amber { 0xFBu, 0xBFu, 0x24u, 0xFFu };
+            star_tex = pu::ui::render::RenderText(
+                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+                "*", amber);
+        }
+        if (star_tex != nullptr) {
+            int sw = 0, sh = 0;
+            SDL_QueryTexture(star_tex, nullptr, nullptr, &sw, &sh);
+            SDL_Rect sdst {
+                icon_x + LP_ICON_W - sw - 4,
+                icon_y + 4,
+                sw, sh
+            };
+            SDL_RenderCopy(r, star_tex, nullptr, &sdst);
+        }
     }
 }
 

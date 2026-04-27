@@ -291,6 +291,13 @@ static std::unordered_map<u64, u8> g_ns_icon_retry_;
 static constexpr u8 NRO_ICON_MAX_RETRIES = 3;
 static std::unordered_map<std::string, u8> g_nro_icon_retry_;
 
+// v1.7.0-stabilize-7 Slice 4: forward declaration for the rounded-rect
+// fallback used when Folder.png cannot be loaded. Definition is later in the
+// file (~line 1771); declaring here lets PaintDesktopFolders compile in
+// translation-unit order.
+static void FillRoundRect(SDL_Renderer *r, SDL_Rect rect, int radius,
+                           u8 cr, u8 cg, u8 cb, u8 ca);
+
 // ── v1.7.0-stabilize-7 Slice 4 (O-B): desktop folder grid state ──────────────
 // Per the O-B desktop redesign, the per-icon paint loop is replaced with a
 // 6-folder categorized grid above the dock. All state is in file-scope side
@@ -1050,6 +1057,14 @@ void QdDesktopIconsElement::PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y) {
     if (g_favorites_list_.empty()) {
         return;
     }
+    // Direct cursor query for hover detection — favorites strip is OUTSIDE
+    // the unified dpad/mouse focus ring (Slice 5 deliberately defers strip
+    // d-pad nav to v1.7.2 per O-F §"Open questions" #5).
+    s32 cursor_x = -1, cursor_y = -1;
+    if (cursor_ref_ != nullptr) {
+        cursor_x = cursor_ref_->GetCursorX();
+        cursor_y = cursor_ref_->GetCursorY();
+    }
     size_t painted = 0u;
     const size_t cap = (g_favorites_list_.size() < static_cast<size_t>(FAV_STRIP_VISIBLE))
                         ? g_favorites_list_.size()
@@ -1069,7 +1084,9 @@ void QdDesktopIconsElement::PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y) {
         const s32 cell_y = FAV_STRIP_TOP + y;
         NroEntry &entry = icons_[idx];
         const bool dpad_focused  = false;  // strip not in unified focus ring
-        const bool mouse_hovered = (mouse_hover_index_ == idx);
+        const bool mouse_hovered =
+            (cursor_x >= cell_x && cursor_x < cell_x + ICON_BG_W
+             && cursor_y >= cell_y && cursor_y < cell_y + ICON_BG_H);
         PaintIconCell(r, entry, idx, cell_x, cell_y,
                       dpad_focused, mouse_hovered);
         ++painted;
@@ -1704,6 +1721,33 @@ size_t QdDesktopIconsElement::HitTest(s32 tx, s32 ty) const {
     return MAX_ICONS; // sentinel: no hit
 }
 
+// ── HitTestDesktop ───────────────────────────────────────────────────────────
+// Unified hit-test against the Slice 4 desktop layout (folders 0..5 + dock
+// 6..10).  The icon-grid path is gone — every hit is either a folder, a
+// dock cell, or no hit at all.  Favorites strip hit-testing is separate
+// (HitTestFavorites) so the strip can take priority over folder/dock for
+// the small overlap region near y=622.
+
+size_t QdDesktopIconsElement::HitTestDesktop(s32 tx, s32 ty) const {
+    // ── 1. Folder grid (3×2) ─────────────────────────────────────────────────
+    for (size_t fi = 0u; fi < kDesktopFolderCount; ++fi) {
+        const SDL_Rect &fr = g_desktop_folder_rects[fi];
+        if (tx >= fr.x && ty >= fr.y
+                && tx < fr.x + fr.w && ty < fr.y + fr.h) {
+            return fi;
+        }
+    }
+    // ── 2. Dock (5 cells, magnify-aware) ─────────────────────────────────────
+    for (size_t i = 0u; i < BUILTIN_ICON_COUNT; ++i) {
+        if (tx >= dock_slot_x_[i] && ty >= kDockNominalTop
+                && tx < dock_slot_x_[i] + dock_slot_w_[i]
+                && ty < kDockNominalTop + kDockH) {
+            return kDesktopFolderCount + i;
+        }
+    }
+    return SIZE_MAX;
+}
+
 // ── FillRoundRect ─────────────────────────────────────────────────────────────
 // Software-rasterised rounded-corner filled rectangle.
 //
@@ -2240,6 +2284,32 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
         SDL_RenderDrawRect(r, &soft_ring);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }
+
+    // ── v1.7.0-stabilize-7 Slice 5 (O-F Patch 5): star overlay ────────────────
+    // Mirrors qd_Launchpad.cpp:PaintCell star. With Slice 4 stripping the
+    // desktop grid, this fires for:
+    //   - dock builtins (rare: user could favorite a Builtin via Launchpad Y),
+    //   - favorites strip tiles (via PaintFavoritesStrip which calls into
+    //     PaintIconCell with the icons_[] entry).
+    if (IsFavorite(entry)) {
+        static SDL_Texture *star_tex = nullptr;
+        if (star_tex == nullptr) {
+            const pu::ui::Color amber { 0xFBu, 0xBFu, 0x24u, 0xFFu };
+            star_tex = pu::ui::render::RenderText(
+                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+                "*", amber);
+        }
+        if (star_tex != nullptr) {
+            int sw = 0, sh = 0;
+            SDL_QueryTexture(star_tex, nullptr, nullptr, &sw, &sh);
+            SDL_Rect sdst {
+                bg_x + ICON_BG_W - sw - 4,
+                bg_y + 4,
+                sw, sh
+            };
+            SDL_RenderCopy(r, star_tex, nullptr, &sdst);
+        }
+    }
 }
 
 // ── OnRender ──────────────────────────────────────────────────────────────────
@@ -2272,10 +2342,16 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // Track cursor position every frame so the hover ring stays in sync with
     // the pointer even when no button is pressed.  This is a read-only operation
     // (no launch side-effects) -- it only updates the visual highlight.
+    //
+    // v1.7.0-stabilize-7 Slice 4: switched from icons_[]-indexed HitTest() to
+    // unified HitTestDesktop() (folders 0..5 + dock 6..10).  PaintFavoritesStrip
+    // does its own cursor query for hover detection because the strip is
+    // outside the unified focus ring (Slice 5 §"Open questions" #5 defers
+    // strip d-pad nav to v1.7.2).
     if (cursor_ref_ != nullptr) {
         const s32 cx = cursor_ref_->GetCursorX();
         const s32 cy = cursor_ref_->GetCursorY();
-        mouse_hover_index_ = HitTest(cx, cy);
+        mouse_hover_index_ = HitTestDesktop(cx, cy);
 
         // v1.7.0-stabilize-2 (REC-02 corrected): cursor motion flips the
         // input-modality flag back to "mouse" so the hover ring renders
@@ -2495,59 +2571,95 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
     (void)keys_up;
     (void)keys_held;
 
-    // ── A: launch the D-pad focused icon (keyboard / controller nav) ─────────
-    // A-button always targets dpad_focus_index_, never the cursor position.
-    // This keeps controller and pointer input streams fully independent.
+    // ── v1.7.0-stabilize-7 Slice 4 (O-B Phase 5) — unified focus model ───────
+    //
+    // dpad_focus_index_ semantics changed in stabilize-7:
+    //   0..(kDesktopFolderCount-1)            -> desktop folder fi
+    //   kDesktopFolderCount..(kDFC + BIC - 1)  -> dock slot (icon idx = focus - kDFC)
+    //
+    // Total range: 0..10 (6 folders + 5 dock cells). Favorites strip is
+    // intentionally NOT in the focus ring — touch + cursor only. (Slice 5
+    // §"Open questions" #5 defers strip d-pad nav to v1.7.2.)
+
+    // ── A: launch focused folder OR dock builtin ─────────────────────────────
     if (keys_down & HidNpadButton_A) {
-        if (dpad_focus_index_ < icon_count_) {
-            LaunchIcon(dpad_focus_index_);
+        const size_t f = dpad_focus_index_;
+        if (f < kDesktopFolderCount) {
+            OpenLaunchpadFiltered(static_cast<DesktopFolderId>(f));
+            return;
+        } else if (f < kDesktopFolderCount + BUILTIN_ICON_COUNT
+                   && (f - kDesktopFolderCount) < icon_count_) {
+            LaunchIcon(f - kDesktopFolderCount);
+            return;
         }
     }
 
-    // ── ZR: launch the icon under the cursor (pointer / hover nav) ───────────
-    // ZR performs a fresh hit-test against the current cursor position so the
-    // trigger works correctly even when the cursor moved since the last frame.
-    // Updates mouse_hover_index_ as a side effect so OnRender reflects reality.
-    // No-op if cursor is not wired or cursor is not over any icon.
+    // ── ZR: launch the cell under the cursor (folder or dock or favorite) ────
     if (keys_down & HidNpadButton_ZR) {
         if (cursor_ref_ != nullptr) {
             const s32 cx = cursor_ref_->GetCursorX();
             const s32 cy = cursor_ref_->GetCursorY();
-            const size_t hit = HitTest(cx, cy);
+            // Slice 5: favorites strip takes priority over folder/dock for
+            // the small overlap region near y=622.
+            const size_t fav_hit = HitTestFavorites(cx, cy);
+            if (fav_hit < icon_count_) {
+                LaunchIcon(fav_hit);
+                return;
+            }
+            const size_t hit = HitTestDesktop(cx, cy);
             mouse_hover_index_ = hit;
-            if (hit < icon_count_) {
-                LaunchIcon(hit);
+            if (hit < kDesktopFolderCount) {
+                OpenLaunchpadFiltered(static_cast<DesktopFolderId>(hit));
+                return;
+            } else if (hit < kDesktopFolderCount + BUILTIN_ICON_COUNT
+                       && (hit - kDesktopFolderCount) < icon_count_) {
+                LaunchIcon(hit - kDesktopFolderCount);
+                return;
             }
         }
-        // ZR is intentionally a no-op when cursor_ref_ is not wired.
     }
 
-    // ── ZL / Y: right-click / context menu on the icon under the cursor ──
-    // Cycle G2 (SP4.15): real popup wired.  Both ZL (shoulder) and Y (face)
-    // open the same context menu so users discover the gesture either way.
-    // Options shown depend on icon kind + suspended-app state:
-    //   • Application + this icon's app suspended → Resume / Close / Cancel
-    //   • Application + a DIFFERENT app suspended → Open (close current) /
-    //                                                Close current / Cancel
-    //   • Application, no app suspended           → Open / Cancel
-    //   • Nro                                     → Open / Cancel
-    //   • Special / Builtin                       → Open / Cancel
-    // Real "Verify" / "Delete" / "Move to dock" actions land in a later
-    // cycle once the corresponding SMI surface is wired (T1-4 punch list).
+    // ── ZL / Y: context menu on dock / Y-toggle on favorite under cursor ─────
+    // Slice 4 changes Y semantics for desktop interactions:
+    //   - On a dock builtin (icon under cursor or focused dpad index) → context menu
+    //     (preserved Cycle G2 behavior; no behavioral change for builtins).
+    //   - On a favorited tile under the cursor → toggle (un-favorite).
+    //   - On a desktop folder cell → no-op (folders aren't entries; favorites
+    //     and Open are the meaningful actions there).
     if ((keys_down & HidNpadButton_ZL) || (keys_down & HidNpadButton_Y)) {
-        size_t ctx_idx = MAX_ICONS;
+        // Slice 5 Patch 4: Y on cursor-hovered favorite → un-favorite.
         if (cursor_ref_ != nullptr) {
             const s32 cx = cursor_ref_->GetCursorX();
             const s32 cy = cursor_ref_->GetCursorY();
-            ctx_idx = HitTest(cx, cy);
+            const size_t fav_hit = HitTestFavorites(cx, cy);
+            if (fav_hit < icon_count_) {
+                ToggleFavorite(icons_[fav_hit]);
+                return;
+            }
         }
-        if (ctx_idx >= icon_count_) {
-            ctx_idx = dpad_focus_index_;
+        // Resolve a dock slot under cursor or focused index for the legacy
+        // context menu (Cycle G2 / Y on Application icon → Resume/Close).
+        size_t dock_idx = BUILTIN_ICON_COUNT;  // sentinel
+        if (cursor_ref_ != nullptr) {
+            const s32 cx = cursor_ref_->GetCursorX();
+            const s32 cy = cursor_ref_->GetCursorY();
+            const size_t h = HitTestDesktop(cx, cy);
+            if (h >= kDesktopFolderCount
+                    && h < kDesktopFolderCount + BUILTIN_ICON_COUNT) {
+                dock_idx = h - kDesktopFolderCount;
+            }
         }
-        if (ctx_idx < icon_count_ && g_MenuApplication != nullptr) {
-            const NroEntry &entry = icons_[ctx_idx];
-            UL_LOG_INFO("qdesktop: context-menu open idx=%zu name='%s' kind=%d",
-                        ctx_idx, entry.name, static_cast<int>(entry.kind));
+        if (dock_idx >= BUILTIN_ICON_COUNT
+                && dpad_focus_index_ >= kDesktopFolderCount
+                && dpad_focus_index_ < kDesktopFolderCount + BUILTIN_ICON_COUNT) {
+            dock_idx = dpad_focus_index_ - kDesktopFolderCount;
+        }
+        if (dock_idx < BUILTIN_ICON_COUNT
+                && dock_idx < icon_count_
+                && g_MenuApplication != nullptr) {
+            const NroEntry &entry = icons_[dock_idx];
+            UL_LOG_INFO("qdesktop: context-menu open dock_idx=%zu name='%s' kind=%d",
+                        dock_idx, entry.name, static_cast<int>(entry.kind));
 
             const u64 suspended_app_id = g_GlobalSettings.system_status.suspended_app_id;
             const bool this_is_suspended =
@@ -2595,9 +2707,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
             if (choice < 0 || choice == cancel_idx) {
                 UL_LOG_INFO("qdesktop: context-menu cancelled");
             } else if (choice == opt_open) {
-                // Routes through LaunchIcon → G1 logic handles
-                // resume/terminate-and-launch transparently.
-                LaunchIcon(ctx_idx);
+                LaunchIcon(dock_idx);
             } else if (choice == opt_close && this_is_suspended) {
                 UL_LOG_INFO("qdesktop: context-menu Close → TerminateApplication 0x%016llx",
                             static_cast<unsigned long long>(entry.app_id));
@@ -2627,15 +2737,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
     }
 
     // ── v1.7.0-stabilize-2: hot-corner OPEN edge-trigger ─────────────────────
-    // The hot-corner widget rendered at the end of OnRender is a 96x72 box
-    // anchored at the layout origin. A single tap inside it opens the
-    // Launchpad. Edge-triggered using `was_touch_active_last_frame_` so the
-    // open fires once on finger-down, not every frame the finger is held.
-    //
-    // Reference convention: this matches the close-side handler in
-    // qd_Launchpad.cpp (added in the same v1.7.0-stabilize-2 batch). Both
-    // sides of the toggle use the same edge-trigger pattern so a quick tap
-    // anywhere in the corner gives a clean open/close transition.
+    // (Preserved from stabilize-6; F12 latch reorder retained.)
     {
         const bool touch_active_now = !touch_pos.IsEmpty();
         if (touch_active_now && !was_touch_active_last_frame_) {
@@ -2649,9 +2751,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                 // each iteration recursively calls this OnInput. Without this
                 // pre-LoadMenu update, the inner calls see
                 // was_touch_active_last_frame_ == false and re-fire
-                // LoadMenu(Launchpad) (~17 nested calls observed in HW log
-                // 2026-04-27 00:58:13–14). Same re-entry pattern as cycle-E1
-                // LaunchIcon (qd_DesktopIcons.cpp:2095-2149).
+                // LoadMenu(Launchpad).
                 was_touch_active_last_frame_ = touch_active_now;
                 UL_LOG_INFO("qdesktop: hot-corner OPEN tap edge tx=%d ty=%d -> LoadMenu(Launchpad)",
                             tx, ty);
@@ -2661,12 +2761,15 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
         }
     }
 
-    // ── D-pad navigation ─────────────────────────────────────────────────────
-    // v1.7.0-stabilize-2 (REC-02 corrected): any D-pad/A press flips the
-    // last_input_was_dpad_ flag so PaintIconCell suppresses the cursor-hover
-    // ring while the user is on the controller. The flag is cleared on the
-    // first cursor or touch event below so ZR-launches-cursor-target keeps
-    // working in mouse mode.
+    // ── v1.7.0-stabilize-7 Slice 4 Phase 5: D-pad nav across folders + dock ──
+    //
+    // Folders (3×2) at indices 0..5: row 0 = 0,1,2 ; row 1 = 3,4,5.
+    // Dock (5 cells) at indices 6..10.
+    //
+    // Up:    dock -> folder row 1 (column-mapped 5→3); folder row 1 -> row 0.
+    // Down:  folder row 0 -> row 1; folder row 1 -> dock (column-mapped 3→5).
+    // Left:  decrement (no wrap).
+    // Right: increment (no wrap).
     const u64 dpad_a_mask = HidNpadButton_Up | HidNpadButton_Down
                           | HidNpadButton_Left | HidNpadButton_Right
                           | HidNpadButton_A;
@@ -2675,35 +2778,62 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
     }
 
     if (keys_down & HidNpadButton_Up) {
-        if (dpad_focus_index_ >= static_cast<size_t>(ICON_GRID_COLS)) {
-            dpad_focus_index_ -= static_cast<size_t>(ICON_GRID_COLS);
-        } else {
-            dpad_focus_index_ = 0u;
+        const size_t f = dpad_focus_index_;
+        if (f >= kDesktopFolderCount
+                && f < kDesktopFolderCount + BUILTIN_ICON_COUNT) {
+            // Dock -> folder row 1.  Map dock col (0..4) to folder col (0..2)
+            // via integer truncation: target_col = dock_i * DF_COLS / BIC.
+            const size_t dock_i = f - kDesktopFolderCount;
+            const size_t target_col =
+                (dock_i * static_cast<size_t>(DF_COLS)) / BUILTIN_ICON_COUNT;
+            dpad_focus_index_ = static_cast<size_t>(DF_COLS) + target_col;
+        } else if (f >= static_cast<size_t>(DF_COLS) && f < kDesktopFolderCount) {
+            // Folder row 1 -> row 0.
+            dpad_focus_index_ = f - static_cast<size_t>(DF_COLS);
         }
-        UL_LOG_INFO("qdesktop: dpad dpad_focus=%zu", dpad_focus_index_);
+        // f < DF_COLS (already row 0): no-op.
+        UL_LOG_INFO("qdesktop: dpad up -> focus=%zu", dpad_focus_index_);
     }
     if (keys_down & HidNpadButton_Down) {
-        if (dpad_focus_index_ + static_cast<size_t>(ICON_GRID_COLS) < icon_count_) {
-            dpad_focus_index_ += static_cast<size_t>(ICON_GRID_COLS);
-        } else {
-            dpad_focus_index_ = (icon_count_ > 0u) ? icon_count_ - 1u : 0u;
+        const size_t f = dpad_focus_index_;
+        if (f < static_cast<size_t>(DF_COLS)) {
+            // Folder row 0 -> row 1.
+            dpad_focus_index_ = f + static_cast<size_t>(DF_COLS);
+        } else if (f < kDesktopFolderCount) {
+            // Folder row 1 -> dock.  Map folder col (0..2) to dock col
+            // (0..4) via target_dock = col * BIC / DF_COLS.
+            const size_t folder_col = f - static_cast<size_t>(DF_COLS);
+            const size_t target_dock =
+                (folder_col * BUILTIN_ICON_COUNT) / static_cast<size_t>(DF_COLS);
+            dpad_focus_index_ = kDesktopFolderCount + target_dock;
         }
-        UL_LOG_INFO("qdesktop: dpad dpad_focus=%zu", dpad_focus_index_);
+        // f >= kDesktopFolderCount (already dock): no-op.
+        UL_LOG_INFO("qdesktop: dpad down -> focus=%zu", dpad_focus_index_);
     }
     if (keys_down & HidNpadButton_Left) {
         if (dpad_focus_index_ > 0u) {
-            dpad_focus_index_ -= 1u;
+            --dpad_focus_index_;
         }
-        UL_LOG_INFO("qdesktop: dpad dpad_focus=%zu", dpad_focus_index_);
+        UL_LOG_INFO("qdesktop: dpad left -> focus=%zu", dpad_focus_index_);
     }
     if (keys_down & HidNpadButton_Right) {
-        if (dpad_focus_index_ + 1u < icon_count_) {
-            dpad_focus_index_ += 1u;
+        const size_t max_idx = kDesktopFolderCount + BUILTIN_ICON_COUNT - 1u;
+        if (dpad_focus_index_ < max_idx) {
+            ++dpad_focus_index_;
         }
-        UL_LOG_INFO("qdesktop: dpad dpad_focus=%zu", dpad_focus_index_);
+        UL_LOG_INFO("qdesktop: dpad right -> focus=%zu", dpad_focus_index_);
     }
 
-    // ── Touch click-vs-drag state machine ─────────────────────────────────────
+    // ── Touch click-vs-drag state machine (unified) ──────────────────────────
+    //
+    // Order of priority on TouchDown / TouchUp:
+    //   1. Favorites strip (Slice 5 Patch 4) — highest; user taps the strip
+    //      directly under the row.
+    //   2. Folder grid + dock (Slice 4 Phase 5) — HitTestDesktop.
+    //
+    // The hot-corner OPEN block above already handles the corner; if that
+    // fired we returned. So if we reach this block, the touch is NOT in
+    // the corner.
 
     const bool touch_active_now = !touch_pos.IsEmpty();
 
@@ -2713,18 +2843,23 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
 
         if (!was_touch_active_last_frame_) {
             // ── TouchDown ──────────────────────────────────────────────────
-            pressed_    = true;
-            down_x_     = tx;
-            down_y_     = ty;
+            pressed_      = true;
+            down_x_       = tx;
+            down_y_       = ty;
             last_touch_x_ = tx;
             last_touch_y_ = ty;
-            down_idx_   = HitTest(tx, ty);
-            // v1.7.0-stabilize-2 (REC-02 corrected): touch arrival flips the
-            // input-modality flag back to "mouse/touch" so the hover ring
-            // (which doubles as the touch-pressed visual cue) renders again
-            // after a stretch of D-pad navigation.
+            // Favorites take priority over folders/dock.
+            const size_t fav_hit = HitTestFavorites(tx, ty);
+            if (fav_hit < icon_count_) {
+                // Encode favorite hit as MAX_ICONS + icons_[]_idx so the
+                // up-side can distinguish from a folder/dock hit.
+                down_idx_ = MAX_ICONS + 1u + fav_hit;
+            } else {
+                down_idx_ = HitTestDesktop(tx, ty);  // 0..10 or SIZE_MAX
+            }
             last_input_was_dpad_ = false;
-            UL_LOG_INFO("qdesktop: touch_down x=%d y=%d hit=%zu", tx, ty, down_idx_);
+            UL_LOG_INFO("qdesktop: touch_down x=%d y=%d hit=%zu",
+                        tx, ty, down_idx_);
         } else {
             // ── TouchMove ──────────────────────────────────────────────────
             last_touch_x_ = tx;
@@ -2737,27 +2872,58 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                     static_cast<int>(pressed_));
 
         if (pressed_) {
-            const size_t lift_hit = HitTest(last_touch_x_, last_touch_y_);
+            // Re-resolve the lift hit using the same priority order.
+            const size_t fav_lift = HitTestFavorites(last_touch_x_, last_touch_y_);
+            size_t lift_hit;
+            if (fav_lift < icon_count_) {
+                lift_hit = MAX_ICONS + 1u + fav_lift;
+            } else {
+                lift_hit = HitTestDesktop(last_touch_x_, last_touch_y_);
+            }
             const s32 dx = last_touch_x_ - down_x_;
             const s32 dy = last_touch_y_ - down_y_;
-            // Squared distance avoids sqrt; CLICK_TOLERANCE_PX^2 = 576.
             const s32 dist_sq = dx * dx + dy * dy;
             const s32 tol     = CLICK_TOLERANCE_PX;
             const s32 tol_sq  = tol * tol;
 
-            if (lift_hit < icon_count_ && lift_hit == down_idx_ && dist_sq <= tol_sq) {
-                UL_LOG_INFO("qdesktop: launch idx=%zu (touch click)", lift_hit);
-                // Cycle E1: clear ALL touch state BEFORE LaunchIcon so the
-                // nested OnInput calls fired by FadeOut's CallForRender
-                // busy-loop see a clean slate (touch_active_now is false,
-                // pressed_ is false, was_touch_active_last_frame_ matches).
-                // This belts-and-suspenders the re-entry guard inside
-                // LaunchIcon itself — they're independent defenses.
+            if (lift_hit != SIZE_MAX && lift_hit == down_idx_
+                    && dist_sq <= tol_sq) {
+                // Cycle E1: clear ALL touch state BEFORE any nested-fade
+                // operation (LaunchIcon / LoadMenu / OpenLaunchpadFiltered).
                 pressed_                     = false;
                 down_idx_                    = MAX_ICONS;
                 was_touch_active_last_frame_ = touch_active_now;
-                LaunchIcon(lift_hit);
-                return;
+
+                if (lift_hit > MAX_ICONS) {
+                    // Favorites strip tap → resolve to icons_[] idx and launch.
+                    const size_t icons_idx = lift_hit - MAX_ICONS - 1u;
+                    if (icons_idx < icon_count_) {
+                        // Slice 5 Patch 4: tap on stale favorite is impossible
+                        // here (HitTestFavorites returned an in-range idx);
+                        // launch through normal path.
+                        UL_LOG_INFO("qdesktop: launch favorite icons_idx=%zu (touch click)",
+                                    icons_idx);
+                        LaunchIcon(icons_idx);
+                    }
+                    return;
+                }
+                if (lift_hit < kDesktopFolderCount) {
+                    // Folder tap → Launchpad pre-filtered.
+                    UL_LOG_INFO("qdesktop: folder tap fid=%zu (touch click)",
+                                lift_hit);
+                    OpenLaunchpadFiltered(static_cast<DesktopFolderId>(lift_hit));
+                    return;
+                }
+                if (lift_hit < kDesktopFolderCount + BUILTIN_ICON_COUNT) {
+                    // Dock cell tap → LaunchIcon(dock_i).
+                    const size_t dock_i = lift_hit - kDesktopFolderCount;
+                    if (dock_i < icon_count_) {
+                        UL_LOG_INFO("qdesktop: launch dock_i=%zu (touch click)",
+                                    dock_i);
+                        LaunchIcon(dock_i);
+                    }
+                    return;
+                }
             }
         }
 
@@ -3133,6 +3299,10 @@ void QdDesktopIconsElement::SetApplicationEntries(
 
     UL_LOG_INFO("qdesktop: SetApplicationEntries: in=%zu added=%zu total=%zu",
                 entries.size(), added, icon_count_);
+
+    // v1.7.0-stabilize-7 Slice 4: icon set changed -> folder counts must
+    // refresh on the next paint.
+    MarkDesktopFolderLayoutDirty();
 }
 
 // ── SetSpecialEntries ─────────────────────────────────────────────────────────
@@ -3222,6 +3392,10 @@ void QdDesktopIconsElement::SetSpecialEntries(
 
     UL_LOG_INFO("qdesktop: SetSpecialEntries: in=%zu added=%zu total=%zu (table-driven)",
                 entries.size(), added, icon_count_);
+
+    // v1.7.0-stabilize-7 Slice 4: icon set changed -> folder counts must
+    // refresh on the next paint.
+    MarkDesktopFolderLayoutDirty();
 }
 
 // ── LoadJpegIconToCache ───────────────────────────────────────────────────────

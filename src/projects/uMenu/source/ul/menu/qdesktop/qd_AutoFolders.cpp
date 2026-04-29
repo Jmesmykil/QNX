@@ -10,6 +10,7 @@
 // passes, OnRender / OnInput). No mutex is needed.
 
 #include <ul/menu/qdesktop/qd_AutoFolders.hpp>
+#include <ul/menu/qdesktop/qd_FolderClassifier.hpp>
 #include <unordered_map>
 
 namespace ul::menu::qdesktop {
@@ -31,8 +32,33 @@ std::unordered_map<std::string, ClassifyKind> &Table() {
 
 } // namespace
 
+// Translate ClassifyKind (legacy 7-value enum) to FolderIdx (new 9-value enum).
+// NintendoGame    -> NxGames
+// ThirdPartyGame  -> ThirdPartyGames
+// HomebrewTool    -> Tools
+// Emulator        -> Emulators   (previously collapsed into Homebrew — fixed by v1.9)
+// SystemUtil      -> System
+// Payload         -> Payloads
+// Builtin         -> Homebrew    (builtins live in Q OS / Homebrew visually)
+// Unknown         -> Homebrew    (best-fit fallback unchanged)
+static FolderIdx ClassifyKindToFolderIdx(ClassifyKind kind) {
+    switch (kind) {
+        case ClassifyKind::NintendoGame:   return FolderIdx::NxGames;
+        case ClassifyKind::ThirdPartyGame: return FolderIdx::ThirdPartyGames;
+        case ClassifyKind::HomebrewTool:   return FolderIdx::Tools;
+        case ClassifyKind::Emulator:       return FolderIdx::Emulators;
+        case ClassifyKind::SystemUtil:     return FolderIdx::System;
+        case ClassifyKind::Payload:        return FolderIdx::Payloads;
+        case ClassifyKind::Builtin:        return FolderIdx::Homebrew;
+        case ClassifyKind::Unknown:
+        default:                           return FolderIdx::Homebrew;
+    }
+}
+
 void RegisterClassification(const std::string &stable_id, ClassifyKind kind) {
     Table()[stable_id] = kind;
+    // Mirror into QdFolderClassifier so the new 9-bucket system stays in sync.
+    QdFolderClassifier::Get().RegisterDirect(stable_id, ClassifyKindToFolderIdx(kind));
 }
 
 void ClearClassifications() {

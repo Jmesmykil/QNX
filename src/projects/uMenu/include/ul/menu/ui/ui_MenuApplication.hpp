@@ -15,6 +15,7 @@
 #include <ul/menu/qdesktop/qd_SettingsLayout.hpp>
 #include <ul/menu/qdesktop/qd_LockscreenLayout.hpp>
 #include <ul/menu/qdesktop/qd_LaunchpadHostLayout.hpp>
+#include <ul/menu/qdesktop/qd_GlobalChrome.hpp>  // v1.9: persistent top-bar + dock chrome
 
 namespace ul::menu::ui {
 
@@ -84,6 +85,10 @@ namespace ul::menu::ui {
             // Same Element+IMenuLayout host pattern as Vault/Monitor.
             qdesktop::QdLaunchpadElement::Ref launchpad_lyt_;
             qdesktop::QdLaunchpadHostLayout::Ref launchpad_host_lyt_;
+            // v1.9: persistent top-bar + dock-backdrop chrome rendered at the
+            // Application-level AddRenderCallback (below Plutonium elements).
+            // Non-copyable; holds no SDL_Texture — pure FillRect geometry.
+            qdesktop::QdGlobalChrome chrome_;
             pu::ui::extras::Toast::Ref notif_toast;
             bool launch_failed;
             Result pending_gc_mount_rc;

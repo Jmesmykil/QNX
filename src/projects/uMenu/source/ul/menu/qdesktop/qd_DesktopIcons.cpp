@@ -10,6 +10,8 @@
 #include <ul/menu/qdesktop/qd_FirstBootWelcome.hpp>  // v1.8.30: cross-file welcome render hook
 #include <ul/menu/qdesktop/qd_Launchpad.hpp>     // LP_HOTCORNER_W/H (hot corner geometry SSOT)
 #include <ul/menu/qdesktop/qd_AutoFolders.hpp>  // Fix D (v1.6.12): auto-folder side table
+#include <ul/menu/qdesktop/qd_FolderClassifier.hpp>  // v1.9: 9-bucket classifier
+#include <ul/menu/qdesktop/qd_NsIconCache.hpp>        // v1.9: NS-service JPEG icon cache
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
 #include <ul/menu/qdesktop/qd_IconCategory.hpp>
 #include <ul/menu/qdesktop/qd_Anim.hpp>
@@ -439,7 +441,7 @@ static DesktopFolderId ClassifyDesktopFolder(const NroEntry &entry) {
                 || CiStrStr(entry.nro_path, "qos-"))) {
         return DesktopFolderId::QOS;
     }
-    // Fall through: build stable_id and consult the side table.
+    // Fall through: build stable_id and consult the classifiers.
     std::string sid;
     if (entry.kind == IconKind::Nro) {
         sid = entry.nro_path;
@@ -452,6 +454,26 @@ static DesktopFolderId ClassifyDesktopFolder(const NroEntry &entry) {
         // Unknown kind — defensive default.
         return DesktopFolderId::Other;
     }
+
+    // v1.9: prefer the 9-bucket QdFolderClassifier (finer-grained than the
+    // old ClassifyKind table — Emulators now has its own bucket).
+    const FolderIdx fi = QdFolderClassifier::Get().Lookup(sid);
+    if (fi != FolderIdx::None) {
+        switch (fi) {
+            case FolderIdx::NxGames:
+            case FolderIdx::ThirdPartyGames: return DesktopFolderId::Games;
+            case FolderIdx::Emulators:       return DesktopFolderId::Emulators;
+            case FolderIdx::Tools:           return DesktopFolderId::Tools;
+            case FolderIdx::System:
+            case FolderIdx::Payloads:        return DesktopFolderId::System;
+            case FolderIdx::QOS:             return DesktopFolderId::QOS;
+            case FolderIdx::Homebrew:
+            case FolderIdx::None:
+            default:                         return DesktopFolderId::Other;
+        }
+    }
+
+    // Fallback: legacy ClassifyKind table (entries not yet in new classifier).
     const ClassifyKind ck = QdDesktopIconsElement::GetAutoFolderKind(sid);
     switch (ck) {
         case ClassifyKind::NintendoGame:
@@ -1430,12 +1452,8 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
       prev_cursor_x_(-1),
       prev_cursor_y_(-1),
       cursor_ref_(nullptr),
-      // Task 9 (v1.8): dev windows start null; constructed below.
-      nxlink_win_(nullptr),
-      usb_win_(nullptr),
-      log_win_(nullptr),
-      // Task 9 (v1.8): popup hidden at boot.
-      dev_popup_open_(false),
+      // v1.9.2: dev-window panel inits + dev_popup_open_ removed (devtools
+      // strip; see qd_DesktopIcons.hpp note).
       // v1.8.15 Fix B: prewarm thread starts stopped; thread is not joinable
       // until SpawnPrewarmThread() assigns it from OnRender's first-call branch.
       prewarm_stop_(false)
@@ -1467,6 +1485,7 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
         name_text_tex_[i]  = nullptr;
         glyph_text_tex_[i] = nullptr;
         icon_tex_[i]        = nullptr;
+        icon_tex_ns_owned_[i] = false;  // v1.9: NS cache owns no textures at boot
         // Dimension cache — zeroed until lazy-create writes real values.
         name_text_w_[i]   = 0;
         name_text_h_[i]   = 0;
@@ -1507,30 +1526,10 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
                 after_builtins, after_nros - after_builtins,
                 after_scan - after_nros, app_entry_start_idx_, after_scan);
 
-    // Task 9 (v1.8): create dev-popup panel instances.  Positions are set
-    // relative to the top-right corner; stacked vertically with 8 px gaps.
-    // NxlinkWindow: 480×260; UsbSerialWindow: 480×260; LogFlushWindow: 480×180.
-    // Panels are positioned so their RIGHT edge is at x=1912 (8 px inset from
-    // the right screen edge) and the TOP edge of the topmost panel is at y=40
-    // (just below the top-right hot-zone strip).
-    static constexpr s32 kDevPopupRightEdge = 1912;
-    static constexpr s32 kDevPopupTopY      = 40;
-    static constexpr s32 kDevPopupGap       = 8;
-    nxlink_win_ = QdNxlinkWindow::New(theme_);
-    usb_win_    = QdUsbSerialWindow::New(theme_);
-    log_win_    = QdLogFlushWindow::New(theme_);
-    {
-        const s32 nx_x  = kDevPopupRightEdge - QdNxlinkWindow::PANEL_W;
-        const s32 nx_y  = kDevPopupTopY;
-        const s32 usb_x = kDevPopupRightEdge - QdUsbSerialWindow::PANEL_W;
-        const s32 usb_y = nx_y + QdNxlinkWindow::PANEL_H + kDevPopupGap;
-        const s32 log_x = kDevPopupRightEdge - QdLogFlushWindow::PANEL_W;
-        const s32 log_y = usb_y + QdUsbSerialWindow::PANEL_H + kDevPopupGap;
-        nxlink_win_->SetPos(nx_x, nx_y);
-        usb_win_->SetPos(usb_x, usb_y);
-        log_win_->SetPos(log_x, log_y);
-    }
-    UL_LOG_INFO("qdesktop: dev popup windows created (nxlink/usb/logflush)");
+    // v1.9.2: dev-popup panel construction removed (devtools strip).  The
+    // diagnostic surface is now QdTaskManager — opened by long-pressing dock
+    // tile 0.  See qd_TaskManager.{hpp,cpp}.
+    UL_LOG_INFO("qdesktop: ctor complete (devtools removed; task manager via long-press)");
 }
 
 QdDesktopIconsElement::~QdDesktopIconsElement() {
@@ -1596,9 +1595,15 @@ void QdDesktopIconsElement::FreeCachedText(size_t entry_idx) {
     // This is the texture that was previously allocated every frame; it is
     // now allocated once here (lazily in PaintIconCell) and freed here on slot
     // reset, ensuring the GPU pool sees only one allocation per active icon.
+    // v1.9: NS-cache-owned textures must NOT be destroyed here — the cache
+    // owns their lifetime (cleared via QdNsIconCache::Clear() at shutdown).
+    // Calling SDL_DestroyTexture on a cache-owned pointer is a double-free.
     if (icon_tex_[entry_idx] != nullptr) {
-        SDL_DestroyTexture(icon_tex_[entry_idx]);
-        icon_tex_[entry_idx] = nullptr;
+        if (!icon_tex_ns_owned_[entry_idx]) {
+            SDL_DestroyTexture(icon_tex_[entry_idx]);
+        }
+        icon_tex_[entry_idx]      = nullptr;
+        icon_tex_ns_owned_[entry_idx] = false;
     }
     // v1.7.0-stabilize-2 (REC-03 option B): clear the replaceable-flag so the
     // next paint of this slot starts from a known state. Either:
@@ -2321,10 +2326,60 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     // This branch runs BEFORE the BGRA cache lookup so the existing render
     // block (lines below) blits whichever icon_tex_ we populate.
     // v1.8.19: skipped when rs_default_fallback (2a already ran on a prior frame).
+    // v1.9: NS-service live JPEG is tried first (higher quality than baked PNG).
+    //       Settings and Themes have no NS registration; they use romfs-only path.
     if (!rs_default_fallback
             && entry.kind == IconKind::Special && entry_idx < MAX_ICONS
             && icon_tex_[entry_idx] == nullptr) {
         using ET = ::ul::menu::EntryType;
+
+        // ── 2a-ns. v1.9: NS-service live icon priority path ─────────────
+        // Map SpecialEntry kind → NS program ID.  Settings and Themes are
+        // uMenu-internal panels with no NS registration — excluded here.
+        // UserPage maps to nsAppletUserPage program ID.
+        // Amiibo (Cabinet) maps to the nsAppletCabinet program ID.
+        // The NS cache owns the returned SDL_Texture; icon_tex_ns_owned_
+        // prevents double-free in FreeCachedText.
+        {
+            u64 ns_program_id = 0;
+            switch (static_cast<ET>(entry.special_subtype)) {
+                case ET::SpecialEntryAlbum:
+                    ns_program_id = NsAppletProgramId::Album;      break;
+                case ET::SpecialEntryControllers:
+                    ns_program_id = NsAppletProgramId::Controller;  break;
+                case ET::SpecialEntryMiiEdit:
+                    ns_program_id = NsAppletProgramId::MiiEdit;     break;
+                case ET::SpecialEntryWebBrowser:
+                    ns_program_id = NsAppletProgramId::WebBrowser;  break;
+                case ET::SpecialEntryUserPage:
+                    ns_program_id = NsAppletProgramId::UserPage;    break;
+                case ET::SpecialEntryAmiibo:
+                    ns_program_id = NsAppletProgramId::Cabinet;     break;
+                default: break;  // Settings, Themes — no NS registration
+            }
+            if (ns_program_id != 0) {
+                SDL_Renderer *nr = pu::ui::render::GetMainRenderer();
+                if (nr != nullptr) {
+                    SDL_Texture *ns_tex =
+                        GetSharedNsIconCache().Get(ns_program_id, nr);
+                    if (ns_tex != nullptr) {
+                        icon_tex_[entry_idx]         = ns_tex;
+                        icon_tex_ns_owned_[entry_idx] = true;
+                        slot_render_state_[entry_idx] = CellRenderState::SpecialPng;
+                        UL_LOG_INFO("qdesktop: Special NS icon loaded subtype=%u"
+                                    " program_id=0x%016llX",
+                                    static_cast<unsigned>(entry.special_subtype),
+                                    static_cast<unsigned long long>(ns_program_id));
+                    }
+                }
+            }
+        }
+
+        // ── 2a-png. romfs PNG fallback (when NS cache returned nullptr) ──
+        // Settings and Themes always follow this path.
+        // Other applets follow this path only when the NS service is
+        // unavailable or returned no icon data.
+        if (icon_tex_[entry_idx] == nullptr) {
         const char *asset_path = nullptr;
         switch (static_cast<ET>(entry.special_subtype)) {
             case ET::SpecialEntrySettings:    asset_path = "ui/Main/EntryIcon/Settings";    break;
@@ -2353,6 +2408,7 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
                             asset_path);
             }
         }
+        } // end if (icon_tex_[entry_idx] == nullptr) — 2a-png fallback
     }
 
     // ── 2a-romfs. v1.8.21: Payload entries with a romfs-backed icon_path ──
@@ -2993,32 +3049,6 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         mouse_hover_index_ = SIZE_MAX;
     }
 
-    // ── Top bar background (translucent dark strip behind status widgets) ────
-    // The Plutonium time/date/battery/connection elements are instantiated in
-    // ui_MainMenuLayout.cpp and rendered by Plutonium on top of whatever the
-    // canvas shows.  Without a background strip they are invisible over the
-    // animated wallpaper.  Height = 48 px (qd_WmConstants.hpp TOPBAR_H ×1.5).
-    // Drawn here so it is always behind all icon and dock layers.
-    //
-    // Cycle D5 dev toggle: when g_dev_topbar_enabled is false the strip is
-    // suppressed.  The Plutonium time/battery widgets that float above this
-    // strip are owned by ui_MainMenuLayout and continue to render — their
-    // visibility is intentionally NOT gated here because the user's primary
-    // need for the toggle is "show me the wallpaper without the dark band
-    // along the top".
-    static constexpr int32_t TOPBAR_H_PX = 48;
-    if (::ul::menu::qdesktop::g_dev_topbar_enabled.load(std::memory_order_relaxed)) {
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(r, 0x00u, 0x00u, 0x00u, 0xB0u);
-        SDL_Rect topbar_bg { 0, y, 1920, TOPBAR_H_PX };
-        SDL_RenderFillRect(r, &topbar_bg);
-        // 1px bottom border for visual separation from the icon grid.
-        SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0x30u);
-        SDL_Rect topbar_border { 0, y + TOPBAR_H_PX - 1, 1920, 1 };
-        SDL_RenderFillRect(r, &topbar_border);
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-    }
-
     // ── SP2: Two-pass dock magnify layout for builtin dock slots ─────────────
     // Pass 1: compute magnify-scaled widths for each builtin slot.
     // Pass 2: walk left-to-right accumulating actual x positions.
@@ -3063,30 +3093,13 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         dock_slot_w_[i] = magnify_w[i];
     }
 
-    // ── Dock panel (translucent backdrop behind builtin slots) ───────────────
-    // Visually delineates the dock zone (y = DOCK_NOMINAL_TOP..1080) from the
-    // icon grid above it.  Drawn BEFORE the icon loop so dock builtins paint
-    // on top.  Alpha-blended black at ~38% opacity.  Width = full screen.
-    //
-    // Cycle D5 dev toggle: when g_dev_dock_enabled is false the dock panel
-    // backdrop is suppressed AND the BUILTIN_ICON_COUNT slots in the icon
-    // loop below are skipped (see the in-loop guard).
+    // v1.9: dock backdrop FillRect moved to QdGlobalChrome::RenderDock (Application-level
+    // render callback in ui_MenuApplication.cpp). dev_dock_on / dev_icons_on kept for
+    // the downstream icon-loop and folder-paint guards.
     const bool dev_dock_on = ::ul::menu::qdesktop::g_dev_dock_enabled.load(
         std::memory_order_relaxed);
     const bool dev_icons_on = ::ul::menu::qdesktop::g_dev_icons_enabled.load(
         std::memory_order_relaxed);
-    if (dev_dock_on) {
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(r, 0x00u, 0x00u, 0x00u, 0x60u);
-        SDL_Rect dock_panel { 0, kDockNominalTop + y, 1920, kDockH };
-        SDL_RenderFillRect(r, &dock_panel);
-        // Thin top border line for definition (1px white at 25% alpha).
-        SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0x40u);
-        SDL_Rect dock_border { 0, kDockNominalTop + y, 1920, 1 };
-        SDL_RenderFillRect(r, &dock_border);
-        // Restore opaque draw colour for downstream filled rects.
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-    }
 
     // ── v1.7.0-stabilize-7 Slice 4 (O-B) — dock-only paint loop ──────────────
     //
@@ -3174,72 +3187,58 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         tooltip_.Hide();
     }
 
-    // ── v1.7.0-stabilize-2: hot-corner widget at top-left (96x72) ────────────
-    // The widget is a small visual affordance that tells the user where to
-    // tap to open the Launchpad. Renders LAST (after the icon loop and after
-    // the topbar) so it is on top in z-order; the OnInput handler at the
-    // matching geometry edge-triggers LoadMenu(MenuType::Launchpad) on tap.
-    //
-    // Geometry: 96 wide x 72 tall, anchored at (x, y) (the layout's origin,
-    // typically (0, 0)). Width matches LP_HOTCORNER_W (96) so the close-side
-    // handler in qd_Launchpad.cpp uses the same hit-box dimensions.
-    // F7 (stabilize-5): P1 — Block B completed; fixed SDL_BLENDMODE_BLEND →
-    // SDL_BLENDMODE_NONE on the fill so desktop icons below don't bleed alpha.
-    // Dot grid removed; "Q" glyph rendered instead (mirrors Block A in
-    // qd_Launchpad.cpp lines 652-670 — same font, color, size, centering).
+    // v1.9.2: hot-corner widget paint (bg + cyan accents + Q-glyph).
+    // Moved here from QdGlobalChrome::RenderTopBar.  Chrome paints in
+    // render-step 1 (before Plutonium elements) so the desktop content was
+    // overpainting the widget on v1.9.1 HW test.  Painting at the end of the
+    // desktop layout's OnRender — before tooltip/dropdown/help overlay —
+    // keeps the widget visible every desktop frame and naturally hides it
+    // on Launchpad/About/Settings layouts (which don't render this element).
     {
-        constexpr s32 HC_W = LP_HOTCORNER_W;  // 96 (defined in qd_Launchpad.hpp)
-        constexpr s32 HC_H = LP_HOTCORNER_H;  // 72
-        const s32 hcx = x;
-        const s32 hcy = y;
+        const int32_t kWidgetW = LP_HOTCORNER_W;  // 96
+        const int32_t kWidgetH = LP_HOTCORNER_H;  // 72
 
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);  // F7 (stabilize-5): fix alpha bleed
-        // Fill: dark translucent so wallpaper shows through.
-        SDL_SetRenderDrawColor(r, 0x10u, 0x10u, 0x14u, 0xC0u);
-        SDL_Rect hc_bg { hcx, hcy, HC_W, HC_H };
-        SDL_RenderFillRect(r, &hc_bg);
-        // Border: 1px white-alpha so the box is visible against any wallpaper.
-        SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0x40u);
-        SDL_Rect hc_top    { hcx,            hcy,            HC_W, 1 };
-        SDL_Rect hc_bottom { hcx,            hcy + HC_H - 1, HC_W, 1 };
-        SDL_Rect hc_left   { hcx,            hcy,            1,    HC_H };
-        SDL_Rect hc_right  { hcx + HC_W - 1, hcy,            1,    HC_H };
-        SDL_RenderFillRect(r, &hc_top);
-        SDL_RenderFillRect(r, &hc_bottom);
-        SDL_RenderFillRect(r, &hc_left);
-        SDL_RenderFillRect(r, &hc_right);
-        // "Q" glyph centred in the box — mirrors Block A (qd_Launchpad.cpp).
-        static SDL_Texture *hc_tex = nullptr;
-        if (!hc_tex) {
-            const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-            hc_tex = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-                "Q", wh);
-        }
-        if (hc_tex) {
-            int tw = 0, th = 0;
-            SDL_QueryTexture(hc_tex, nullptr, nullptr, &tw, &th);
-            SDL_Rect td { hcx + (HC_W - tw) / 2, hcy + (HC_H - th) / 2, tw, th };
-            SDL_RenderCopy(r, hc_tex, nullptr, &td);
-        }
+        // Background fill — solid dark.
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-    }
+        SDL_SetRenderDrawColor(r, 0x10u, 0x10u, 0x14u, 0xFFu);
+        SDL_Rect hc_bg { 0, 0, kWidgetW, kWidgetH };
+        SDL_RenderFillRect(r, &hc_bg);
 
-    // ── Task 9 (v1.8): dev popup overlay ─────────────────────────────────────
-    // Rendered LAST (highest z-order), only when dev_popup_open_ is true.
-    // Each panel owns its own SDL_Renderer calls via its OnRender implementation.
-    // We pass a null drawer Ref because the panels obtain the renderer directly
-    // via pu::ui::render::GetMainRenderer() (same pattern as this element).
-    if (dev_popup_open_) {
-        pu::ui::render::Renderer::Ref null_drawer{};
-        if (nxlink_win_)  nxlink_win_->OnRender(null_drawer, 0, 0);
-        if (usb_win_)     usb_win_->OnRender(null_drawer, 0, 0);
-        if (log_win_)     log_win_->OnRender(null_drawer, 0, 0);
+        // Cyan right + bottom accents (semi-transparent).
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(r, 0x00u, 0xE5u, 0xFFu, 0xA0u);
+        SDL_Rect hc_right { kWidgetW - 2, 0, 2, kWidgetH };
+        SDL_RenderFillRect(r, &hc_right);
+        SDL_Rect hc_bottom { 0, kWidgetH - 2, kWidgetW, 2 };
+        SDL_RenderFillRect(r, &hc_bottom);
+
+        // Q-glyph: cyan outlined square with a small tail at the bottom-right.
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        SDL_SetRenderDrawColor(r, 0x00u, 0xE5u, 0xFFu, 0xFFu);
+        const int32_t gx = (kWidgetW - 36) / 2;
+        const int32_t gy = (kWidgetH - 36) / 2;
+        SDL_Rect q_top    { gx,        gy,           36, 4 };
+        SDL_Rect q_bot    { gx,        gy + 32,      36, 4 };
+        SDL_Rect q_left   { gx,        gy,           4,  36 };
+        SDL_Rect q_right  { gx + 32,   gy,           4,  36 };
+        SDL_Rect q_tail   { gx + 26,   gy + 26,      14, 4 };
+        SDL_RenderFillRect(r, &q_top);
+        SDL_RenderFillRect(r, &q_bot);
+        SDL_RenderFillRect(r, &q_left);
+        SDL_RenderFillRect(r, &q_right);
+        SDL_RenderFillRect(r, &q_tail);
     }
 
     // v1.8.27: tooltip renders above all icon/folder layers but below help overlay.
     if (tooltip_.IsVisible()) {
         tooltip_.Render(r);
+    }
+
+    // v1.9: hot-corner dropdown renders above tooltips, below help overlay.
+    // Z-order per qd_HotCornerDropdown.hpp API contract.
+    if (dropdown_.IsOpen()) {
+        SDL_Renderer *rd = pu::ui::render::GetMainRenderer();
+        if (rd != nullptr) dropdown_.Render(rd);
     }
 
     // v1.8.25: help overlay renders last so it sits above every other surface.
@@ -3254,6 +3253,13 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     {
         SDL_Renderer *rw = pu::ui::render::GetMainRenderer();
         if (rw != nullptr) RenderFirstBootWelcomeIfOpen(rw);
+    }
+
+    // v1.9: task manager renders last — full-screen modal overlay on top of
+    // everything else. Render() is a no-op when IsOpen() is false.
+    if (task_mgr_.IsOpen()) {
+        SDL_Renderer *rt = pu::ui::render::GetMainRenderer();
+        if (rt != nullptr) task_mgr_.Render(rt);
     }
 }
 
@@ -3307,6 +3313,74 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
         return;
     }
 
+    // v1.9: task manager — consume input before all other handlers.
+    // If the modal is already open, route all input to it and return immediately.
+    if (task_mgr_.IsOpen()) {
+        if (task_mgr_.HandleInput(keys_down, keys_held)) { return; }
+    }
+
+    // v1.9.4 hotfix: dropdown owns ALL input while open.  Without this
+    // early-out the desktop's A-launch handler (~line 3377), the focus-model
+    // D-pad nav, the Y favourite-toggle, and the tile0 long-press detector
+    // below all consume D-pad / A / Y / Plus presses meant for the dropdown.
+    // Place this BEFORE tile0 long-press so a held A inside the dropdown
+    // doesn't accidentally fire the task manager open path.
+    if (dropdown_.IsOpen()) {
+        const s32 tx2 = touch_pos.IsEmpty() ? -1 : static_cast<s32>(touch_pos.x);
+        const s32 ty2 = touch_pos.IsEmpty() ? -1 : static_cast<s32>(touch_pos.y);
+
+        // Mouse hover: drive from cursor on no-touch frames.
+        if (touch_pos.IsEmpty() && cursor_ref_ != nullptr) {
+            dropdown_.UpdateHover(cursor_ref_->GetCursorX(),
+                                  cursor_ref_->GetCursorY());
+        }
+
+        // ZR + cursor routes through dropdown: in-panel hit fires row, else closes.
+        if ((keys_down & HidNpadButton_ZR) != 0u && cursor_ref_ != nullptr) {
+            const s32 cx = cursor_ref_->GetCursorX();
+            const s32 cy = cursor_ref_->GetCursorY();
+            if (dropdown_.TryClickAt(cx, cy)) {
+                UL_LOG_INFO("qdesktop: ZR cx=%d cy=%d -> dropdown_.TryClickAt fired", cx, cy);
+            } else {
+                UL_LOG_INFO("qdesktop: ZR cx=%d cy=%d off-panel -> dropdown_.Close()", cx, cy);
+                dropdown_.Close();
+            }
+            was_touch_active_last_frame_ = !touch_pos.IsEmpty();
+            return;
+        }
+
+        // Everything else (D-pad Up/Down/A, B, Plus, touch) → dropdown.
+        (void)dropdown_.HandleInput(keys_down, keys_held, tx2, ty2);
+
+        // Don't fall through to desktop handlers — dropdown owns input
+        // exclusively while open.  Update touch latch so the corner-tap
+        // toggle doesn't see a stale value the frame after dropdown closes.
+        was_touch_active_last_frame_ = !touch_pos.IsEmpty();
+        return;
+    }
+
+    // 30-frame long-press on dock tile 0 (ZL or A while tile 0 is focused).
+    // Tile 0 is always the leftmost dock slot (index 0 in icons_[]).
+    {
+        const bool tile0_focused =
+            (active_input_source_ == InputSource::DPAD   && dpad_focus_index_ == kDesktopFolderCount + 0u) ||
+            (active_input_source_ == InputSource::MOUSE  && mouse_hover_index_ == kDesktopFolderCount + 0u);
+        const bool held_action =
+            (keys_held & HidNpadButton_ZL)  != 0u ||
+            (keys_held & HidNpadButton_A)   != 0u;
+        if (tile0_focused && held_action && !task_mgr_.IsOpen()) {
+            ++tile0_hold_frames_;
+            if (tile0_hold_frames_ >= 30) {
+                tile0_hold_frames_ = 0;
+                SDL_Renderer *tmr = pu::ui::render::GetMainRenderer();
+                if (tmr != nullptr) { task_mgr_.Open(tmr); }
+                return;
+            }
+        } else {
+            tile0_hold_frames_ = 0;
+        }
+    }
+
     // v1.8.23: coyote-timing — dpad-held repeat lambda (mirrors qd_VaultLayout.cpp:1062-1073).
     // Accumulates per-direction held-frame counters in coyote_.dpad_held_frames[0..3]
     // (indices: 0=Up 1=Down 2=Left 3=Right) and fires a synthetic repeat event after
@@ -3329,17 +3403,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
     const bool repeat_left  = dpad_should_repeat(2u, HidNpadButton_Left);
     const bool repeat_right = dpad_should_repeat(3u, HidNpadButton_Right);
 
-    // ── Task 9 (v1.8): forward input to dev popup panels when open ────────────
-    // When the dev overlay is visible, input goes to each panel first.
-    // Panels handle their own button/touch interaction via their OnInput.
-    // We do NOT return here — desktop input continues normally (ZL still
-    // closes/opens the popup).  Panels that are not in focus simply ignore
-    // irrelevant input.
-    if (dev_popup_open_) {
-        if (nxlink_win_)  nxlink_win_->OnInput(keys_down, keys_up, keys_held, touch_pos);
-        if (usb_win_)     usb_win_->OnInput(keys_down, keys_up, keys_held, touch_pos);
-        if (log_win_)     log_win_->OnInput(keys_down, keys_up, keys_held, touch_pos);
-    }
+    // v1.9.2: dev-popup input forwarding removed (devtools strip).
 
     // ── v1.7.0-stabilize-7 Slice 4 (O-B Phase 5) — unified focus model ───────
     //
@@ -3432,6 +3496,31 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
         if (cursor_ref_ != nullptr) {
             const s32 cx = cursor_ref_->GetCursorX();
             const s32 cy = cursor_ref_->GetCursorY();
+
+            // v1.9.4: when the dropdown is open, ZR is the mouse "click" —
+            // route everything through the dropdown.  In-panel hit fires
+            // the row; anywhere else (corner or off-panel) closes.
+            if (dropdown_.IsOpen()) {
+                if (dropdown_.TryClickAt(cx, cy)) {
+                    UL_LOG_INFO("qdesktop: ZR cx=%d cy=%d -> dropdown_.TryClickAt fired row", cx, cy);
+                    return;
+                }
+                UL_LOG_INFO("qdesktop: ZR cx=%d cy=%d off-panel -> dropdown_.Close()", cx, cy);
+                dropdown_.Close();
+                return;
+            }
+
+            // v1.9.3: closed + ZR over hot corner opens the dropdown — the
+            // mouse equivalent of the touch tap-to-toggle.  Hover the
+            // cursor over the corner widget (0..96 × 0..72) and press ZR.
+            if (cx >= 0 && cx < LP_HOTCORNER_W
+                    && cy >= 0 && cy < LP_HOTCORNER_H) {
+                UL_LOG_INFO("qdesktop: ZR over corner cx=%d cy=%d -> dropdown_.Open()", cx, cy);
+                SDL_Renderer *dr = pu::ui::render::GetMainRenderer();
+                if (dr != nullptr) { dropdown_.Open(dr); }
+                return;
+            }
+
             // Slice 5: favorites strip takes priority over folder/dock for
             // the small overlap region near y=622.
             const size_t fav_hit = HitTestFavorites(cx, cy);
@@ -3482,20 +3571,8 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
         // Check top-right corner hot-zone first.
         // We query the last-seen touch coords (last_touch_x_/y_) because the
         // touch state machine above may have already processed this frame's
-        // touch and updated them.  If no touch was active this frame both are
-        // 0 and the hit-test will miss (x=0 < 1890), so the dock path runs.
-        static constexpr s32 kDevHotZoneX0 = 1890;
-        static constexpr s32 kDevHotZoneY1 = 30;
-        const bool in_dev_hotzone =
-            was_touch_active_last_frame_
-            && last_touch_x_ >= kDevHotZoneX0
-            && last_touch_y_ < kDevHotZoneY1;
-        if (in_dev_hotzone) {
-            dev_popup_open_ = !dev_popup_open_;
-            UL_LOG_INFO("qdesktop: ZL hot-zone → dev_popup_open_=%d", static_cast<int>(dev_popup_open_));
-            return;
-        }
-        // Not in hot-zone: dock context menu (legacy behavior).
+        // v1.9.2: ZL top-right hot-zone toggle removed (devtools strip).
+        // The ZL+touch path now goes straight to the dock context menu.
         size_t dock_idx = BUILTIN_ICON_COUNT;  // sentinel
         if (cursor_ref_ != nullptr) {
             const s32 cx = cursor_ref_->GetCursorX();
@@ -3613,29 +3690,48 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
         UL_LOG_INFO("qdesktop: Y pressed, no favorite under cursor — no-op");
     }
 
-    // ── v1.7.0-stabilize-2: hot-corner OPEN edge-trigger ─────────────────────
-    // (Preserved from stabilize-6; F12 latch reorder retained.)
+    // ── v1.9: hot-corner OPEN edge-trigger → QdHotCornerDropdown ────────────
+    // v1.7.0-stabilize-2 originally routed directly to LoadMenu(Launchpad).
+    // v1.9 replaces that with a popout dropdown (5 actions). The F12 latch
+    // reorder is preserved: set was_touch_active_last_frame_ BEFORE opening
+    // the dropdown so recursive OnInput calls inside Open() don't re-fire.
     {
         const bool touch_active_now = !touch_pos.IsEmpty();
         if (touch_active_now && !was_touch_active_last_frame_) {
             const s32 tx = static_cast<s32>(touch_pos.x);
             const s32 ty = static_cast<s32>(touch_pos.y);
             if (tx >= 0 && tx < LP_HOTCORNER_W
-                    && ty >= 0 && ty < LP_HOTCORNER_H
-                    && g_MenuApplication != nullptr) {
-                // F12 (stabilize-6): set the latch BEFORE LoadMenu, not after.
-                // LoadMenu calls FadeOut which busy-loops Application::OnRender;
-                // each iteration recursively calls this OnInput. Without this
-                // pre-LoadMenu update, the inner calls see
-                // was_touch_active_last_frame_ == false and re-fire
-                // LoadMenu(Launchpad).
+                    && ty >= 0 && ty < LP_HOTCORNER_H) {
+                // v1.9.1: tap on the hot corner toggles the dropdown.
+                // If the dropdown is already open, close it; otherwise open.
                 was_touch_active_last_frame_ = touch_active_now;
-                UL_LOG_INFO("qdesktop: hot-corner OPEN tap edge tx=%d ty=%d -> LoadMenu(Launchpad)",
-                            tx, ty);
-                g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Launchpad);
+                if (dropdown_.IsOpen()) {
+                    UL_LOG_INFO("qdesktop: hot-corner tap tx=%d ty=%d -> dropdown_.Close() (toggle)", tx, ty);
+                    dropdown_.Close();
+                } else {
+                    UL_LOG_INFO("qdesktop: hot-corner tap tx=%d ty=%d -> dropdown_.Open() (toggle)", tx, ty);
+                    SDL_Renderer *dr = pu::ui::render::GetMainRenderer();
+                    if (dr != nullptr) { dropdown_.Open(dr); }
+                }
                 return;
             }
         }
+    }
+    // Forward input to the dropdown when it is open.
+    if (dropdown_.IsOpen()) {
+        const s32 tx2 = touch_pos.IsEmpty() ? -1 : static_cast<s32>(touch_pos.x);
+        const s32 ty2 = touch_pos.IsEmpty() ? -1 : static_cast<s32>(touch_pos.y);
+
+        // v1.9.4: on no-touch frames, drive hover from the cursor so the
+        // mouse hover highlight tracks the cursor inside the panel.  The
+        // dropdown's own HandleInput touch path overrides this when a
+        // touch is active.
+        if (touch_pos.IsEmpty() && cursor_ref_ != nullptr) {
+            dropdown_.UpdateHover(cursor_ref_->GetCursorX(),
+                                  cursor_ref_->GetCursorY());
+        }
+
+        if (dropdown_.HandleInput(keys_down, keys_held, tx2, ty2)) { return; }
     }
 
     // ── v1.7.0-stabilize-7 Slice 4 Phase 5: D-pad nav across folders + dock ──

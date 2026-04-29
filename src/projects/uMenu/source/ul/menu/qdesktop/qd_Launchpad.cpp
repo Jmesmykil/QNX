@@ -1072,14 +1072,31 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
 
     // ── v1.7.0-stabilize-7 Slice 5 (O-F Patch 2): Y toggles favorite ─────────
     // Mirrors qd_DesktopIcons.cpp:Y handling at the focused-tile level.
-    // Y on the dpad-focused item flips its favorite state. Star overlay (in
-    // PaintCell) reflects the new state on the next paint via the lazy build.
+    // ── v1.9: Y jumps to Favorites tab (or back to "All" if already on Favorites).
+    // In v1.7.x Y toggled the favorite state of the focused tile. That behavior
+    // is retired: Y now navigates to the Favorites tab so the user can see all
+    // their favorites at once.  If the Favorites tab does not exist (no items are
+    // favorited), Y is a no-op.  If already on Favorites, Y returns to "All".
     if (keys_down & HidNpadButton_Y) {
-        if (dpad_focus_index_ < n) {
-            const size_t item_idx = filtered_idxs_[dpad_focus_index_];
-            if (item_idx < items_.size()) {
-                ToggleFavoriteByLpItem(items_[item_idx]);
+        if (active_tab_kind_ == LaunchpadTabKind::Favorites) {
+            // Already on Favorites: toggle back to "All".
+            active_folder_fi_ = FolderIdx::None;
+            active_tab_kind_  = LaunchpadTabKind::Folder;
+            filter_dirty_     = true;
+            dpad_focus_index_ = 0u;
+        } else {
+            // Find the Favorites tab in active_tabs_.
+            for (size_t ti = 0u; ti < active_tabs_.size(); ++ti) {
+                if (active_tabs_[ti].kind == LaunchpadTabKind::Favorites) {
+                    active_folder_fi_ = FolderIdx::None;
+                    active_tab_kind_  = LaunchpadTabKind::Favorites;
+                    filter_dirty_     = true;
+                    tab_focus_idx_    = SIZE_MAX;
+                    dpad_focus_index_ = 0u;
+                    break;
+                }
             }
+            // No Favorites tab (no favorited items): Y is a no-op.
         }
     }
 

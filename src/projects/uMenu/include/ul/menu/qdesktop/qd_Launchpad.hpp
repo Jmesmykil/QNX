@@ -73,7 +73,8 @@
 #include <ul/menu/qdesktop/qd_Theme.hpp>
 #include <ul/menu/qdesktop/qd_IconCache.hpp>
 #include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
-#include <ul/menu/qdesktop/qd_AutoFolders.hpp>  // Fix D (v1.6.12): auto-folder buckets
+#include <ul/menu/qdesktop/qd_AutoFolders.hpp>     // Fix D (v1.6.12): auto-folder buckets
+#include <ul/menu/qdesktop/qd_FolderClassifier.hpp> // v1.9: 9-bucket classifier + LaunchpadTab types
 #include <string>
 #include <vector>
 #include <cstddef>
@@ -325,6 +326,16 @@ private:
     // Any other value = show only items whose stable ID maps to that folder bucket.
     // Set by tapping a folder tile; cleared on Close() and on re-Open().
     AutoFolderIdx           active_folder_;
+
+    // v1.9: active tab strip state (replaces single active_folder_ for new 9-bucket system).
+    // active_tab_kind_: Favorites tab or Folder tab (from qd_FolderClassifier.hpp).
+    // active_folder_fi_: which FolderIdx bucket is selected when kind==Folder.
+    // active_tabs_: list of rendered tab descriptors; built once in Open() from
+    //   QdFolderClassifier::Get().BucketCount() so empty buckets are skipped.
+    // All three are initialised in Open() and cleared in Close().
+    LaunchpadTabKind            active_tab_kind_;
+    FolderIdx                   active_folder_fi_;
+    std::vector<LaunchpadTab>   active_tabs_;
 
     // v1.7.0-stabilize-2: edge-trigger state for the hot-corner CLOSE handler.
     // Mirrors `was_touch_active_last_frame_` in QdDesktopIconsElement -- both

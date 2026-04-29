@@ -9,14 +9,17 @@
 #include <ul/menu/qdesktop/qd_Theme.hpp>
 #include <ul/menu/qdesktop/qd_HelpOverlay.hpp>
 #include <ul/menu/qdesktop/qd_Tooltip.hpp>
+#include <ul/menu/qdesktop/qd_TaskManager.hpp>       // v1.9: full-screen process manager modal
+#include <ul/menu/qdesktop/qd_HotCornerDropdown.hpp> // v1.9: hot-corner popout dropdown
 #include <ul/menu/qdesktop/qd_IconCache.hpp>
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
 #include <ul/menu/qdesktop/qd_IconCategory.hpp>
 #include <ul/menu/qdesktop/qd_Anim.hpp>
 #include <ul/menu/qdesktop/qd_Cursor.hpp>
-#include <ul/menu/qdesktop/qd_NxlinkWindow.hpp>
-#include <ul/menu/qdesktop/qd_UsbSerialWindow.hpp>
-#include <ul/menu/qdesktop/qd_LogFlushWindow.hpp>
+// v1.9.2: devtools windows (qd_NxlinkWindow / qd_UsbSerialWindow / qd_LogFlushWindow)
+// removed.  Their files were deleted from the qdesktop source tree and the ZL
+// hot-zone toggle that opened the dev popup is gone.  Task-manager (long-press
+// dock tile 0) is the supported diagnostic surface going forward.
 #include <ul/menu/menu_Entries.hpp>
 #include <string>
 #include <array>
@@ -471,14 +474,10 @@ private:
     // Optional cursor reference for A-button-as-click (injected by layout).
     QdCursorElement::Ref cursor_ref_;
 
-    // Task 9 (v1.8): dev-window panel instances — shown in a stacked popup when
-    // the ZL hot-zone (top-right corner [1890,1920)×[0,30)) is tapped.
-    // Created once in the constructor; shown/hidden by the ZL input handler.
-    QdNxlinkWindow::Ref    nxlink_win_;
-    QdUsbSerialWindow::Ref usb_win_;
-    QdLogFlushWindow::Ref  log_win_;
-    // True while the dev-popup is visible (ZL toggle).
-    bool dev_popup_open_;
+    // v1.9.2: dev-window panel members + dev_popup_open_ removed.  The three
+    // panels (Nxlink / UsbSerial / LogFlush) and the ZL hot-zone toggle that
+    // controlled them have been deleted.  Task manager (qd_TaskManager.hpp)
+    // is the v1.9 successor — opened by long-pressing dock tile 0.
 
     // Dock-slot hit-test rects, refreshed every OnRender so HitTest matches the
     // dock's current magnify state.  Visual at lines 882-888 of the .cpp uses
@@ -516,6 +515,14 @@ private:
     // Freed alongside name_text_tex_/glyph_text_tex_ in FreeCachedText() so the
     // same icon-reload reset path invalidates all three per-slot textures atomically.
     std::array<SDL_Texture *, MAX_ICONS> icon_tex_;
+
+    // v1.9: per-slot ownership flag for NS-service icon cache textures.
+    // When GetSharedNsIconCache().Get() provides the texture for a Special
+    // applet slot, the cache owns the SDL_Texture — FreeCachedText() must
+    // NOT call SDL_DestroyTexture on cache-owned pointers (double-free).
+    // Initialised false; set true only when NS cache populates icon_tex_.
+    // Reset to false alongside icon_tex_ reset in FreeCachedText().
+    std::array<bool, MAX_ICONS> icon_tex_ns_owned_;
 
     // v1.7.0-stabilize-2 (REC-03 option B): per-slot "this texture is the
     // DefaultHomebrew/DefaultApplication fallback PNG and should be replaced
@@ -705,6 +712,19 @@ private:
     // desktop folder "Name (N)" labels. One instance; only one tooltip
     // visible at a time (dock/folder focus is mutually exclusive).
     QdTooltip tooltip_;
+
+    // v1.9: full-screen task manager modal. Triggered by a 30-frame hold
+    // on dock tile 0 (tile0_hold_frames_ counter, reset on release).
+    // Non-copyable; owns SDL textures and service session handles.
+    // Must be declared after tooltip_ so destructor order is deterministic.
+    int            tile0_hold_frames_ = 0;
+    QdTaskManager  task_mgr_;
+
+    // v1.9: hot-corner popout dropdown. Renders above tooltips, below help
+    // overlay (Z-order per qd_HotCornerDropdown.hpp API contract).
+    // Non-copyable; owns SDL textures. Must be declared after task_mgr_ so
+    // destructor order is deterministic (dropdown_ destroyed first).
+    QdHotCornerDropdown dropdown_;
 };
 
 } // namespace ul::menu::qdesktop

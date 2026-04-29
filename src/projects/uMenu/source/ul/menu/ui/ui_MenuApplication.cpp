@@ -331,6 +331,24 @@ namespace ul::menu::ui {
         _LOG_SOFAR("done loading ui");
 
         this->loaded_menu = MenuType::Main;
+
+        // v1.9: hand QdGlobalChrome a pointer to loaded_menu so IsSuppressed()
+        // can check Startup/Lockscreen/QLockscreen without coupling to this class.
+        // Must be called before the first frame renders (i.e. before LoadMenu).
+#ifdef QDESKTOP_MODE
+        this->chrome_.SetMenuTypeRef(&this->loaded_menu);
+        // Register application-level render callbacks for the top-bar strip and
+        // dock backdrop.  These fire BEFORE Plutonium's layout-element OnRender
+        // calls, so chrome draws below the battery/time/connection widgets.
+        this->AddRenderCallback([this]() {
+            if(::g_uMenuTerminating.load(std::memory_order_acquire)) { return; }
+            auto *r = pu::ui::render::GetMainRenderer();
+            if(r == nullptr) { return; }
+            this->chrome_.RenderTopBar(r);
+            this->chrome_.RenderDock(r);
+        });
+#endif
+
         switch(this->start_mode) {
             case smi::MenuStartMode::StartupMenu:
             case smi::MenuStartMode::StartupMenuPostBoot: {

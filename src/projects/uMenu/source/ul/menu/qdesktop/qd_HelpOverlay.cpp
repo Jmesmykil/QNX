@@ -117,7 +117,7 @@ void QdHelpOverlay::Open(SDL_Renderer *r)
 
     // ── Title ─────────────────────────────────────────────────────────────────
     MakeText(r, pu::ui::DefaultFontSize::Large,
-             "Help — Q OS Menu v1.8.25",
+             "Help — Q OS Menu v" UL_VERSION,
              kColorTitle,
              &tex_title_, &title_w_, &title_h_);
 

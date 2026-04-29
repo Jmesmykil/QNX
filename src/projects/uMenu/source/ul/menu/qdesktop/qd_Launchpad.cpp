@@ -81,6 +81,8 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
       active_input_source_(InputSource::DPAD),
       // v1.8.29 Slice 1: tab focus; SIZE_MAX = grid focus (normal mode).
       tab_focus_idx_(SIZE_MAX),
+      // v1.8.33: search-bar focus; false = not in search focus mode.
+      search_focus_active_(false),
       page_index_(0),    // F10 (stabilize-5): pagination
       page_count_(1),    // F10 (stabilize-5): pagination
       // v1.8.18: icon_cache_ removed; using GetSharedIconCache() singleton.
@@ -313,6 +315,7 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     dpad_focus_index_          = 0;
     mouse_hover_index_         = SIZE_MAX;
     tab_focus_idx_             = SIZE_MAX;  // v1.8.29 Slice 1: grid focus on open
+    search_focus_active_       = false;     // v1.8.33: not in search focus on open
     pending_launch_            = false;
     pending_launch_from_mouse_ = false;
     filter_dirty_              = false;
@@ -524,6 +527,7 @@ void QdLaunchpadElement::Close() {
     dpad_focus_index_          = 0;
     mouse_hover_index_         = SIZE_MAX;
     tab_focus_idx_             = SIZE_MAX;  // v1.8.29 Slice 1: reset on close
+    search_focus_active_       = false;     // v1.8.33: reset search focus on close
     pending_launch_            = false;
     pending_launch_from_mouse_ = false;
     filter_dirty_              = false;
@@ -883,14 +887,65 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
     // tab-A handler clears tab_focus_idx_ to SIZE_MAX, which would otherwise
     // make the grid-mode A launch fire on the same keys_down and double-
     // dispatch (causing the black-screen-stuck symptom).
-    const bool was_in_tab_mode_ = (tab_focus_idx_ != SIZE_MAX);
-    bool       tab_a_consumed   = false;
+    const bool was_in_tab_mode_     = (tab_focus_idx_ != SIZE_MAX);
+    bool       tab_a_consumed       = false;
+
+    // ── v1.8.33: search-bar focus mode ────────────────────────────────────────
+    // Three focus zones now: search bar (top), tab strip (middle), grid (bottom).
+    // search_focus_active_ takes precedence over tab/grid input.
+    if (search_focus_active_) {
+        if (keys_down & HidNpadButton_Down) {
+            // Return to tab focus on the "All" tab.
+            search_focus_active_ = false;
+            tab_focus_idx_       = 0u;
+            UL_LOG_INFO("qdesktop: launchpad dpad down (search→tab)");
+        }
+        if ((keys_down & HidNpadButton_B) || (keys_down & HidNpadButton_Plus)) {
+            // B/+ in search focus exits to tab focus instead of closing the
+            // Launchpad — matches the "search above tabs" mental model.
+            search_focus_active_ = false;
+            tab_focus_idx_       = 0u;
+            UL_LOG_INFO("qdesktop: launchpad B/+ in search focus → tab focus");
+        }
+        if (keys_down & HidNpadButton_A) {
+            // Open the system on-screen keyboard, write result into query_
+            // via existing ClearQuery() + PushQueryChar() loop.  filter rebuild
+            // happens implicitly per push; final clamp in PushQueryChar handles
+            // out-of-range focus cleanup.
+            char buf[256];
+            buf[0] = '\0';
+            SwkbdConfig kbd;
+            if (R_SUCCEEDED(swkbdCreate(&kbd, 0))) {
+                swkbdConfigMakePresetDefault(&kbd);
+                swkbdConfigSetInitialText(&kbd, query_.c_str());
+                swkbdConfigSetGuideText(&kbd, "Search apps");
+                swkbdConfigSetStringLenMax(&kbd, 64u);
+                if (R_SUCCEEDED(swkbdShow(&kbd, buf, sizeof(buf)))) {
+                    ClearQuery();
+                    for (const char *p = buf; *p != '\0'; ++p) {
+                        PushQueryChar(*p);
+                    }
+                    UL_LOG_INFO("qdesktop: launchpad swkbd query='%s'", buf);
+                }
+                swkbdClose(&kbd);
+            }
+            // Stay in search focus after swkbd return so the user can press A
+            // again to refine, or DOWN to enter tab focus, or B to exit.
+        }
+        // Skip the rest of OnInput (tab/grid handling) while in search focus.
+        return;
+    }
 
     if (tab_focus_idx_ != SIZE_MAX) {
         // ── Tab-strip mode ─────────────────────────────────────────────────────
         // D-pad LEFT/RIGHT cycles among visible tab tiles (no wrapping).
         // D-pad DOWN returns to grid at (0, 0).
-        // D-pad UP is a no-op (already at the top).
+        // v1.8.33: D-pad UP enters search-bar focus.
+        if (keys_down & HidNpadButton_Up) {
+            search_focus_active_ = true;
+            tab_focus_idx_       = SIZE_MAX;
+            UL_LOG_INFO("qdesktop: launchpad dpad up (tab→search) — search focus on");
+        }
         if (keys_down & HidNpadButton_Left) {
             if (tab_focus_idx_ > 0u) {
                 --tab_focus_idx_;
@@ -1188,6 +1243,26 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
             SDL_Rect td { LP_SEARCH_BAR_X + 8, ty, tw, th };
             SDL_RenderCopy(r, search_bar_tex_, nullptr, &td);
         }
+
+        // v1.8.33: focus ring around the search bar when search focus active.
+        if (search_focus_active_) {
+            SDL_SetRenderDrawColor(r, 0x00u, 0xE5u, 0xFFu, 0xFFu);
+            SDL_Rect ring_outer {
+                LP_SEARCH_BAR_X - 2,
+                LP_SEARCH_BAR_Y - 2,
+                LP_SEARCH_BAR_W + 4,
+                LP_SEARCH_BAR_H + 4
+            };
+            SDL_RenderDrawRect(r, &ring_outer);
+            SDL_SetRenderDrawColor(r, 0x00u, 0x80u, 0xAAu, 0xFFu);
+            SDL_Rect ring_inner {
+                LP_SEARCH_BAR_X - 1,
+                LP_SEARCH_BAR_Y - 1,
+                LP_SEARCH_BAR_W + 2,
+                LP_SEARCH_BAR_H + 2
+            };
+            SDL_RenderDrawRect(r, &ring_inner);
+        }
     }
 
     // F8 (stabilize-5): P3 — auto-folder strip OnRender re-enabled.
@@ -1304,8 +1379,10 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         // user sees only the tab ring (mirrors the v1.8.28 favorites focus-clear
         // fix). Without this guard, both rings render and the grid ring looks
         // "stuck" — the user can't tell they entered tab mode.
+        // v1.8.33: same goes for search-bar focus.
         const bool dpad_active  = (active_input_source_ == InputSource::DPAD);
-        const bool cell_highlighted = (tab_focus_idx_ == SIZE_MAX) && (dpad_active
+        const bool grid_owns_focus = (tab_focus_idx_ == SIZE_MAX) && !search_focus_active_;
+        const bool cell_highlighted = grid_owns_focus && (dpad_active
             ? (vpos == dpad_focus_index_)
             : (vpos == mouse_hover_index_));
         PaintCell(r, items_[item_idx], item_idx, cx, cy, cell_highlighted);

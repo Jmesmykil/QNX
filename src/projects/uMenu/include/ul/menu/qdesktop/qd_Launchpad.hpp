@@ -362,6 +362,14 @@ private:
     // Reset to SIZE_MAX in Open() and Close().
     size_t                  tab_focus_idx_;
 
+    // v1.8.33: search-bar focus state.  Three focus zones now: search bar
+    // (top), tab strip (middle), grid (bottom).
+    //   D-pad UP from tab focus    → enter search-bar focus
+    //   D-pad DOWN from search     → return to tab focus
+    //   A in search focus          → open swkbd, write result to query
+    //   B in search focus          → exit search focus to tab focus
+    bool                    search_focus_active_;
+
     // F10 (stabilize-5): pagination state.
     // page_index_: 0-based current page (0 = first page).
     // page_count_: total pages = ceil(filtered_idxs_.size() / LP_ITEMS_PER_PAGE).

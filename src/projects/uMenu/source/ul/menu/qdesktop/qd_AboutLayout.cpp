@@ -397,9 +397,37 @@ void QdAboutElement::BlitTex(SDL_Renderer *r, SDL_Texture *tex,
     SDL_RenderCopy(r, tex, nullptr, &dst);
 }
 
+// ── Runtime geometry ──────────────────────────────────────────────────────────
+
+QdAboutElement::AboutGeo QdAboutElement::ComputeGeo() const {
+    AboutGeo g;
+    // Card is at most 1400×800 but scales down to fit within content area
+    // with a 48-px margin on each side.
+    const s32 max_card_w = 1400;
+    const s32 max_card_h = 800;
+    const s32 avail_w = content_w_ - 96;   // 48 px margin each side
+    const s32 avail_h = content_h_ - 96;
+    g.card_w = (avail_w < max_card_w) ? avail_w : max_card_w;
+    g.card_h = (avail_h < max_card_h) ? avail_h : max_card_h;
+    g.card_x = (content_w_ - g.card_w) / 2;
+    g.card_y = static_cast<s32>(TOPBAR_H) + (content_h_ - static_cast<s32>(TOPBAR_H) - static_cast<s32>(DOCK_H) - g.card_h) / 2;
+    // Logo panel: at most 200×200, capped at 1/3 of card width.
+    const s32 max_logo = 200;
+    const s32 logo_cap = g.card_w / 3;
+    g.logo_size = (logo_cap < max_logo) ? logo_cap : max_logo;
+    g.logo_x = g.card_x + 48;
+    g.logo_y = g.card_y + 48;
+    // Info column starts to the right of the logo panel.
+    g.info_x = g.logo_x + g.logo_size + 48;
+    g.info_y = g.card_y + 48;
+    g.row_h  = 38;
+    g.rule_right = g.card_x + g.card_w - 32;
+    return g;
+}
+
 // ── Card + logo rendering ─────────────────────────────────────────────────────
 
-void QdAboutElement::RenderCard(SDL_Renderer *r) const {
+void QdAboutElement::RenderCard(SDL_Renderer *r, const AboutGeo &geo) const {
     // Frosted-glass card background.
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r,
@@ -407,7 +435,7 @@ void QdAboutElement::RenderCard(SDL_Renderer *r) const {
         theme_.surface_glass.g,
         theme_.surface_glass.b,
         210);
-    SDL_Rect card = { ABOUT_CARD_X, ABOUT_CARD_Y, ABOUT_CARD_W, ABOUT_CARD_H };
+    SDL_Rect card = { geo.card_x, geo.card_y, geo.card_w, geo.card_h };
     SDL_RenderFillRect(r, &card);
 
     // Thin accent border around the card.
@@ -421,7 +449,7 @@ void QdAboutElement::RenderCard(SDL_Renderer *r) const {
         theme_.desktop_bg.g,
         theme_.desktop_bg.b,
         240);
-    SDL_Rect logo_bg = { ABOUT_LOGO_X, ABOUT_LOGO_Y, ABOUT_LOGO_SIZE, ABOUT_LOGO_SIZE };
+    SDL_Rect logo_bg = { geo.logo_x, geo.logo_y, geo.logo_size, geo.logo_size };
     SDL_RenderFillRect(r, &logo_bg);
 
     // Accent rounded-look: draw four lines one pixel inside the logo rect.
@@ -430,8 +458,8 @@ void QdAboutElement::RenderCard(SDL_Renderer *r) const {
     SDL_RenderDrawRect(r, &logo_bg);
     // Inner glow band (2 px inset).
     SDL_Rect logo_inner = {
-        ABOUT_LOGO_X + 3, ABOUT_LOGO_Y + 3,
-        ABOUT_LOGO_SIZE - 6, ABOUT_LOGO_SIZE - 6
+        geo.logo_x + 3, geo.logo_y + 3,
+        geo.logo_size - 6, geo.logo_size - 6
     };
     SDL_SetRenderDrawColor(r,
         theme_.accent.r, theme_.accent.g, theme_.accent.b, 80);
@@ -441,8 +469,8 @@ void QdAboutElement::RenderCard(SDL_Renderer *r) const {
     if (logo_tex_) {
         int lw = 0, lh = 0;
         SDL_QueryTexture(logo_tex_, nullptr, nullptr, &lw, &lh);
-        const s32 lx = ABOUT_LOGO_X + (ABOUT_LOGO_SIZE - lw) / 2;
-        const s32 ly = ABOUT_LOGO_Y + (ABOUT_LOGO_SIZE - lh) / 2;
+        const s32 lx = geo.logo_x + (geo.logo_size - lw) / 2;
+        const s32 ly = geo.logo_y + (geo.logo_size - lh) / 2;
         SDL_Rect ldst = { lx, ly, lw, lh };
         SDL_RenderCopy(r, logo_tex_, nullptr, &ldst);
     }
@@ -452,7 +480,8 @@ void QdAboutElement::RenderCard(SDL_Renderer *r) const {
 
 void QdAboutElement::RenderSection(SDL_Renderer *r,
                                    const size_t sec_idx,
-                                   const s32 y) const {
+                                   const s32 y,
+                                   const AboutGeo &geo) const {
     if (sec_idx >= SECTION_COUNT) return;
 
     // Horizontal rule.
@@ -460,52 +489,55 @@ void QdAboutElement::RenderSection(SDL_Renderer *r,
     SDL_SetRenderDrawColor(r,
         theme_.accent.r, theme_.accent.g, theme_.accent.b, 120);
     SDL_RenderDrawLine(r,
-        ABOUT_INFO_X, y + 14,
-        ABOUT_CARD_X + ABOUT_CARD_W - 32, y + 14);
+        geo.info_x, y + 14,
+        geo.rule_right, y + 14);
 
     // Section label.
-    BlitTex(r, section_tex_[sec_idx], ABOUT_INFO_X, y);
+    BlitTex(r, section_tex_[sec_idx], geo.info_x, y);
 }
 
 // ── Row rendering ─────────────────────────────────────────────────────────────
 
-void QdAboutElement::RenderRows(SDL_Renderer *r) {
+void QdAboutElement::RenderRows(SDL_Renderer *r, const AboutGeo &geo) {
     // Layout:
     //   Rows  0-1   → section 0 "Q OS Build"
     //   Rows  2-5   → section 1 "Hardware"
     //   Rows  6-11  → section 2 "System"
     //   Rows 12-13  → section 3 "Power"
     //
-    // Section headings each take ABOUT_ROW_H + 8 px gap before their first row.
+    // Section headings each take row_h + 8 px gap before their first row.
     // Value column starts 300 px to the right of the label column.
 
-    static constexpr s32 VALUE_COL_OFFSET = 300;
-    static constexpr s32 SECTION_EXTRA_H  = ABOUT_ROW_H + 8;
+    // In windowed mode, scale the value-column offset proportionally so it
+    // stays within the info column width (card_w - logo - 3×48 margin).
+    const s32 info_avail_w = geo.card_x + geo.card_w - geo.info_x - 32;
+    const s32 value_col = (info_avail_w < 300) ? (info_avail_w / 2) : 300;
+    const s32 section_extra_h = geo.row_h + 8;
 
     // Section-start row indices.
     static constexpr size_t SEC_ROW[SECTION_COUNT] = { 0, 2, 6, 12 };
 
-    s32 cur_y = ABOUT_INFO_Y;
+    s32 cur_y = geo.info_y;
     size_t next_sec = 0; // index into SEC_ROW / section_tex_
 
     for (size_t i = 0; i < ABOUT_ROW_COUNT; ++i) {
         // Emit section heading before the row it starts on.
         if (next_sec < SECTION_COUNT && i == SEC_ROW[next_sec]) {
-            RenderSection(r, next_sec, cur_y);
-            cur_y += SECTION_EXTRA_H;
+            RenderSection(r, next_sec, cur_y, geo);
+            cur_y += section_extra_h;
             ++next_sec;
         }
 
-        BlitTex(r, rows_[i].label_tex, ABOUT_INFO_X, cur_y);
-        BlitTex(r, rows_[i].value_tex, ABOUT_INFO_X + VALUE_COL_OFFSET, cur_y);
-        cur_y += ABOUT_ROW_H;
+        BlitTex(r, rows_[i].label_tex, geo.info_x, cur_y);
+        BlitTex(r, rows_[i].value_tex, geo.info_x + value_col, cur_y);
+        cur_y += geo.row_h;
     }
 }
 
 // ── OnRender ──────────────────────────────────────────────────────────────────
 
 void QdAboutElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
-                              const s32 /*x*/, const s32 /*y*/) {
+                              const s32 x, const s32 y) {
     if (!refreshed_) {
         Refresh();
     }
@@ -513,37 +545,40 @@ void QdAboutElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     SDL_Renderer *r = pu::ui::render::GetMainRenderer();
     if (r == nullptr) return;
 
-    // Full-screen dark scrim.
+    // Compute runtime geometry from current content dimensions.
+    const AboutGeo geo = ComputeGeo();
+
+    // Full-content dark scrim (uses content_w_/content_h_ not SCREEN constants).
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r,
         theme_.desktop_bg.r,
         theme_.desktop_bg.g,
         theme_.desktop_bg.b,
         240);
-    SDL_Rect screen = { 0, 0, SCREEN_W, SCREEN_H };
+    SDL_Rect screen = { x, y, content_w_, content_h_ };
     SDL_RenderFillRect(r, &screen);
 
     // Card + logo.
-    RenderCard(r);
+    RenderCard(r, geo);
 
     // Info rows.
-    RenderRows(r);
+    RenderRows(r, geo);
 
     // Footer hint at bottom of card.
     if (footer_tex_) {
         int fw = 0, fh = 0;
         SDL_QueryTexture(footer_tex_, nullptr, nullptr, &fw, &fh);
-        const s32 fx = ABOUT_CARD_X + (ABOUT_CARD_W - fw) / 2;
-        const s32 fy = ABOUT_CARD_Y + ABOUT_CARD_H - fh - 18;
+        const s32 fx = geo.card_x + (geo.card_w - fw) / 2;
+        const s32 fy = geo.card_y + geo.card_h - fh - 18;
         BlitTex(r, footer_tex_, fx, fy);
     }
 
-    // Bottom hint bar (screen-level, below the card).
+    // Bottom hint bar (content-relative, below the card).
     if (hint_bar_tex_ != nullptr) {
         int hw = 0, hh = 0;
         SDL_QueryTexture(hint_bar_tex_, nullptr, nullptr, &hw, &hh);
-        const s32 hx = (SCREEN_W - hw) / 2;
-        const s32 hy = SCREEN_H - 8 - hh;
+        const s32 hx = x + (content_w_ - hw) / 2;
+        const s32 hy = y + content_h_ - 8 - hh;
         BlitTex(r, hint_bar_tex_, hx, hy);
     }
 }
@@ -574,6 +609,9 @@ QdAboutLayout::QdAboutLayout(const QdTheme &theme) {
     this->SetBackgroundColor({ 0, 0, 0, 255 });
     about_element_ = QdAboutElement::New(theme);
     this->Add(about_element_);
+    // v1.9.7: hot-corner overlay painted above the about panel.
+    overlay_ = QdHotCornerOverlay::New();
+    this->Add(overlay_);
 }
 
 QdAboutLayout::~QdAboutLayout() {

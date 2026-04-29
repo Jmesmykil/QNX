@@ -56,8 +56,8 @@ public:
     // ── Element interface ──────────────────────────────────────────────────
     s32 GetX()      override { return 0; }
     s32 GetY()      override { return 0; }
-    s32 GetWidth()  override { return 1920; }
-    s32 GetHeight() override { return 1080; }
+    s32 GetWidth()  override { return content_w_; }
+    s32 GetHeight() override { return content_h_; }
 
     void OnRender(pu::ui::render::Renderer::Ref &drawer,
                   const s32 x, const s32 y) override;
@@ -67,11 +67,25 @@ public:
 
     // ── Public API ─────────────────────────────────────────────────────────
 
+    /// Resize the element to the given pixel dimensions.
+    /// Called by QdWindow::New() to fit the layout inside a window.
+    /// Default: 1920 × 1080 (full-screen, used when not in a window).
+    void SetContentSize(s32 w, s32 h) {
+        content_w_ = (w > 0) ? w : 1920;
+        content_h_ = (h > 0) ? h : 1080;
+    }
+
     /// Open a directory path and populate the main pane.
     /// Safe to call before the first frame; triggers a fresh directory scan.
     void Navigate(const char *path);
 
 private:
+    // v1.10: window-content dimensions (default full-screen 1920×1080;
+    // overridden by SetContentSize() when QdWindow embeds the vault).
+    s32 content_w_ = 1920;
+    s32 content_h_ = 1080;
+
+
     // ── Vault entry ────────────────────────────────────────────────────────
 
     static constexpr size_t MAX_ENTRIES = 128;
@@ -189,8 +203,9 @@ private:
     /// Enter the focused entry: descend into folder or launch NRO.
     void EnterFocused();
 
-    /// Compute grid columns for the main pane width.
-    static s32 MainPaneCols();
+    /// Compute grid columns for the given main pane pixel width.
+    /// content_w is the element's content_w_ (full-screen or windowed).
+    static s32 MainPaneCols(s32 content_w);
 
     /// Compute the pixel rect of entry slot i in the main pane.
     /// Returns false if i is outside the visible window.

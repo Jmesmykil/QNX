@@ -8,6 +8,7 @@
 #include <ul/menu/ui/ui_IMenuLayout.hpp>
 #include <ul/menu/qdesktop/qd_Theme.hpp>
 #include <ul/menu/qdesktop/qd_WmConstants.hpp>
+#include <ul/menu/qdesktop/qd_HotCornerOverlay.hpp>
 #include <SDL2/SDL.h>
 
 namespace ul::menu::qdesktop {
@@ -56,8 +57,8 @@ public:
     // ── Element interface ──────────────────────────────────────────────────
     s32 GetX()      override { return 0; }
     s32 GetY()      override { return 0; }
-    s32 GetWidth()  override { return SCREEN_W; }
-    s32 GetHeight() override { return SCREEN_H; }
+    s32 GetWidth()  override { return content_w_; }
+    s32 GetHeight() override { return content_h_; }
 
     void OnRender(pu::ui::render::Renderer::Ref &drawer,
                   s32 x, s32 y) override;
@@ -66,6 +67,14 @@ public:
                  pu::ui::TouchPoint touch_pos) override;
 
     // ── Public API ─────────────────────────────────────────────────────────
+
+    /// Resize the element to the given pixel dimensions.
+    /// Called by QdWindow::New() to fit the layout inside a window.
+    /// Default: 1920 × 1080 (full-screen, used when not in a window).
+    void SetContentSize(s32 w, s32 h) {
+        content_w_ = (w > 0) ? w : 1920;
+        content_h_ = (h > 0) ? h : 1080;
+    }
 
     /// Poll libnx for live values (battery, charger, operation mode, active
     /// user) and rebuild every cached text texture.  Called once on panel
@@ -84,6 +93,11 @@ private:
 
     // ── State ──────────────────────────────────────────────────────────────
 
+    // v1.10: window-content dimensions (default full-screen 1920×1080;
+    // overridden by SetContentSize() when QdWindow embeds this element).
+    s32 content_w_ = static_cast<s32>(SCREEN_W);
+    s32 content_h_ = static_cast<s32>(SCREEN_H);
+
     QdTheme        theme_;
     Row            rows_[ABOUT_ROW_COUNT];
 
@@ -99,6 +113,24 @@ private:
 
     bool           refreshed_;   ///< true once Refresh() has completed
 
+    // ── Runtime geometry (computed from content_w_/content_h_) ────────────────
+
+    /// All layout positions recomputed per frame from content dimensions.
+    /// Keeps RenderCard/RenderRows/RenderSection independent of SCREEN_W/H.
+    struct AboutGeo {
+        s32 card_w, card_h;
+        s32 card_x, card_y;
+        s32 logo_size;
+        s32 logo_x, logo_y;
+        s32 info_x, info_y;
+        s32 row_h;
+        // Section-end right edge for horizontal rule.
+        s32 rule_right;
+    };
+
+    /// Compute AboutGeo from content_w_ / content_h_.
+    AboutGeo ComputeGeo() const;
+
     // ── Private helpers ────────────────────────────────────────────────────
 
     /// Destroy all per-row SDL_Texture* objects.
@@ -111,13 +143,14 @@ private:
     static void BlitTex(SDL_Renderer *r, SDL_Texture *tex, s32 x, s32 y);
 
     /// Render the frosted-glass card background and the procedural logo panel.
-    void RenderCard(SDL_Renderer *r) const;
+    void RenderCard(SDL_Renderer *r, const AboutGeo &geo) const;
 
     /// Render the info rows using cached textures.
-    void RenderRows(SDL_Renderer *r);
+    void RenderRows(SDL_Renderer *r, const AboutGeo &geo);
 
     /// Render section divider line + heading texture at the given y position.
-    void RenderSection(SDL_Renderer *r, size_t sec_idx, s32 y) const;
+    void RenderSection(SDL_Renderer *r, size_t sec_idx, s32 y,
+                       const AboutGeo &geo) const;
 
     /// Map SetSysProductModel integer to a human-readable string.
     static const char *ProductModelString(s32 model);
@@ -161,6 +194,7 @@ public:
 
 private:
     QdAboutElement::Ref about_element_;
+    QdHotCornerOverlay::Ref overlay_;
 };
 
 } // namespace ul::menu::qdesktop

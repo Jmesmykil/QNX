@@ -297,14 +297,14 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // ── 1. Full-screen background ─────────────────────────────────────────────
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r, 0x06u, 0x06u, 0x10u, 0xF4u);
-    SDL_Rect bg { ax, ay, 1920, 1080 };
+    SDL_Rect bg { ax, ay, content_w_, content_h_ };
     SDL_RenderFillRect(r, &bg);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
     // ── 2. Header bar ─────────────────────────────────────────────────────────
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(r, theme_.topbar_bg.r, theme_.topbar_bg.g, theme_.topbar_bg.b, 0xF0u);
-    SDL_Rect hbar { ax, ay, 1920, 48 };
+    SDL_Rect hbar { ax, ay, content_w_, 48 };
     SDL_RenderFillRect(r, &hbar);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
@@ -314,7 +314,7 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
             pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
             std::string("Monitor  —  System Stats  [B] Back"),
             theme_.accent,
-            static_cast<u32>(1920 - 16));
+            static_cast<u32>(content_w_ - 16));
         if (title_tex != nullptr) {
             int tw = 0, th = 0;
             SDL_QueryTexture(title_tex, nullptr, nullptr, &tw, &th);
@@ -325,6 +325,9 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     }
 
     // ── 3. Six stat tiles ─────────────────────────────────────────────────────
+    // Compute tile grid X at runtime so windowed mode centres correctly.
+    const s32 grid_x = (content_w_ - QD_MONITOR_TILE_COLS * QD_MONITOR_TILE_W
+                        - (QD_MONITOR_TILE_COLS - 1) * QD_MONITOR_TILE_GAP) / 2;
 
     // Tile 0: Thermal
     {
@@ -334,7 +337,7 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         } else {
             snprintf(l1, sizeof(l1), "N/A");
         }
-        const s32 tx = ax + QD_MONITOR_GRID_X;
+        const s32 tx = ax + grid_x;
         const s32 ty = ay + QD_MONITOR_BODY_TOP;
         RenderTile(r, tx, ty,
                    "Thermal (SOC)", l1, "tsGetTemperature(TsLocation_Internal)",
@@ -359,7 +362,7 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
             snprintf(l1, sizeof(l1), "N/A");
             snprintf(l2, sizeof(l2), "psm unavailable");
         }
-        const s32 tx = ax + QD_MONITOR_GRID_X + QD_MONITOR_TILE_W + QD_MONITOR_TILE_GAP;
+        const s32 tx = ax + grid_x + QD_MONITOR_TILE_W + QD_MONITOR_TILE_GAP;
         const s32 ty = ay + QD_MONITOR_BODY_TOP;
         RenderTile(r, tx, ty, "Power (Battery)", l1, l2,
                    theme_.button_minimize, stats_.psm_ok);
@@ -384,7 +387,7 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         } else {
             snprintf(l2, sizeof(l2), "nifm unavailable");
         }
-        const s32 tx = ax + QD_MONITOR_GRID_X + (QD_MONITOR_TILE_W + QD_MONITOR_TILE_GAP) * 2;
+        const s32 tx = ax + grid_x + (QD_MONITOR_TILE_W + QD_MONITOR_TILE_GAP) * 2;
         const s32 ty = ay + QD_MONITOR_BODY_TOP;
         RenderTile(r, tx, ty, "Network", stats_.ip_str, l2,
                    theme_.accent, stats_.nifm_ok);
@@ -402,7 +405,7 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
             snprintf(l1, sizeof(l1), "RAM: N/A");
         }
         snprintf(l2, sizeof(l2), "%.1f FPS", (double)stats_.fps);
-        const s32 tx = ax + QD_MONITOR_GRID_X;
+        const s32 tx = ax + grid_x;
         const s32 ty = ay + QD_MONITOR_BODY_TOP + QD_MONITOR_TILE_H + QD_MONITOR_TILE_GAP;
         RenderTile(r, tx, ty, "System (RAM / FPS)", l1, l2,
                    theme_.button_maximize, stats_.mem_ok);
@@ -410,7 +413,7 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
 
     // Tile 4: Bluetooth
     {
-        const s32 tx = ax + QD_MONITOR_GRID_X + QD_MONITOR_TILE_W + QD_MONITOR_TILE_GAP;
+        const s32 tx = ax + grid_x + QD_MONITOR_TILE_W + QD_MONITOR_TILE_GAP;
         const s32 ty = ay + QD_MONITOR_BODY_TOP + QD_MONITOR_TILE_H + QD_MONITOR_TILE_GAP;
         const bool bt_connected = (stats_.bt_name[0] != '\0' &&
                                    strcmp(stats_.bt_name, "(none)") != 0);
@@ -437,7 +440,7 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
                      (unsigned long long)hours,
                      (unsigned long long)mins, (unsigned long long)secs);
         }
-        const s32 tx = ax + QD_MONITOR_GRID_X + (QD_MONITOR_TILE_W + QD_MONITOR_TILE_GAP) * 2;
+        const s32 tx = ax + grid_x + (QD_MONITOR_TILE_W + QD_MONITOR_TILE_GAP) * 2;
         const s32 ty = ay + QD_MONITOR_BODY_TOP + QD_MONITOR_TILE_H + QD_MONITOR_TILE_GAP;
         RenderTile(r, tx, ty, "Uptime", l1, "svcGetSystemTick / 19.2 MHz",
                    theme_.text_secondary, true);
@@ -447,8 +450,8 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     if (hint_bar_tex_ != nullptr) {
         int hw = 0, hh = 0;
         SDL_QueryTexture(hint_bar_tex_, nullptr, nullptr, &hw, &hh);
-        const s32 hx = ax + (1920 - hw) / 2;
-        const s32 hy = ay + 1080 - 8 - hh;
+        const s32 hx = ax + (content_w_ - hw) / 2;
+        const s32 hy = ay + content_h_ - 8 - hh;
         SDL_Rect hdst { hx, hy, hw, hh };
         SDL_RenderCopy(r, hint_bar_tex_, nullptr, &hdst);
     }

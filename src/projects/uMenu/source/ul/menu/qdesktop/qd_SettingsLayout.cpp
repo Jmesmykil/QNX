@@ -627,7 +627,7 @@ void QdSettingsElement::OnRender(pu::ui::render::Renderer::Ref &drawer,
     // ── Background fill (entire element) ──────────────────────────────────
     {
         const auto &c = theme_.desktop_bg;
-        DrawFilledRect(r, x, y, 1920, 1080, c.r, c.g, c.b, 0xFF);
+        DrawFilledRect(r, x, y, content_w_, content_h_, c.r, c.g, c.b, 0xFF);
     }
 
     // ── Title strip (topbar bottom .. topbar+title_h) ─────────────────────
@@ -635,7 +635,7 @@ void QdSettingsElement::OnRender(pu::ui::render::Renderer::Ref &drawer,
         const auto &c = theme_.topbar_bg;
         DrawFilledRect(r,
                        x, y + static_cast<s32>(TOPBAR_H),
-                       1920, SETTINGS_TITLE_H,
+                       content_w_, SETTINGS_TITLE_H,
                        c.r, c.g, c.b, 0xF0);
         if (title_tex_) {
             int tw = 0, th = 0;
@@ -648,7 +648,7 @@ void QdSettingsElement::OnRender(pu::ui::render::Renderer::Ref &drawer,
         const auto &ac = theme_.grid_line;
         DrawFilledRect(r,
                        x, y + static_cast<s32>(TOPBAR_H) + SETTINGS_TITLE_H - 1,
-                       1920, 1,
+                       content_w_, 1,
                        ac.r, ac.g, ac.b, 0x80);
     }
 
@@ -672,8 +672,8 @@ void QdSettingsElement::OnRender(pu::ui::render::Renderer::Ref &drawer,
     if (hint_bar_tex_ != nullptr) {
         int hw = 0, hh = 0;
         SDL_QueryTexture(hint_bar_tex_, nullptr, nullptr, &hw, &hh);
-        const s32 hx = x + (1920 - hw) / 2;
-        const s32 hy = y + 1080 - 8 - hh;
+        const s32 hx = x + (content_w_ - hw) / 2;
+        const s32 hy = y + content_h_ - 8 - hh;
         SDL_Rect hdst { hx, hy, hw, hh };
         SDL_RenderCopy(r, hint_bar_tex_, nullptr, &hdst);
     }
@@ -1032,6 +1032,9 @@ QdSettingsLayout::QdSettingsLayout(const QdTheme &theme) {
     this->SetBackgroundColor({ 0, 0, 0, 255 });
     settings_elm_ = QdSettingsElement::New(theme);
     this->Add(settings_elm_);
+    // v1.9.7: hot-corner overlay painted above the settings panel.
+    overlay_ = QdHotCornerOverlay::New();
+    this->Add(overlay_);
 }
 
 // ── IMenuLayout obligations ───────────────────────────────────────────────────

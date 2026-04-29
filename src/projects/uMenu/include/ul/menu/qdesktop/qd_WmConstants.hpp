@@ -27,7 +27,9 @@ static constexpr uint32_t TOPBAR_H = 48;     // Rust: 32
 
 // ── The Deck (dock) ───────────────────────────────────────────────────────────
 
-static constexpr uint32_t DOCK_H             = 108;  // Rust: 72
+static constexpr uint32_t DOCK_H             = 148;  // Rust: 72 (corrected from 108 — actual runtime dock height)
+static constexpr uint32_t SNAP_W             = 108;  // minimized-window snapshot width (pixels)
+static constexpr uint32_t SNAP_H             =  60;  // minimized-window snapshot height (pixels)
 static constexpr uint32_t DOCK_PADDING_BOTTOM =  12;  // Rust:  8
 static constexpr uint32_t DOCK_SLOT_SIZE      =  84;  // Rust: 56
 static constexpr uint32_t DOCK_SLOT_GAP       =  18;  // Rust: 12

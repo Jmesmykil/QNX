@@ -16,6 +16,7 @@
 #include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
 #include <ul/menu/qdesktop/qd_Cursor.hpp>
 #include <ul/menu/qdesktop/qd_FirstBootWelcome.hpp>
+#include <ul/menu/qdesktop/qd_HotCornerOverlay.hpp>
 #include <ul/menu/bt/bt_Manager.hpp>
 #endif
 
@@ -92,6 +93,7 @@ namespace ul::menu::ui {
             qdesktop::QdWallpaperElement::Ref qdesktop_wallpaper;
             qdesktop::QdDesktopIconsElement::Ref qdesktop_icons;
             qdesktop::QdCursorElement::Ref qdesktop_cursor;
+            qdesktop::QdHotCornerOverlay::Ref qdesktop_overlay_;
             // Cycle D5 (SP4.12): timestamp of the most recent Home-button
             // press, in nanoseconds (armTicksToNs(armGetSystemTick())).
             // Two presses within 600 ms open the dev mini-menu; otherwise

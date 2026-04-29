@@ -62,14 +62,24 @@ public:
     // ── Element interface ──────────────────────────────────────────────────────
     s32 GetX()      override { return 0; }
     s32 GetY()      override { return 0; }
-    s32 GetWidth()  override { return 1920; }
-    s32 GetHeight() override { return 1080; }
+    s32 GetWidth()  override { return content_w_; }
+    s32 GetHeight() override { return content_h_; }
 
     void OnRender(pu::ui::render::Renderer::Ref &drawer,
                   const s32 x, const s32 y) override;
 
     void OnInput(const u64 keys_down, const u64 keys_up, const u64 keys_held,
                  const pu::ui::TouchPoint touch_pos) override;
+
+    // ── Public API ────────────────────────────────────────────────────────────
+
+    /// Resize the element to the given pixel dimensions.
+    /// Called by QdWindow::New() to fit the layout inside a window.
+    /// Default: 1920 × 1080 (full-screen, used when not in a window).
+    void SetContentSize(s32 w, s32 h) {
+        content_w_ = (w > 0) ? w : 1920;
+        content_h_ = (h > 0) ? h : 1080;
+    }
 
 private:
     // ── Stat record (refreshed every REFRESH_FRAMES) ──────────────────────────
@@ -114,6 +124,12 @@ private:
                     pu::ui::Color title_color, bool ok) const;
 
     // ── State ──────────────────────────────────────────────────────────────────
+
+    // v1.10: window-content dimensions (default full-screen 1920×1080;
+    // overridden by SetContentSize() when QdWindow embeds this element).
+    s32 content_w_ = 1920;
+    s32 content_h_ = 1080;
+
     QdTheme theme_;
     Stats   stats_       = {};
     int     frame_ctr_   = 0;  ///< frame counter for refresh cadence

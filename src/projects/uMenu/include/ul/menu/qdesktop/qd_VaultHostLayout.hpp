@@ -40,6 +40,7 @@
 
 #include <ul/menu/ui/ui_IMenuLayout.hpp>
 #include <ul/menu/qdesktop/qd_VaultLayout.hpp>
+#include <ul/menu/qdesktop/qd_HotCornerOverlay.hpp>
 
 namespace ul::menu::qdesktop {
 
@@ -74,6 +75,7 @@ namespace ul::menu::qdesktop {
 
         private:
             QdVaultLayout::Ref vault_element_;
+            QdHotCornerOverlay::Ref overlay_;
     };
 
 }

@@ -276,6 +276,12 @@ public:
     // or the Launchpad is closed.
     void DispatchPendingLaunch();
 
+    // v1.9.7: Returns a stable pointer to the search-bar focus flag so the
+    // hot-corner overlay can poll it directly each frame without a per-frame
+    // function call overhead.  The pointer is valid for the lifetime of this
+    // element (it addresses a member variable, not heap storage).
+    const bool *GetSearchActivePtr() const { return &search_focus_active_; }
+
     // ── Frame tick ───────────────────────────────────────────────────────────
     // Advance the caret blink counter.  Call once per frame.
     void AdvanceTick();

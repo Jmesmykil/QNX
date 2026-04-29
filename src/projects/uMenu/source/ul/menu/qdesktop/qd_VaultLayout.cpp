@@ -43,9 +43,9 @@ QdVaultLayout::SIDEBAR_ROOTS[QdVaultLayout::SIDEBAR_ROOT_COUNT] = {
 
 // ── Vault column computation ───────────────────────────────────────────────────
 
-s32 QdVaultLayout::MainPaneCols() {
-    // Main pane width = screen width minus sidebar minus one gap.
-    const s32 pane_w = 1920 - VAULT_SIDEBAR_W - VAULT_CELL_GAP;
+s32 QdVaultLayout::MainPaneCols(s32 content_w) {
+    // Main pane width = element width minus sidebar minus one gap.
+    const s32 pane_w = content_w - VAULT_SIDEBAR_W - VAULT_CELL_GAP;
     const s32 col_stride = VAULT_CELL_W + VAULT_CELL_GAP;
     const s32 cols = pane_w / col_stride;
     return (cols < 1) ? 1 : cols;
@@ -364,7 +364,7 @@ bool QdVaultLayout::EntryRect(size_t i,
     if (i >= entry_count_) {
         return false;
     }
-    const s32 cols      = MainPaneCols();
+    const s32 cols      = MainPaneCols(content_w_);
     const s32 col_stride = VAULT_CELL_W + VAULT_CELL_GAP;
     const s32 row_stride = VAULT_CELL_H + VAULT_CELL_GAP;
 
@@ -516,7 +516,7 @@ void QdVaultLayout::RenderMainPane(SDL_Renderer *r,
     SDL_Rect pathbar {
         pathbar_left,
         origin_y + VAULT_BODY_TOP,
-        1920 - VAULT_SIDEBAR_W,
+        content_w_ - VAULT_SIDEBAR_W,
         VAULT_PATHBAR_H
     };
     SDL_RenderFillRect(r, &pathbar);
@@ -536,7 +536,7 @@ void QdVaultLayout::RenderMainPane(SDL_Renderer *r,
             path_tex = pu::ui::render::RenderText(
                 pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
                 std::string(cwd_), pc,
-                static_cast<u32>(1920 - VAULT_SIDEBAR_W - 24));
+                static_cast<u32>(content_w_ - VAULT_SIDEBAR_W - 24));
         }
         if (path_tex != nullptr) {
             int pw = 0, ph = 0;
@@ -841,7 +841,7 @@ void QdVaultLayout::RenderContextMenu(SDL_Renderer *r) const {
     static constexpr s32 PW = 440;
     static constexpr s32 PH = 220;
     const s32 main_left = VAULT_SIDEBAR_W;
-    const s32 main_w    = 1920 - main_left;
+    const s32 main_w    = content_w_ - main_left;
     const s32 px = main_left + (main_w - PW) / 2;
     const s32 py = VAULT_BODY_TOP + (VAULT_BODY_H - PH) / 2;
 
@@ -992,7 +992,7 @@ void QdVaultLayout::OnRender(pu::ui::render::Renderer::Ref &drawer,
                            theme_.desktop_bg.b,
                            0xF0u);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    SDL_Rect backdrop { x, y + VAULT_BODY_TOP, 1920, VAULT_BODY_H };
+    SDL_Rect backdrop { x, y + VAULT_BODY_TOP, content_w_, VAULT_BODY_H };
     SDL_RenderFillRect(r, &backdrop);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
@@ -1003,11 +1003,11 @@ void QdVaultLayout::OnRender(pu::ui::render::Renderer::Ref &drawer,
     // Single-row keybind legend at y=1040, horizontally centred.
     // Rendered below the file grid and above the dock area (1080-108=972 bottom
     // of VAULT_BODY, so 1040 sits in the gap between VAULT_BODY and the dock).
-    static constexpr s32 VAULT_HINT_Y = 1040;
     if (hint_bar_tex_ != nullptr) {
         int hw = 0, hh = 0;
         SDL_QueryTexture(hint_bar_tex_, nullptr, nullptr, &hw, &hh);
-        const SDL_Rect hdst { x + (1920 - hw) / 2, y + VAULT_HINT_Y, hw, hh };
+        const s32 hint_y = y + content_h_ - 40;
+        const SDL_Rect hdst { x + (content_w_ - hw) / 2, hint_y, hw, hh };
         SDL_RenderCopy(r, hint_bar_tex_, nullptr, &hdst);
     }
 
@@ -1212,7 +1212,7 @@ void QdVaultLayout::OnInput(const u64 keys_down,
         return;
     }
 
-    const s32 cols = MainPaneCols();
+    const s32 cols = MainPaneCols(content_w_);
 
     // ── D-pad navigation ──────────────────────────────────────────────────────
     // (stabilize-6 / RC-C2): sidebar_focused_ routes UP/DOWN to sidebar_idx_,

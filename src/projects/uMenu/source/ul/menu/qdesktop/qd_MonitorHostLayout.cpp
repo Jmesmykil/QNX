@@ -12,6 +12,9 @@ namespace ul::menu::qdesktop {
         : monitor_element_(monitor_element) {
         this->SetBackgroundColor({ 0, 0, 0, 255 });
         this->Add(this->monitor_element_);
+        // v1.9.7: hot-corner overlay painted above the monitor panel.
+        this->overlay_ = QdHotCornerOverlay::New();
+        this->Add(this->overlay_);
     }
 
     void QdMonitorHostLayout::OnMenuInput(const u64 keys_down,

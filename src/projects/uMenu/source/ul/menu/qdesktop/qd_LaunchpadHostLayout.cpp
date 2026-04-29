@@ -14,6 +14,11 @@ namespace ul::menu::qdesktop {
         : launchpad_element_(launchpad_element) {
         this->SetBackgroundColor({ 0, 0, 0, 255 });
         this->Add(this->launchpad_element_);
+        // v1.9.7: hot-corner overlay added last so it paints above Launchpad
+        // content.  Suppressed when the search bar has focus.
+        this->overlay_ = QdHotCornerOverlay::New();
+        this->overlay_->SetSearchActiveRef(this->launchpad_element_->GetSearchActivePtr());
+        this->Add(this->overlay_);
     }
 
     void QdLaunchpadHostLayout::OnMenuInput(const u64 keys_down,

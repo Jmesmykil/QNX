@@ -27,6 +27,7 @@
 
 #include <ul/menu/ui/ui_IMenuLayout.hpp>
 #include <ul/menu/qdesktop/qd_Launchpad.hpp>
+#include <ul/menu/qdesktop/qd_HotCornerOverlay.hpp>
 #include <pu/audio/audio_Audio.hpp>
 
 namespace ul::menu::qdesktop {
@@ -73,6 +74,7 @@ namespace ul::menu::qdesktop {
 
         private:
             QdLaunchpadElement::Ref launchpad_element_;
+            QdHotCornerOverlay::Ref overlay_;
 
             // ── Launchpad SFX handles (loaded in LoadSfx, disposed in DisposeSfx) ─
             pu::audio::Sfx launchpad_open_sfx  = nullptr;

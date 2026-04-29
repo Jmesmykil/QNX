@@ -911,6 +911,17 @@ namespace ul::menu::ui {
             // cursor's own OnInput consumes the layout-space TouchPoint and
             // tracks the pointer.  Layout-level routing is unnecessary —
             // the cursor element is self-driving.
+            // v1.9.7: hot-corner overlay registered BEFORE the cursor so the
+            // cursor element renders LAST and stays on top of the glyph.
+            // (Plutonium iterates GetElements() in registration order; last
+            //  registered = topmost paint.)
+            // v1.9.8: this ordering fixes the v1.9.7 HW report "the glyph is
+            // staying in front of the mouse — I need to be able to see the
+            // mouse over the glyph."
+            this->qdesktop_overlay_ = qdesktop::QdHotCornerOverlay::New();
+            this->Add(this->qdesktop_overlay_);
+
+            // Cursor created AFTER the overlay so it paints on top.
             this->qdesktop_cursor = qdesktop::QdCursorElement::New(qdt);
             this->Add(this->qdesktop_cursor);
 

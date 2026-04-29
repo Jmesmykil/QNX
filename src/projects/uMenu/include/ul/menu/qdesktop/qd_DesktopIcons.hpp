@@ -11,6 +11,7 @@
 #include <ul/menu/qdesktop/qd_Tooltip.hpp>
 #include <ul/menu/qdesktop/qd_TaskManager.hpp>       // v1.9: full-screen process manager modal
 #include <ul/menu/qdesktop/qd_HotCornerDropdown.hpp> // v1.9: hot-corner popout dropdown
+#include <ul/menu/qdesktop/qd_WindowManager.hpp>     // v1.10: floating window manager
 #include <ul/menu/qdesktop/qd_IconCache.hpp>
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
 #include <ul/menu/qdesktop/qd_IconCategory.hpp>
@@ -356,6 +357,15 @@ public:
     // and SetSpecialEntries after the icon set changes so the folder counts
     // refresh.  No-op if the layout is already dirty.
     static void MarkDesktopFolderLayoutDirty();
+
+    // v1.10: window-manager openers.  Each method creates a QdWindow, sets its
+    // content layout to the matching windowed layout, and calls wm_.OpenWindow().
+    // Defined in qd_DesktopIcons_WmBridge.cpp to keep this file focused on
+    // icon-grid and dock concerns.
+    void OpenVaultWindow();
+    void OpenSettingsWindow();
+    void OpenMonitorWindow();
+    void OpenAboutWindow();
 
 private:
     // v1.7.0-stabilize-7 Slice 4 (O-B): recompute per-folder counts and rects.
@@ -725,6 +735,12 @@ private:
     // Non-copyable; owns SDL textures. Must be declared after task_mgr_ so
     // destructor order is deterministic (dropdown_ destroyed first).
     QdHotCornerDropdown dropdown_;
+
+    // v1.10: floating window manager. Renders at Z=4 (above desktop icons/
+    // favorites, below hot-corner widget). Non-copyable; owns QdWindow and
+    // QdMinimizedDockEntry shared_ptrs via vectors. Must be declared after
+    // dropdown_ so destructor order is deterministic (wm_ destroyed first).
+    QdWindowManager wm_;
 };
 
 } // namespace ul::menu::qdesktop

@@ -26,6 +26,7 @@
 
 #include <ul/menu/ui/ui_IMenuLayout.hpp>
 #include <ul/menu/qdesktop/qd_MonitorLayout.hpp>
+#include <ul/menu/qdesktop/qd_HotCornerOverlay.hpp>
 
 namespace ul::menu::qdesktop {
 
@@ -60,6 +61,7 @@ namespace ul::menu::qdesktop {
 
         private:
             QdMonitorLayout::Ref monitor_element_;
+            QdHotCornerOverlay::Ref overlay_;
     };
 
 }

@@ -2976,7 +2976,7 @@ void QdDesktopIconsElement::SpawnPrewarmThread() {
 
 // ── OnRender ──────────────────────────────────────────────────────────────────
 
-void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
+void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref &drawer,
                                       const s32 x, const s32 y)
 {
     // F-06 fix: LRU tick is owned by the public AdvanceTick() method.
@@ -3187,46 +3187,12 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         tooltip_.Hide();
     }
 
-    // v1.9.2: hot-corner widget paint (bg + cyan accents + Q-glyph).
-    // Moved here from QdGlobalChrome::RenderTopBar.  Chrome paints in
-    // render-step 1 (before Plutonium elements) so the desktop content was
-    // overpainting the widget on v1.9.1 HW test.  Painting at the end of the
-    // desktop layout's OnRender — before tooltip/dropdown/help overlay —
-    // keeps the widget visible every desktop frame and naturally hides it
-    // on Launchpad/About/Settings layouts (which don't render this element).
-    {
-        const int32_t kWidgetW = LP_HOTCORNER_W;  // 96
-        const int32_t kWidgetH = LP_HOTCORNER_H;  // 72
+    // v1.9.7: widget paint moved to QdHotCornerOverlay (cross-layout Element).
 
-        // Background fill — solid dark.
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-        SDL_SetRenderDrawColor(r, 0x10u, 0x10u, 0x14u, 0xFFu);
-        SDL_Rect hc_bg { 0, 0, kWidgetW, kWidgetH };
-        SDL_RenderFillRect(r, &hc_bg);
-
-        // Cyan right + bottom accents (semi-transparent).
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(r, 0x00u, 0xE5u, 0xFFu, 0xA0u);
-        SDL_Rect hc_right { kWidgetW - 2, 0, 2, kWidgetH };
-        SDL_RenderFillRect(r, &hc_right);
-        SDL_Rect hc_bottom { 0, kWidgetH - 2, kWidgetW, 2 };
-        SDL_RenderFillRect(r, &hc_bottom);
-
-        // Q-glyph: cyan outlined square with a small tail at the bottom-right.
-        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-        SDL_SetRenderDrawColor(r, 0x00u, 0xE5u, 0xFFu, 0xFFu);
-        const int32_t gx = (kWidgetW - 36) / 2;
-        const int32_t gy = (kWidgetH - 36) / 2;
-        SDL_Rect q_top    { gx,        gy,           36, 4 };
-        SDL_Rect q_bot    { gx,        gy + 32,      36, 4 };
-        SDL_Rect q_left   { gx,        gy,           4,  36 };
-        SDL_Rect q_right  { gx + 32,   gy,           4,  36 };
-        SDL_Rect q_tail   { gx + 26,   gy + 26,      14, 4 };
-        SDL_RenderFillRect(r, &q_top);
-        SDL_RenderFillRect(r, &q_bot);
-        SDL_RenderFillRect(r, &q_left);
-        SDL_RenderFillRect(r, &q_right);
-        SDL_RenderFillRect(r, &q_tail);
+    // v1.10: window manager renders at Z=4 — above desktop icons/favorites,
+    // below hot-corner widget, tooltip, and help overlay.
+    if (wm_.GetTotalWindowCount() > 0) {
+        wm_.RenderAll(drawer);
     }
 
     // v1.8.27: tooltip renders above all icon/folder layers but below help overlay.
@@ -3404,6 +3370,17 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
     const bool repeat_right = dpad_should_repeat(3u, HidNpadButton_Right);
 
     // v1.9.2: dev-popup input forwarding removed (devtools strip).
+
+    // v1.10: window manager input — handled after task manager, before desktop nav.
+    // PollWindowEvents returns true when any window or dock entry consumed the event;
+    // desktop navigation must not fire in that case (e.g. dragging a window title bar
+    // should not also move the D-pad cursor).
+    if (wm_.GetTotalWindowCount() > 0) {
+        if (wm_.PollWindowEvents(keys_down, keys_up, keys_held, touch_pos)) {
+            was_touch_active_last_frame_ = !touch_pos.IsEmpty();
+            return;
+        }
+    }
 
     // ── v1.7.0-stabilize-7 Slice 4 (O-B Phase 5) — unified focus model ───────
     //

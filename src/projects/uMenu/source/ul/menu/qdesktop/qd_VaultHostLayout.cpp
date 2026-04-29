@@ -12,6 +12,9 @@ namespace ul::menu::qdesktop {
         : vault_element_(vault_element) {
         this->SetBackgroundColor({ 0, 0, 0, 255 });
         this->Add(this->vault_element_);
+        // v1.9.7: hot-corner overlay painted above the vault panel.
+        this->overlay_ = QdHotCornerOverlay::New();
+        this->Add(this->overlay_);
     }
 
     void QdVaultHostLayout::OnMenuInput(const u64 keys_down,

@@ -9,6 +9,7 @@
 #include <ul/menu/ui/ui_IMenuLayout.hpp>
 #include <ul/menu/qdesktop/qd_Theme.hpp>
 #include <ul/menu/qdesktop/qd_WmConstants.hpp>
+#include <ul/menu/qdesktop/qd_HotCornerOverlay.hpp>
 #include <switch.h>
 #include <SDL2/SDL.h>
 #include <cstddef>
@@ -74,8 +75,8 @@ public:
     // ── Element interface ──────────────────────────────────────────────────
     s32 GetX()      override { return 0; }
     s32 GetY()      override { return 0; }
-    s32 GetWidth()  override { return 1920; }
-    s32 GetHeight() override { return 1080; }
+    s32 GetWidth()  override { return content_w_; }
+    s32 GetHeight() override { return content_h_; }
 
     void OnRender(pu::ui::render::Renderer::Ref &drawer,
                   const s32 x, const s32 y) override;
@@ -85,11 +86,24 @@ public:
 
     // ── Public API ─────────────────────────────────────────────────────────
 
+    /// Resize the element to the given pixel dimensions.
+    /// Called by QdWindow::New() to fit the layout inside a window.
+    /// Default: 1920 × 1080 (full-screen, used when not in a window).
+    void SetContentSize(s32 w, s32 h) {
+        content_w_ = (w > 0) ? w : 1920;
+        content_h_ = (h > 0) ? h : 1080;
+    }
+
     /// Re-poll all live system data into cached fields.
     /// Call once when the element becomes visible.
     void Refresh();
 
 private:
+    // v1.10: window-content dimensions (default full-screen 1920×1080;
+    // overridden by SetContentSize() when QdWindow embeds this element).
+    s32 content_w_ = 1920;
+    s32 content_h_ = 1080;
+
     // ── Focus model ────────────────────────────────────────────────────────
 
     enum class FocusArea : u8 { Sidebar, Detail };
@@ -266,6 +280,7 @@ public:
 
 private:
     QdSettingsElement::Ref settings_elm_;
+    QdHotCornerOverlay::Ref overlay_;
 };
 
 } // namespace ul::menu::qdesktop

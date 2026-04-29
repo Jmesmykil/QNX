@@ -36,7 +36,7 @@
 //   JPEG images decoded with SDL_RWFromMem + IMG_Load_RW (no disk I/O from SDL).
 #include <switch/runtime/devices/fs_dev.h>  // fsdevGetDeviceFileSystem
 
-// v1.8.23: coyote-timing tick source (a93c4636 research; tick rate = 19.2 MHz).
+// v1.8.23: coyote-timing tick source (tick rate = 19.2 MHz on Erista).
 #include <switch/arm/counter.h>  // armGetSystemTick()
 
 // Pull in SDL2 directly (sdl2_Types.hpp aliases Renderer = SDL_Renderer*).
@@ -856,10 +856,69 @@ bool IsFavoriteByLpItem(const LpItem &item) {
     return g_favorites_set_.find(key) != g_favorites_set_.end();
 }
 
+// v1.8.24 (F-9): O(1) hash lookup replacing the O(M) linear walk.
+//
+// Strategy:
+//   Fast path  — exact lowercase name match against a static hash map built
+//                once from all name_substr entries in kAutoFolderSpecs.
+//                Covers ~100% of real NRO file stems (e.g. "retroarch", "mgba").
+//                O(1) amortised hash lookup per classify call.
+//
+//   Slow path  — substring + app_id_mask fallback for entries whose name does
+//                not exactly equal any keyword (e.g. "retroarch_cores.nro"
+//                where the stem "retroarch_cores" is not literally in the map
+//                but "retroarch" is a substring of it).  Also handles any
+//                future app_id_mask specs.  Walks the kAutoFolderSpecs array
+//                but this branch is almost never reached on real SD cards.
+//
+// The hash map is initialised once at the first call (static-local) and is
+// const for the remainder of the process lifetime.  No lock required; both
+// callers (ScanNros) run on the main UI thread.
+
+// Internal helper: return the static keyword→ClassifyKind map.
+static const std::unordered_map<std::string, ClassifyKind> &GetAutoFolderNameMap() {
+    static const std::unordered_map<std::string, ClassifyKind> kMap = []() {
+        std::unordered_map<std::string, ClassifyKind> m;
+        // Reserve to avoid rehashing; kAutoFolderSpecs has <50 name entries.
+        m.reserve(64);
+        for (const AutoFolderSpec *spec = kAutoFolderSpecs;
+             spec->name_substr != nullptr || spec->app_id_mask != 0;
+             ++spec) {
+            if (spec->name_substr != nullptr) {
+                // Keywords are already lowercase ASCII; store as-is.
+                m.emplace(spec->name_substr, spec->kind);
+            }
+            // app_id_mask entries are not keyed in the name map; they are
+            // handled by the slow-path linear scan in ClassifyNroAutoFolder.
+        }
+        return m;
+    }();
+    return kMap;
+}
+
 // Classify an NRO entry against kAutoFolderSpecs[].
-// Loop stops when both name_substr == nullptr and app_id_mask == 0 (sentinel).
-// Returns the first matching ClassifyKind, or ClassifyKind::Unknown.
+// v1.8.24: O(1) fast path via GetAutoFolderNameMap(); O(M) slow path only for
+// substring / app_id_mask cases that miss the hash table.
 static ClassifyKind ClassifyNroAutoFolder(const NroEntry &e) {
+    // ── Fast path: exact lowercase name lookup ────────────────────────────
+    // Lower-case e.name into a stack buffer (max 63 chars + NUL).
+    char lower_name[64];
+    size_t i = 0;
+    for (; e.name[i] != '\0' && i < 63u; ++i) {
+        const char c = e.name[i];
+        lower_name[i] = (c >= 'A' && c <= 'Z') ? static_cast<char>(c + 32) : c;
+    }
+    lower_name[i] = '\0';
+
+    const auto &kMap = GetAutoFolderNameMap();
+    const auto hit = kMap.find(lower_name);
+    if (hit != kMap.end()) {
+        return hit->second;
+    }
+
+    // ── Slow path: substring scan + app_id_mask for non-exact-match cases ─
+    // Reached only when the stem contains extra characters (e.g.
+    // "retroarch_cores") or for app_id_mask specs (none today).
     for (const AutoFolderSpec *spec = kAutoFolderSpecs;
          spec->name_substr != nullptr || spec->app_id_mask != 0;
          ++spec) {
@@ -1111,7 +1170,7 @@ static constexpr s32 FAV_STRIP_TOP  = 726;  // v1.8.23: between folders (y=210..
 // Per-tile spacing on the strip (icon width + horizontal gap).
 static constexpr s32 FAV_TILE_SPACING = ICON_BG_W + ICON_GRID_GAP_X;  // 168
 
-// v1.8.23: coyote-timing constants (a93c4636 research; tick rate = 19.2 MHz)
+// v1.8.23: coyote-timing constants (tick rate = 19.2 MHz on Erista)
 static constexpr u64 TAP_MAX_TICKS          = 4'800'000ULL;   // 250 ms — tap-vs-hold ceiling
 static constexpr u64 RELAUNCH_LOCKOUT_TICKS = 5'760'000ULL;   // 300 ms — double-launch suppression
 static constexpr u32 DPAD_REPEAT_DELAY_F    = 18u;            // 300 ms — initial dpad-held delay

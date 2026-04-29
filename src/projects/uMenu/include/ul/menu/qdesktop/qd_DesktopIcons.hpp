@@ -422,7 +422,7 @@ private:
     size_t down_idx_;                 // HitTest result at TouchDown (MAX_ICONS = no hit)
     bool   was_touch_active_last_frame_; // previous frame's touch-active flag
 
-    // v1.8.23: coyote-timing state (per a93c4636 research)
+    // v1.8.23: coyote-timing state (tap-vs-hold + double-launch suppression + dpad repeat)
     struct InputCoyoteState {
         u64 down_tick        = 0;          // armGetSystemTick at TouchDown / button-down
         u64 last_launch_tick = 0;          // armGetSystemTick at last successful Launch

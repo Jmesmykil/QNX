@@ -7,7 +7,7 @@
 ![GPL v2](https://img.shields.io/badge/license-GPLv2-00E5FF)
 ![Atmosphere](https://img.shields.io/badge/Atmosphere-1.11.1-D946EF)
 ![Switch](https://img.shields.io/badge/platform-Nintendo%20Switch-A78BFA)
-![v1.2.3](https://img.shields.io/badge/version-1.2.3-0E1A33)
+![v1.8.23](https://img.shields.io/badge/version-1.8.23-0E1A33)
 
 </div>
 
@@ -15,7 +15,7 @@
 
 <div align="center">
 
-https://github.com/Jmesmykil/uLaunch/raw/unew/assets/branding/qos-demo.mp4
+https://github.com/Jmesmykil/QNX/raw/main/assets/branding/qos-demo.mp4
 
 [Download / view the demo video](assets/branding/qos-demo.mp4) (10 MB, 1080p, 64 seconds, 3x speed, no audio)
 
@@ -63,32 +63,37 @@ If we missed your name and you should be on this list, open an issue and we will
 
 ## Honest status
 
-This release ships the K cycle work as of 2026-04-25. What that means concretely:
+v1.8.23 is the current build. Tested on Switch, works.
 
-**Verified working on hardware**
-* Top bar with battery, connection, time, date, all rendered at the right size in the right place
-* Desktop grid with 9 columns by 5 rows of icons
-* Dock with 5 builtin slots: Vault file browser, Monitor, Control panel, About, All Programs
-* Launchpad full screen app grid (the "All Programs" view)
-* Vault, Monitor, About, QSettings, QLockscreen as Q OS native surfaces
-* Home button safely returns to the main menu from any subsurface
-* B button safely returns from Launchpad to main menu
-* Rebranded art assets across 29 PNGs (hero wallpaper, special entry icons, defaults, status overlays)
+**What works on hardware**
+* Boots clean to desktop in under 15 seconds
+* Login chime plays once
+* Top bar shows battery, connection, time, date
+* Desktop has 6 folder tiles (Games, Homebrew, Emulators, Media, Utilities, System), a dock at the bottom, and a favorites strip between them
+* Hot corner widget at top left opens the all-programs view
+* Tap launches a tile. Hold longer than 250ms and it ignores you. Double-tap inside 300ms and the second one is suppressed.
+* D-pad cycles dock → favorites → folders and back, no dead zones
+* A button launches favorites (not just touch and ZR)
+* Login screen takes a tap or a full press, both work
+* Favorites stay put across reboots
+* Star overlay shows on every favorited tile in the grid
+* Nintendo apps keep their icons after you back out of a game
+* Payload icons render correctly (Lockpick_RCM, TegraExplorer, etc.) — no more gray squares
+* All-programs view opens fast now. Was 2 seconds, now 10ms.
+* Hekate boots Nyx, Atmosphère loads, this menu replaces qlaunch
 
-**Built but not yet visually verified by a human on the actual Switch**
-* The full P2 plus P3 plus P4 art rebrand visually rendering as expected on the hardware screen
-* The new lavender DockAllPrograms icon
-* The K+5 test harness v2.0.0 in either normal mode or rig mode
+**Known broken**
+* RetroArch crashes if you press Home while a game is running. This is not a bug in this menu — it's RetroArch's own teardown path crashing during forced applet shutdown. Same crash on every homebrew launcher. Workaround: use RetroArch's Quit menu instead of Home. Real fix requires owning the homebrew loader, which is on the roadmap as Phase A.
 
-**Designed but not yet implemented**
-* K+1 Folders and Categories (Nintendo, Homebrew, Extras, Payloads sections)
-* K+2 Settings and Filter chain (icon size picker, hide entries, favorites)
-* K+3 Long press iPhone style edit mode with drag reorder
-* K+4 Recent app LRU tracking
-* Native companion apps to replace the upstream Java uScreen and WASM uDesigner (post-1.0 scope, tracked in ROADMAP.md)
-* L cycle Window Manager, Homebrew Window Launcher, Task Manager (the next big thing)
+**On the roadmap**
+* Persistent top bar and dock across all screens, Mac/Finder style
+* Hot corner becomes a dropdown popout, not a full screen
+* Dev menu rebuilt as a real developer panel (USB serial, SSH, Tesla addons)
+* System applet icons pulled from the firmware instead of bundled
+* Phase A: replace Atmosphère's homebrew loader with our own (closes the RetroArch crash)
+* Phase B and beyond: absorb more Atmosphère subsystems one at a time, each tested on hardware before moving on
 
-Design SSOTs for everything in the "designed not implemented" list live under [docs/](./docs/). Read those before opening implementation issues so you know what is on the plan and what is open.
+Design notes for the roadmap items live under [docs/](./docs/).
 
 ## What you get when you install this
 
@@ -100,9 +105,9 @@ The Q OS look. Cyan accent, deep navy base, magenta and lavender pops. The wallp
 
 Settings, Album, Themes, Controllers, MiiEdit, WebBrowser, Amiibo, and the Empty slot placeholder. All eight rebuilt as Q OS originals. The upstream uLaunch icons are archived under `archive/upstream-art-p2/` for the full historical record.
 
-## What ships in qos-umenu-v1.2.3
+## What ships in qos-umenu-v1.8.23
 
-The release bundle is `qos-umenu-v1.2.3.zip` (and `.7z`). It contains exactly these artifacts:
+The release bundle is `qos-umenu-v1.8.23.zip` (and `.7z`). It contains exactly these artifacts:
 
 | Artifact | Path on SD card | Notes |
 |---|---|---|
@@ -152,7 +157,7 @@ cd src
 make package
 ```
 
-Output goes to `src/SdOut/` and zips up as `qos-umenu-v1.2.3.zip` and `.7z`.
+Output goes to `src/SdOut/` and zips up as `qos-umenu-v1.8.23.zip` and `.7z`.
 
 Build just the menu without packaging:
 ```

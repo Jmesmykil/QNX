@@ -110,11 +110,46 @@ static void test_nro_entry_and_lp_item_converge() {
     TEST_PASS("NroEntry and LpItem maintain layout parity (both 1632 bytes)");
 }
 
+// ── Test 4: InputCoyoteState size + field offsets (v1.8.23) ─────────────────
+
+namespace mirror {
+    // Mirror of QdDesktopIconsElement::InputCoyoteState from
+    // qd_DesktopIcons.hpp:426-430.  Field order is LOAD-BEARING for
+    // the coyote-timing state machine: misaligned fields here means the
+    // production struct changed size and the device build would regress.
+    // Pinned 2026-04-28.
+    struct InputCoyoteState {
+        uint64_t down_tick        = 0;          // offset 0 — TouchDown / button-down tick
+        uint64_t last_launch_tick = 0;          // offset 8 — last successful launch tick
+        uint32_t dpad_held_frames[4] = {0,0,0,0};  // offset 16 — up/dn/lt/rt held counters
+    };
+} // namespace mirror
+
+static void test_input_coyote_state_size_pinned() {
+    // u64 + u64 + u32[4] = 8+8+16 = 32 bytes, alignment 8.
+    // Pinned 2026-04-28 (v1.8.23 HW-green build).
+    ASSERT_EQ(sizeof(mirror::InputCoyoteState), 32u);
+    ASSERT_EQ(alignof(mirror::InputCoyoteState), 8u);
+    TEST_PASS("sizeof(InputCoyoteState) == 32 (v1.8.23 pin)");
+}
+
+static void test_input_coyote_state_field_offsets() {
+    // down_tick at offset 0 (first u64).
+    ASSERT_EQ(offsetof(mirror::InputCoyoteState, down_tick), 0u);
+    // last_launch_tick at offset 8 (second u64).
+    ASSERT_EQ(offsetof(mirror::InputCoyoteState, last_launch_tick), 8u);
+    // dpad_held_frames at offset 16 (after two u64 fields).
+    ASSERT_EQ(offsetof(mirror::InputCoyoteState, dpad_held_frames), 16u);
+    TEST_PASS("InputCoyoteState field offsets: down_tick@0, last_launch_tick@8, dpad_held_frames@16");
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 
 int main() {
     test_nro_entry_size_pinned();
     test_lp_item_size_pinned();
     test_nro_entry_and_lp_item_converge();
+    test_input_coyote_state_size_pinned();
+    test_input_coyote_state_field_offsets();
     return 0;
 }

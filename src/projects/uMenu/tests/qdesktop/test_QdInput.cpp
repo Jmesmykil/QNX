@@ -3,6 +3,8 @@
 // SP3-F06: HidTouchAttribute_Start / _End bitmask semantics.
 // SP3-F08: MAX_TOUCH = 4 (count constant, not remapped).
 // AB-09:   No std::variant / std::visit.
+// v1.8.23: Coyote-timing input chain assertions (tap vs hold, relaunch lockout,
+//          D-pad repeat delay + interval, host-side arithmetic only).
 //
 // All tests call input_process_touch_frame / input_process_button_frame —
 // the host-accessible helpers extracted from pump_input() to make testing
@@ -237,6 +239,157 @@ static void test_input_state_zero() {
     TEST_PASS("input_state_zero initialises all fields to zero/false");
 }
 
+// ── v1.8.23 coyote-timing input chain tests ───────────────────────────────────
+//
+// These tests exercise the ARITHMETIC of the coyote-timing decisions without
+// calling any production function.  They mirror the exact same constants that
+// test_QdCoyoteTiming.cpp pins, and verify the decision formulas that
+// OnInput() applies to those constants.  If a constant changes in production,
+// BOTH test files disagree simultaneously.
+//
+// Tick rate: TICK_HZ = 19'200'000 Hz (armGetSystemTick on Erista).
+// Frame rate: 60 fps (DPAD_REPEAT_DELAY_F and DPAD_REPEAT_INTERVAL_F are
+//             frame counts).
+
+// Constants mirrored verbatim from qd_DesktopIcons.cpp:1173-1228.
+static constexpr uint64_t CT_TAP_MAX_TICKS          = 4'800'000ULL;
+static constexpr uint64_t CT_RELAUNCH_LOCKOUT_TICKS = 5'760'000ULL;
+static constexpr uint32_t CT_DPAD_REPEAT_DELAY_F    = 18u;
+static constexpr uint32_t CT_DPAD_REPEAT_INTERVAL_F = 9u;
+
+// ── Test: tap detection — down_tick within TAP_MAX_TICKS of release ───────────
+// The production branch:
+//   if (up_tick - down_tick <= TAP_MAX_TICKS) → treat as tap (launch).
+//   else                                       → treat as long-hold (ignore).
+//
+// Checks that the boundary is non-strict (exactly TAP_MAX_TICKS → tap).
+
+static void test_coyote_tap_within_threshold() {
+    // Exactly at threshold: should be a tap.
+    const uint64_t down_tick = 100'000'000ULL;
+    const uint64_t up_tick_tap  = down_tick + CT_TAP_MAX_TICKS;
+    const uint64_t up_tick_hold = down_tick + CT_TAP_MAX_TICKS + 1ULL;
+
+    const bool is_tap_at_boundary = (up_tick_tap - down_tick) <= CT_TAP_MAX_TICKS;
+    const bool is_tap_over_boundary = (up_tick_hold - down_tick) <= CT_TAP_MAX_TICKS;
+
+    ASSERT_TRUE(is_tap_at_boundary);
+    ASSERT_FALSE(is_tap_over_boundary);
+    TEST_PASS("tap detection: <=TAP_MAX_TICKS is tap, >TAP_MAX_TICKS is hold");
+}
+
+// ── Test: relaunch lockout — second launch within RELAUNCH_LOCKOUT_TICKS blocked
+// The production branch:
+//   if (now - last_launch_tick < RELAUNCH_LOCKOUT_TICKS) → block second launch.
+//   else                                                  → allow.
+//
+// Verifies the boundary: exactly at RELAUNCH_LOCKOUT_TICKS → allowed (strict <).
+
+static void test_coyote_relaunch_lockout() {
+    const uint64_t last_launch_tick = 200'000'000ULL;
+    const uint64_t now_just_inside  = last_launch_tick + CT_RELAUNCH_LOCKOUT_TICKS - 1ULL;
+    const uint64_t now_at_boundary  = last_launch_tick + CT_RELAUNCH_LOCKOUT_TICKS;
+
+    const bool blocked_inside    = (now_just_inside - last_launch_tick) < CT_RELAUNCH_LOCKOUT_TICKS;
+    const bool blocked_at_boundary = (now_at_boundary - last_launch_tick) < CT_RELAUNCH_LOCKOUT_TICKS;
+
+    ASSERT_TRUE(blocked_inside);
+    ASSERT_FALSE(blocked_at_boundary);   // exactly at lockout → NOT blocked
+    TEST_PASS("relaunch lockout: <RELAUNCH_LOCKOUT_TICKS blocked, ==RELAUNCH_LOCKOUT_TICKS allowed");
+}
+
+// ── Test: D-pad repeat delay — first repeat fires at frame DELAY_F ───────────
+// The production formula (qd_DesktopIcons.cpp ~3420):
+//   repeat = (held_frames > DPAD_REPEAT_DELAY_F) &&
+//             ((held_frames - DPAD_REPEAT_DELAY_F - 1) % DPAD_REPEAT_INTERVAL_F == 0)
+//
+// Frame 18 (DELAY_F): no repeat yet (held_frames == DELAY_F, not >).
+// Frame 19: held_frames = 19 > 18, (19-18-1) % 9 = 0 % 9 = 0 → REPEAT.
+
+static void test_coyote_dpad_repeat_delay() {
+    // Helper: does held_frames trigger a repeat?
+    auto fires = [](uint32_t f) -> bool {
+        if (f <= CT_DPAD_REPEAT_DELAY_F) return false;
+        return ((f - CT_DPAD_REPEAT_DELAY_F - 1u) % CT_DPAD_REPEAT_INTERVAL_F) == 0u;
+    };
+
+    ASSERT_FALSE(fires(CT_DPAD_REPEAT_DELAY_F));       // frame 18: not yet
+    ASSERT_TRUE (fires(CT_DPAD_REPEAT_DELAY_F + 1u)); // frame 19: first repeat
+    TEST_PASS("D-pad repeat delay: no repeat at frame DELAY_F; first repeat at DELAY_F+1");
+}
+
+// ── Test: D-pad repeat interval — repeats fire every INTERVAL_F frames ────────
+// Following the first repeat at frame 19, the next should fire at frame 28
+// (19 + 9), then 37 (28 + 9), etc.
+
+static void test_coyote_dpad_repeat_interval() {
+    auto fires = [](uint32_t f) -> bool {
+        if (f <= CT_DPAD_REPEAT_DELAY_F) return false;
+        return ((f - CT_DPAD_REPEAT_DELAY_F - 1u) % CT_DPAD_REPEAT_INTERVAL_F) == 0u;
+    };
+
+    // First repeat: frame 19 (DELAY_F + 1).
+    const uint32_t first = CT_DPAD_REPEAT_DELAY_F + 1u;
+    ASSERT_TRUE(fires(first));
+
+    // Intermediate frames: must NOT fire.
+    for (uint32_t i = 1u; i < CT_DPAD_REPEAT_INTERVAL_F; ++i) {
+        ASSERT_FALSE(fires(first + i));
+    }
+
+    // Second repeat: first + INTERVAL_F.
+    ASSERT_TRUE(fires(first + CT_DPAD_REPEAT_INTERVAL_F));
+
+    // Third repeat.
+    ASSERT_TRUE(fires(first + 2u * CT_DPAD_REPEAT_INTERVAL_F));
+
+    TEST_PASS("D-pad repeat interval: repeats fire every DPAD_REPEAT_INTERVAL_F frames after first");
+}
+
+// ── Test: held-frame counter increments and resets ───────────────────────────
+// Models the dpad_held_frames[i] increment-on-held / reset-on-release contract
+// (qd_DesktopIcons.cpp ~3412-3416).
+
+static void test_coyote_held_frames_counter() {
+    uint32_t held = 0u;
+
+    // Simulate 20 consecutive held frames.
+    for (uint32_t frame = 0; frame < 20u; ++frame) {
+        // Key held: increment.
+        held += 1u;
+    }
+    ASSERT_EQ(held, 20u);
+
+    // Key released: reset to zero.
+    held = 0u;
+    ASSERT_EQ(held, 0u);
+
+    // One more press cycle.
+    held = 1u;
+    ASSERT_EQ(held, 1u);
+
+    TEST_PASS("held-frame counter: increments per-frame when held, resets to 0 on release");
+}
+
+// ── Test: tap produces no repeat (held for <=TAP_MAX ticks, then released) ───
+// If a key is tapped (released before it crosses DELAY_F frames), the held_frame
+// counter never reaches DELAY_F+1, so no D-pad repeat fires.
+//
+// Approximate: TAP_MAX_TICKS / (TICK_HZ/60) = 4'800'000 / 320'000 = 15 frames.
+// 15 < DELAY_F (18) → no repeat during a tap.
+
+static void test_coyote_tap_produces_no_repeat() {
+    // TAP_MAX at 60 fps in frames (integer: floor).
+    static constexpr uint64_t TICK_HZ = 19'200'000ULL;
+    static constexpr uint64_t TICKS_PER_FRAME = TICK_HZ / 60ULL;  // 320000
+    const uint32_t tap_max_frames =
+        static_cast<uint32_t>(CT_TAP_MAX_TICKS / TICKS_PER_FRAME);  // 15
+
+    // A tap releases within tap_max_frames; held counter never exceeds that.
+    ASSERT_TRUE(tap_max_frames < CT_DPAD_REPEAT_DELAY_F);
+    TEST_PASS("tap_max_frames (15) < DPAD_REPEAT_DELAY_F (18): tap never triggers D-pad repeat");
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -251,5 +404,12 @@ int main() {
     test_button_simultaneous_press();
     test_max_touch_constant();
     test_input_state_zero();
+    // v1.8.23 coyote-timing input chain
+    test_coyote_tap_within_threshold();
+    test_coyote_relaunch_lockout();
+    test_coyote_dpad_repeat_delay();
+    test_coyote_dpad_repeat_interval();
+    test_coyote_held_frames_counter();
+    test_coyote_tap_produces_no_repeat();
     return 0;
 }

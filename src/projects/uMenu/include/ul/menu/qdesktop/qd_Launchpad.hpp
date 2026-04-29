@@ -364,6 +364,37 @@ private:
     // v1.8.23 Option C: removed — diagnostic served its purpose; v1.8.22d
     // 2a-romfs branch state is already proven by cumulative HW logs.
 
+    // ── v1.8.24 F-1: per-slot name + glyph texture cache ─────────────────────
+    // Eliminates ~80 RenderText calls/frame for cell names and ~80 for glyphs.
+    // Parallel to icon_tex_/icon_loaded_; indexed by items_ index (NOT filtered
+    // index).  nullptr = not yet rendered; non-null = reuse.  Freed via
+    // DeleteTexture (cache-contract) in FreeSlotTextures / FreeAllTextures.
+    // Invalidated in RebuildFilter when name or glyph changes (items_ rebuild
+    // from scratch on each Open so names cannot drift within a session; if the
+    // filter changes the item set the texture slots for items still present are
+    // still valid — only items added mid-session via items_.push_back would need
+    // explicit invalidation, which cannot happen during an Open/Close cycle).
+    std::vector<SDL_Texture *> name_tex_;
+    std::vector<SDL_Texture *> glyph_tex_;
+
+    // ── v1.8.24 F-2: O(1) status bar counters ────────────────────────────────
+    // Maintained in RebuildFilter(); read by OnRender status line — no per-frame
+    // walk of items_.  Index maps to LpSortKind enum values:
+    //   [0] = Nintendo, [1] = Homebrew, [2] = Extras, [3] = Builtin.
+    u32 status_counts_[4];
+
+    // ── v1.8.24 F-3: search bar texture cache keyed by (query, caret phase) ──
+    // Avoids RenderText every frame for the search bar text + caret.  Recomputed
+    // only when query_ changes or caret phase flips (~every 30 frames).
+    SDL_Texture *search_bar_tex_;
+    std::string  search_bar_cached_text_;   // the display_text that produced search_bar_tex_
+    bool         search_bar_caret_visible_; // caret phase at last recompute
+
+    // ── v1.8.24 F-4: Q glyph cached at Open() ────────────────────────────────
+    // Rendered once in Open(); PaintHotCornerGlyph reads it every frame.
+    // Freed in Close() and ~QdLaunchpadElement before FreeAllTextures.
+    SDL_Texture *q_glyph_tex_;
+
     // v1.8.18: icon_cache_ pointer removed.  PaintCell calls GetSharedIconCache()
     // directly so Desktop and Launchpad always share the same QdIconCache object
     // regardless of lifetime or initialisation order.

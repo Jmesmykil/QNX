@@ -15,7 +15,9 @@ TESTS := test_QdTheme test_QdPixelCanvas test_QdIconCache test_QdNroAsset test_Q
          test_QdAnim test_QdCurve test_QdDockMagnify \
          test_QdMultitouch test_QdInput test_QdWmConstants \
          test_QdLaunchpad_HotCorner test_LoginChime test_QdDesktopIcons_Hover \
-         test_StructSize_Pinning
+         test_StructSize_Pinning \
+         test_QdCoyoteTiming test_QdFavoritesLayout test_QdDpadZoneCycle \
+         test_QdLaunchpadBgThread
 
 # Real production source directory (relative to this Makefile's location).
 PROD_SRC := ../../source/ul/menu/qdesktop
@@ -104,8 +106,31 @@ test_QdDesktopIcons_Hover: test_QdDesktopIcons_Hover.cpp test_host_stubs.hpp pu/
 
 # v1.7.0-stabilize-2: A7+A8 struct-size pinning. Mirrors NroEntry/LpItem
 # layouts and asserts sizes match the v1.6.x reconstruction snapshot.
+# v1.8.23: extended with InputCoyoteState size + field-offset pins.
 test_StructSize_Pinning: test_StructSize_Pinning.cpp test_host_stubs.hpp pu/Plutonium
 	$(CXX) $(CXXFLAGS) $(INCLUDES) test_StructSize_Pinning.cpp -o $@
+
+# v1.8.23: Coyote-timing constants pinned at 19.2 MHz / 60 fps arithmetic.
+# Header-only; no production .cpp needed.
+test_QdCoyoteTiming: test_QdCoyoteTiming.cpp test_host_stubs.hpp pu/Plutonium
+	$(CXX) $(CXXFLAGS) $(INCLUDES) test_QdCoyoteTiming.cpp -o $@
+
+# v1.8.23: Favorites strip layout invariants (FAV_STRIP_TOP=726, 76 px
+# clearance both sides) + strip-slot→folder-col mapping arithmetic.
+# Header-only; no production .cpp needed.
+test_QdFavoritesLayout: test_QdFavoritesLayout.cpp test_host_stubs.hpp pu/Plutonium
+	$(CXX) $(CXXFLAGS) $(INCLUDES) test_QdFavoritesLayout.cpp -o $@
+
+# v1.8.23: D-pad 3-zone seamless cycle state-machine arithmetic.
+# Header-only; no production .cpp needed.
+test_QdDpadZoneCycle: test_QdDpadZoneCycle.cpp test_host_stubs.hpp pu/Plutonium
+	$(CXX) $(CXXFLAGS) $(INCLUDES) test_QdDpadZoneCycle.cpp -o $@
+
+# v1.8.23: Launchpad background prewarm thread member existence + lifecycle.
+# Links no production source (SDL2-free; exercises std::atomic + std::thread
+# semantics that mirror the production members in qd_Launchpad.hpp:416-417).
+test_QdLaunchpadBgThread: test_QdLaunchpadBgThread.cpp test_host_stubs.hpp pu/Plutonium
+	$(CXX) $(CXXFLAGS) $(INCLUDES) test_QdLaunchpadBgThread.cpp -o $@
 
 run: $(TESTS)
 	@for t in $(TESTS); do \

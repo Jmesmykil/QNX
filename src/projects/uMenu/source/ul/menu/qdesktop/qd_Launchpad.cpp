@@ -81,10 +81,19 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
       page_index_(0),    // F10 (stabilize-5): pagination
       page_count_(1),    // F10 (stabilize-5): pagination
       // v1.8.18: icon_cache_ removed; using GetSharedIconCache() singleton.
-      folder_bucket_count_{}  // A-4 (v1.7.2): zero-init; populated in RebuildFilter()
+      folder_bucket_count_{},  // A-4 (v1.7.2): zero-init; populated in RebuildFilter()
+      // v1.8.24 F-2: status-bar counters; zero-init; populated in RebuildFilter().
+      status_counts_{},
+      // v1.8.24 F-3: search bar texture cache; null until first render in Open().
+      search_bar_tex_(nullptr),
+      search_bar_cached_text_(),
+      search_bar_caret_visible_(false),
+      // v1.8.24 F-4: hot-corner Q glyph; rendered once in Open(), freed in Close()/dtor.
+      q_glyph_tex_(nullptr)
 {
     // items_, filtered_idxs_, query_ default-initialise to empty.
     // Texture vectors start empty; slots are pushed in Open().
+    // name_tex_, glyph_tex_ start empty; slots are pushed in Open() (F-1).
 }
 
 // ── Destructor ────────────────────────────────────────────────────────────────
@@ -96,6 +105,17 @@ QdLaunchpadElement::~QdLaunchpadElement() {
     // PrewarmLaunchpadIcons(), so it must release before those vectors are
     // freed below.  StopLpPrewarmThread is idempotent (joinable() guard).
     StopLpPrewarmThread();
+    // v1.8.24 F-3/F-4: free per-Launchpad-session cached textures BEFORE
+    // FreeAllTextures(), which frees icon_tex_ / name_tex_ / glyph_tex_ vectors.
+    // These two are scalars — not in the vectors — so they need explicit release.
+    if (search_bar_tex_) {
+        pu::ui::render::DeleteTexture(search_bar_tex_);
+        search_bar_tex_ = nullptr;
+    }
+    if (q_glyph_tex_) {
+        pu::ui::render::DeleteTexture(q_glyph_tex_);
+        q_glyph_tex_ = nullptr;
+    }
     FreeAllTextures();
 }
 
@@ -390,14 +410,43 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     );
 
     // Pre-size per-slot icon texture vectors to items_.size() with nullptr / false.
-    // Text textures are rendered per-frame locally (not cached in vectors).
     const size_t sz = items_.size();
     icon_tex_.assign(sz, nullptr);
     icon_loaded_.assign(sz, false);
     // v1.8.23 Option C: paint_logged_ removed (diagnostic served its purpose).
 
+    // v1.8.24 F-1: pre-size name/glyph texture vectors parallel to icon_tex_.
+    // Textures are rendered on-demand in PaintCell() and retained until
+    // FreeSlotTextures() / FreeAllTextures() is called.
+    name_tex_.assign(sz, nullptr);
+    glyph_tex_.assign(sz, nullptr);
+
+    // v1.8.24 F-3: reset search bar cache on every Open() so stale textures from
+    // a previous open cycle are not reused (query_ was cleared above).
+    if (search_bar_tex_) {
+        pu::ui::render::DeleteTexture(search_bar_tex_);
+        search_bar_tex_ = nullptr;
+    }
+    search_bar_cached_text_.clear();
+    search_bar_caret_visible_ = false;
+
     // Build the initial (unfiltered) filtered index list.
+    // NOTE: RebuildFilter() also populates status_counts_[] (F-2).
     RebuildFilter();
+
+    // v1.8.24 F-4: render the hot-corner "Q" glyph once, reuse each frame.
+    // The SDL renderer is available by the time Open() runs (Plutonium is live).
+    // Free any prior texture from a previous open cycle (idempotent guard above).
+    if (q_glyph_tex_) {
+        pu::ui::render::DeleteTexture(q_glyph_tex_);
+        q_glyph_tex_ = nullptr;
+    }
+    {
+        const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+        q_glyph_tex_ = pu::ui::render::RenderText(
+            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+            "Q", wh);
+    }
 
     // v1.8.23 Option C: pre-warm the icon cache for first-page items on a
     // background thread instead of synchronously in Open().  The synchronous
@@ -443,6 +492,18 @@ void QdLaunchpadElement::Close() {
     // StopLpPrewarmThread is idempotent (joinable() guard) and a no-op if
     // the thread already exited normally.
     StopLpPrewarmThread();
+
+    // v1.8.24 F-3/F-4: free per-session scalar cached textures before
+    // FreeAllTextures() frees the per-slot vectors.
+    if (search_bar_tex_) {
+        pu::ui::render::DeleteTexture(search_bar_tex_);
+        search_bar_tex_ = nullptr;
+    }
+    search_bar_cached_text_.clear();
+    if (q_glyph_tex_) {
+        pu::ui::render::DeleteTexture(q_glyph_tex_);
+        q_glyph_tex_ = nullptr;
+    }
 
     // Free every cached SDL texture before clearing items_; the vectors must
     // still be alive while FreeAllTextures walks them.
@@ -940,17 +1001,12 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // on Erista.  Re-enabled for stabilize-5; if a crash recurs on HW the
     // root cause is in Plutonium font metrics, not this call site.
     // v1.8.2: render per-frame into local (LRU TextCacheClear invalidates stored ptrs).
-    {
-        const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-        SDL_Texture *hc_tex = pu::ui::render::RenderText(
-            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-            "Q", wh);
-        if (hc_tex) {
-            int tw = 0, th = 0;
-            SDL_QueryTexture(hc_tex, nullptr, nullptr, &tw, &th);
-            SDL_Rect td { (LP_HOTCORNER_W - tw) / 2, (LP_HOTCORNER_H - th) / 2, tw, th };
-            SDL_RenderCopy(r, hc_tex, nullptr, &td);
-        }
+    // v1.8.24 F-4: q_glyph_tex_ rendered once at Open(); reused here each frame.
+    if (q_glyph_tex_) {
+        int tw = 0, th = 0;
+        SDL_QueryTexture(q_glyph_tex_, nullptr, nullptr, &tw, &th);
+        SDL_Rect td { (LP_HOTCORNER_W - tw) / 2, (LP_HOTCORNER_H - th) / 2, tw, th };
+        SDL_RenderCopy(r, q_glyph_tex_, nullptr, &td);
     }
 
     // ── 3. Search bar ─────────────────────────────────────────────────────────
@@ -972,60 +1028,59 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
                            LP_SEARCH_BAR_W + 2, LP_SEARCH_BAR_H + 2 };
     SDL_RenderDrawRect(r, &search_ring);
 
-    // Render search query text + blinking caret.
+    // v1.8.24 F-3: search bar texture cache.
+    // Compute the canonical display string for the current frame (3 states):
+    //   a) non-empty query with caret:  "<query>|"
+    //   b) empty query with caret:       "|"
+    //   c) empty query, caret hidden:    "Search..."  (placeholder)
+    // When display_text matches search_bar_cached_text_ AND caret visibility
+    // matches, reuse search_bar_tex_. Otherwise re-render and cache.
     {
-        std::string display_text = query_;
-        // Caret blinks at 30-frame phase: visible when (frame_tick_ / 30) % 2 == 0.
         const bool caret_visible = ((frame_tick_ / 30) % 2) == 0;
-        if (caret_visible) {
-            display_text += '|';
-        }
 
-        if (!display_text.empty()) {
-            // Re-render every frame (query text can change).
-            const pu::ui::Color tc { 0xE0u, 0xE0u, 0xF0u, 0xFFu };
-            SDL_Texture *qt = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-                display_text, tc,
-                static_cast<u32>(LP_SEARCH_BAR_W - 16));
-            if (qt) {
-                int tw = 0, th = 0;
-                SDL_QueryTexture(qt, nullptr, nullptr, &tw, &th);
-                const s32 ty = LP_SEARCH_BAR_Y + (LP_SEARCH_BAR_H - th) / 2;
-                SDL_Rect td { LP_SEARCH_BAR_X + 8, ty, tw, th };
-                SDL_RenderCopy(r, qt, nullptr, &td);
-                SDL_DestroyTexture(qt);
-            }
+        // Build canonical display key string.
+        std::string display_text;
+        if (!query_.empty()) {
+            display_text = query_;
+            if (caret_visible) { display_text += '|'; }
         } else if (caret_visible) {
-            // Empty query: render just the caret at the left edge of the bar.
-            const pu::ui::Color tc { 0xE0u, 0xE0u, 0xF0u, 0xFFu };
-            SDL_Texture *ct = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-                "|", tc);
-            if (ct) {
-                int tw = 0, th = 0;
-                SDL_QueryTexture(ct, nullptr, nullptr, &tw, &th);
-                const s32 ty = LP_SEARCH_BAR_Y + (LP_SEARCH_BAR_H - th) / 2;
-                SDL_Rect td { LP_SEARCH_BAR_X + 8, ty, tw, th };
-                SDL_RenderCopy(r, ct, nullptr, &td);
-                SDL_DestroyTexture(ct);
+            display_text = "|";
+        } else {
+            display_text = "Search...";
+        }
+
+        // Invalidate cached texture when the display key changes.
+        if (display_text != search_bar_cached_text_) {
+            if (search_bar_tex_) {
+                pu::ui::render::DeleteTexture(search_bar_tex_);
+                search_bar_tex_ = nullptr;
+            }
+            search_bar_cached_text_ = display_text;
+
+            // Re-render into the cache slot.
+            if (!query_.empty() || caret_visible) {
+                // Active text or caret: use the normal text colour.
+                const pu::ui::Color tc { 0xE0u, 0xE0u, 0xF0u, 0xFFu };
+                search_bar_tex_ = pu::ui::render::RenderText(
+                    pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+                    display_text, tc,
+                    static_cast<u32>(LP_SEARCH_BAR_W - 16));
+            } else {
+                // Placeholder ("Search..."): dimmed hint colour.
+                const pu::ui::Color hint_col { 0x88u, 0x88u, 0xAAu, 0xFFu };
+                search_bar_tex_ = pu::ui::render::RenderText(
+                    pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+                    display_text, hint_col);
             }
         }
 
-        // Placeholder hint when query is empty and caret is hidden.
-        if (query_.empty() && !caret_visible) {
-            const pu::ui::Color hint_col { 0x88u, 0x88u, 0xAAu, 0xFFu };
-            SDL_Texture *ht = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-                "Search...", hint_col);
-            if (ht) {
-                int tw = 0, th = 0;
-                SDL_QueryTexture(ht, nullptr, nullptr, &tw, &th);
-                const s32 ty = LP_SEARCH_BAR_Y + (LP_SEARCH_BAR_H - th) / 2;
-                SDL_Rect td { LP_SEARCH_BAR_X + 8, ty, tw, th };
-                SDL_RenderCopy(r, ht, nullptr, &td);
-                SDL_DestroyTexture(ht);
-            }
+        // Blit the cached texture (may be nullptr if RenderText returned null).
+        if (search_bar_tex_) {
+            int tw = 0, th = 0;
+            SDL_QueryTexture(search_bar_tex_, nullptr, nullptr, &tw, &th);
+            const s32 ty = LP_SEARCH_BAR_Y + (LP_SEARCH_BAR_H - th) / 2;
+            SDL_Rect td { LP_SEARCH_BAR_X + 8, ty, tw, th };
+            SDL_RenderCopy(r, search_bar_tex_, nullptr, &td);
         }
     }
 
@@ -1121,17 +1176,11 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     }
 
     // ── 6. Status line ────────────────────────────────────────────────────────
-    size_t nintendo_count = 0u, homebrew_count = 0u,
-           extras_count = 0u, builtin_count = 0u;
-    for (const LpItem &it : items_) {
-        switch (it.sort_kind) {
-            case LpSortKind::Nintendo:  ++nintendo_count;  break;
-            case LpSortKind::Homebrew:  ++homebrew_count;  break;
-            case LpSortKind::Extras:    ++extras_count;    break;
-            case LpSortKind::Builtin:   ++builtin_count;   break;
-        }
-    }
-    PaintStatusLine(r, nintendo_count, homebrew_count, extras_count, builtin_count);
+    // v1.8.24 F-2: status_counts_[] is pre-populated by RebuildFilter() and
+    // updated whenever the filter changes.  O(1) read replaces O(n) items_ walk.
+    // [0]=Nintendo, [1]=Homebrew, [2]=Extras, [3]=Builtin (LpSortKind ordinals).
+    PaintStatusLine(r, status_counts_[0], status_counts_[1],
+                       status_counts_[2], status_counts_[3]);
 }
 
 // ── StableIdForItem ───────────────────────────────────────────────────────────
@@ -1293,12 +1342,20 @@ void QdLaunchpadElement::RebuildFilter() {
     // so the folder tile strip always reflects the full items_ list regardless
     // of which filter path runs below.
     std::fill(std::begin(folder_bucket_count_), std::end(folder_bucket_count_), 0u);
+    // v1.8.24 F-2: populate status_counts_[] in the same pass.
+    // [0]=Nintendo, [1]=Homebrew, [2]=Extras, [3]=Builtin (matches LpSortKind enum).
+    std::fill(std::begin(status_counts_), std::end(status_counts_), 0u);
     for (const LpItem &it : items_) {
         const std::string sid = StableIdForItem(it);
         const AutoFolderIdx fidx = LookupFolderIdx(sid);
         const u8 raw = static_cast<u8>(fidx);
         if (raw >= 1u && raw <= static_cast<u8>(kTopLevelFolderCount)) {
             folder_bucket_count_[raw - 1u] += 1u;  // kTopLevelFolders[0] = NxGames (idx=1)
+        }
+        // F-2: accumulate by sort kind (index matches LpSortKind ordinal).
+        const u8 sk = static_cast<u8>(it.sort_kind);
+        if (sk < 4u) {
+            status_counts_[sk] += 1u;
         }
     }
 
@@ -1554,6 +1611,7 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
     // Only render glyph if BOTH the bgra cache and the Builtin tex are absent.
     // v1.8.2: render per-frame into local (LRU TextCacheClear invalidates stored ptrs).
     // v1.8.22d: also suppress glyph when the 2a-romfs path loaded a payload PNG.
+    // v1.8.24 F-1: cache into glyph_tex_[item_idx]; render only on first paint.
     const bool has_builtin_tex = (item.sort_kind == LpSortKind::Builtin
                                   && item_idx < icon_tex_.size()
                                   && icon_tex_[item_idx] != nullptr);
@@ -1563,11 +1621,18 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
                                 && item_idx < icon_tex_.size()
                                 && icon_tex_[item_idx] != nullptr);
     if (bgra == nullptr && !has_builtin_tex && !has_romfs_tex && item.glyph != '\0') {
-        const std::string gs(1, item.glyph);
-        const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-        SDL_Texture *glyph_tex = pu::ui::render::RenderText(
-            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Medium),
-            gs, wh);
+        // Render once and cache; reuse on subsequent frames.
+        if (item_idx < glyph_tex_.size() && glyph_tex_[item_idx] == nullptr) {
+            const std::string gs(1, item.glyph);
+            const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+            glyph_tex_[item_idx] = pu::ui::render::RenderText(
+                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Medium),
+                gs, wh);
+            // NOTE: do NOT call DeleteTexture here — texture is retained in cache.
+        }
+        SDL_Texture *glyph_tex = (item_idx < glyph_tex_.size())
+                                 ? glyph_tex_[item_idx]
+                                 : nullptr;
         if (glyph_tex != nullptr) {
             int gw = 0, gh = 0;
             SDL_QueryTexture(glyph_tex, nullptr, nullptr, &gw, &gh);
@@ -1577,29 +1642,36 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
                 gw, gh
             };
             SDL_RenderCopy(r, glyph_tex, nullptr, &gdst);
-            pu::ui::render::DeleteTexture(glyph_tex);  // B57: free per-frame local
         }
     }
 
     // ── 4. Name label ─────────────────────────────────────────────────────────
     // v1.8.2: render per-frame into local (LRU TextCacheClear invalidates stored ptrs).
+    // v1.8.24 F-1: cache into name_tex_[item_idx]; render only on first paint.
     if (item.name[0] != '\0') {
-        // Truncate long names with ellipsis (max 14 chars visible).
-        char display[20];
-        const size_t name_len = strnlen(item.name, sizeof(item.name));
-        if (name_len > 14u) {
-            memcpy(display, item.name, 11u);
-            display[11] = '.'; display[12] = '.'; display[13] = '.';
-            display[14] = '\0';
-        } else {
-            memcpy(display, item.name, name_len);
-            display[name_len] = '\0';
+        // Render once and cache; reuse on subsequent frames.
+        if (item_idx < name_tex_.size() && name_tex_[item_idx] == nullptr) {
+            // Truncate long names with ellipsis (max 14 chars visible).
+            char display[20];
+            const size_t name_len = strnlen(item.name, sizeof(item.name));
+            if (name_len > 14u) {
+                memcpy(display, item.name, 11u);
+                display[11] = '.'; display[12] = '.'; display[13] = '.';
+                display[14] = '\0';
+            } else {
+                memcpy(display, item.name, name_len);
+                display[name_len] = '\0';
+            }
+            const pu::ui::Color nc { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+            name_tex_[item_idx] = pu::ui::render::RenderText(
+                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+                std::string(display), nc,
+                static_cast<u32>(LP_CELL_W));
+            // NOTE: do NOT call DeleteTexture here — texture is retained in cache.
         }
-        const pu::ui::Color nc { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-        SDL_Texture *name_tex = pu::ui::render::RenderText(
-            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-            std::string(display), nc,
-            static_cast<u32>(LP_CELL_W));
+        SDL_Texture *name_tex = (item_idx < name_tex_.size())
+                                ? name_tex_[item_idx]
+                                : nullptr;
         if (name_tex != nullptr) {
             int nw = 0, nh = 0;
             SDL_QueryTexture(name_tex, nullptr, nullptr, &nw, &nh);
@@ -1609,7 +1681,6 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
                 nw, nh
             };
             SDL_RenderCopy(r, name_tex, nullptr, &ndst);
-            pu::ui::render::DeleteTexture(name_tex);  // B57: free per-frame local
         }
     }
 
@@ -1649,28 +1720,47 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
 // ── FreeSlotTextures ──────────────────────────────────────────────────────────
 
 void QdLaunchpadElement::FreeSlotTextures(size_t item_idx) {
-    auto free_if = [](SDL_Texture *&t) {
+    // icon_tex_ slots are SDL_CreateTexture-owned; use SDL_DestroyTexture.
+    auto free_sdl = [](SDL_Texture *&t) {
         if (t != nullptr) {
             SDL_DestroyTexture(t);
             t = nullptr;
         }
     };
-    // name_tex_ and glyph_tex_ removed in v1.8.2 (rendered per-frame locally).
-    if (item_idx < icon_tex_.size())   { free_if(icon_tex_[item_idx]);  }
-    if (item_idx < icon_loaded_.size()) { icon_loaded_[item_idx] = false; }
+    // name_tex_ and glyph_tex_ slots are RenderText-cache-owned; use DeleteTexture.
+    auto free_pu = [](SDL_Texture *&t) {
+        if (t != nullptr) {
+            pu::ui::render::DeleteTexture(t);
+            t = nullptr;
+        }
+    };
+    if (item_idx < icon_tex_.size())    { free_sdl(icon_tex_[item_idx]);   }
+    if (item_idx < icon_loaded_.size()) { icon_loaded_[item_idx] = false;  }
+    // v1.8.24 F-1: free cached name and glyph textures for this slot.
+    if (item_idx < name_tex_.size())    { free_pu(name_tex_[item_idx]);    }
+    if (item_idx < glyph_tex_.size())   { free_pu(glyph_tex_[item_idx]);   }
 }
 
 // ── FreeAllTextures ───────────────────────────────────────────────────────────
 
 void QdLaunchpadElement::FreeAllTextures() {
-    // name_tex_ and glyph_tex_ removed in v1.8.2 (rendered per-frame locally;
-    // cache owns those pointers — no DestroyTexture from caller side).
-    // hc_tex_ and star_tex_ also removed for the same reason.
+    // icon_tex_ slots: SDL_CreateTexture-owned — use SDL_DestroyTexture.
     for (size_t i = 0u; i < icon_tex_.size(); ++i)  {
         if (icon_tex_[i])  { SDL_DestroyTexture(icon_tex_[i]);  icon_tex_[i]  = nullptr; }
     }
     icon_tex_.clear();
     icon_loaded_.clear();
+
+    // v1.8.24 F-1: free cached name and glyph textures.
+    // These are RenderText-cache-owned — use DeleteTexture (NOT SDL_DestroyTexture).
+    for (size_t i = 0u; i < name_tex_.size(); ++i) {
+        if (name_tex_[i])  { pu::ui::render::DeleteTexture(name_tex_[i]);  name_tex_[i]  = nullptr; }
+    }
+    name_tex_.clear();
+    for (size_t i = 0u; i < glyph_tex_.size(); ++i) {
+        if (glyph_tex_[i]) { pu::ui::render::DeleteTexture(glyph_tex_[i]); glyph_tex_[i] = nullptr; }
+    }
+    glyph_tex_.clear();
 }
 
 // ── SectionLabel ─────────────────────────────────────────────────────────────

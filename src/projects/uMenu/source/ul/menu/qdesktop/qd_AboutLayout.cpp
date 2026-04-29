@@ -57,8 +57,9 @@ QdAboutElement::QdAboutElement(const QdTheme &theme)
     for (size_t i = 0; i < SECTION_COUNT; ++i) {
         section_tex_[i] = nullptr;
     }
-    logo_tex_   = nullptr;
-    footer_tex_ = nullptr;
+    logo_tex_      = nullptr;
+    footer_tex_    = nullptr;
+    hint_bar_tex_  = nullptr;
 }
 
 QdAboutElement::~QdAboutElement() {
@@ -91,6 +92,10 @@ void QdAboutElement::FreeStaticTextures() {
     }
     if (footer_tex_) {
         pu::ui::render::DeleteTexture(footer_tex_);
+    }
+    if (hint_bar_tex_ != nullptr) {
+        pu::ui::render::DeleteTexture(hint_bar_tex_);
+        hint_bar_tex_ = nullptr;
     }
 }
 
@@ -368,6 +373,15 @@ void QdAboutElement::Refresh() {
         std::string("\xe2\x8a\x95 Back     \xe2\x96\xb3 Refresh"),
         theme_.text_secondary);
 
+    // ── Rasterise bottom hint bar ──────────────────────────────────────────
+    {
+        const pu::ui::Color hint_col { 0x99u, 0x99u, 0xBBu, 0xFFu };
+        hint_bar_tex_ = pu::ui::render::RenderText(
+            small_font,
+            std::string("B / + Close"),
+            hint_col);
+    }
+
     refreshed_ = true;
     UL_LOG_INFO("about: Refresh() done — %zu rows populated", ABOUT_ROW_COUNT);
 }
@@ -522,6 +536,15 @@ void QdAboutElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         const s32 fx = ABOUT_CARD_X + (ABOUT_CARD_W - fw) / 2;
         const s32 fy = ABOUT_CARD_Y + ABOUT_CARD_H - fh - 18;
         BlitTex(r, footer_tex_, fx, fy);
+    }
+
+    // Bottom hint bar (screen-level, below the card).
+    if (hint_bar_tex_ != nullptr) {
+        int hw = 0, hh = 0;
+        SDL_QueryTexture(hint_bar_tex_, nullptr, nullptr, &hw, &hh);
+        const s32 hx = (SCREEN_W - hw) / 2;
+        const s32 hy = SCREEN_H - 8 - hh;
+        BlitTex(r, hint_bar_tex_, hx, hy);
     }
 }
 

@@ -7,6 +7,7 @@
 
 #include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
 #include <ul/menu/qdesktop/qd_Tooltip.hpp>
+#include <ul/menu/qdesktop/qd_FirstBootWelcome.hpp>  // v1.8.30: cross-file welcome render hook
 #include <ul/menu/qdesktop/qd_Launchpad.hpp>     // LP_HOTCORNER_W/H (hot corner geometry SSOT)
 #include <ul/menu/qdesktop/qd_AutoFolders.hpp>  // Fix D (v1.6.12): auto-folder side table
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
@@ -1232,6 +1233,19 @@ void QdDesktopIconsElement::PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y) {
     // Slot i on-screen reads from g_favorites_list_[fav_strip_scroll_offset_ + i].
     // Slots that exceed g_favorites_list_.size() are rendered as empty (no tile).
     const size_t fav_count = g_favorites_list_.size();
+    // v1.8.27: always-center the strip.  When the favorites total is fewer than
+    // FAV_STRIP_VISIBLE, compute a dynamic left edge so the actual tile run
+    // is centered horizontally on the 1920-wide canvas.  When the total is at
+    // or above FAV_STRIP_VISIBLE, dynamic_left == FAV_STRIP_LEFT (50) so the
+    // existing full-width-centered behavior is preserved during scroll.
+    const size_t centered_count =
+        (fav_count < static_cast<size_t>(FAV_STRIP_VISIBLE))
+            ? fav_count : static_cast<size_t>(FAV_STRIP_VISIBLE);
+    const s32 centered_w = (centered_count > 0u)
+        ? (static_cast<s32>(centered_count) * ICON_BG_W
+           + (static_cast<s32>(centered_count) - 1) * ICON_GRID_GAP_X)
+        : 0;
+    const s32 dynamic_left = (1920 - centered_w) / 2;
     for (size_t slot = 0u; slot < static_cast<size_t>(FAV_STRIP_VISIBLE); ++slot) {
         const size_t fi = fav_strip_scroll_offset_ + slot;
         if (fi >= fav_count) {
@@ -1247,7 +1261,7 @@ void QdDesktopIconsElement::PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y) {
             continue;
         }
         // Cell origin within the strip.
-        const s32 cell_x = FAV_STRIP_LEFT
+        const s32 cell_x = dynamic_left
             + static_cast<s32>(slot) * FAV_TILE_SPACING + x;
         const s32 cell_y = FAV_STRIP_TOP + y;
         NroEntry &entry = icons_[idx];
@@ -1324,15 +1338,24 @@ size_t QdDesktopIconsElement::HitTestFavorites(s32 tx, s32 ty) const {
     if (ty < FAV_STRIP_TOP || ty >= FAV_STRIP_TOP + ICON_BG_H) {
         return SIZE_MAX;
     }
+    // v1.8.27: mirror PaintFavoritesStrip's always-center math so hit-testing
+    // tracks the actual rendered tile run.
+    const size_t fav_count = g_favorites_list_.size();
+    const size_t centered_count =
+        (fav_count < static_cast<size_t>(FAV_STRIP_VISIBLE))
+            ? fav_count : static_cast<size_t>(FAV_STRIP_VISIBLE);
+    if (centered_count == 0u) return SIZE_MAX;
+    const s32 centered_w = static_cast<s32>(centered_count) * ICON_BG_W
+        + (static_cast<s32>(centered_count) - 1) * ICON_GRID_GAP_X;
+    const s32 dynamic_left = (1920 - centered_w) / 2;
     // Horizontal bounds on the strip overall.
-    if (tx < FAV_STRIP_LEFT
-            || tx >= FAV_STRIP_LEFT
+    if (tx < dynamic_left
+            || tx >= dynamic_left
                      + static_cast<s32>(FAV_STRIP_VISIBLE) * FAV_TILE_SPACING) {
         return SIZE_MAX;
     }
     // v1.8.25: iterate the FAV_STRIP_VISIBLE slots starting from scroll_offset,
     // mirroring PaintFavoritesStrip exactly.
-    const size_t fav_count = g_favorites_list_.size();
     for (size_t slot = 0u; slot < static_cast<size_t>(FAV_STRIP_VISIBLE); ++slot) {
         const size_t fi = fav_strip_scroll_offset_ + slot;
         if (fi >= fav_count) {
@@ -1343,7 +1366,7 @@ size_t QdDesktopIconsElement::HitTestFavorites(s32 tx, s32 ty) const {
         if (idx >= icon_count_) {
             continue;
         }
-        const s32 cell_x = FAV_STRIP_LEFT
+        const s32 cell_x = dynamic_left
             + static_cast<s32>(slot) * FAV_TILE_SPACING;
         if (tx >= cell_x && tx < cell_x + ICON_BG_W) {
             return idx;
@@ -3224,6 +3247,14 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         SDL_Renderer *rh = pu::ui::render::GetMainRenderer();
         if (rh != nullptr) help_overlay_.Render(rh);
     }
+
+    // v1.8.30: first-boot welcome renders after the help overlay so it owns
+    // the highest Z-order on first run.  The instance lives in MainMenuLayout
+    // but this free function looks up the singleton (qd_FirstBootWelcome.cpp).
+    {
+        SDL_Renderer *rw = pu::ui::render::GetMainRenderer();
+        if (rw != nullptr) RenderFirstBootWelcomeIfOpen(rw);
+    }
 }
 
 // ── OnInput ───────────────────────────────────────────────────────────────────
@@ -3668,6 +3699,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                     const size_t strip_slot =
                         (dock_i * FAV_STRIP_VISIBLE) / BUILTIN_ICON_COUNT;
                     fav_strip_focus_index_ = strip_slot < FAV_STRIP_VISIBLE ? strip_slot : 0u;
+                    dpad_focus_index_ = SIZE_MAX;  // v1.8.28: clear folder/dock ring while strip owns focus.
                     UL_LOG_INFO("qdesktop: dpad up (dock→strip) strip_slot=%zu", fav_strip_focus_index_);
                 } else {
                     // Empty favorites: skip strip, fall through to folder row 1.
@@ -3688,6 +3720,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                     const size_t strip_slot =
                         (folder_col * FAV_STRIP_VISIBLE) / static_cast<size_t>(DF_COLS);
                     fav_strip_focus_index_ = strip_slot < FAV_STRIP_VISIBLE ? strip_slot : 0u;
+                    dpad_focus_index_ = SIZE_MAX;  // v1.8.28: clear folder/dock ring while strip owns focus.
                     UL_LOG_INFO("qdesktop: dpad up (row0→strip) strip_slot=%zu", fav_strip_focus_index_);
                 } else {
                     UL_LOG_INFO("qdesktop: dpad up (row0, no favs) -> stay focus=%zu", dpad_focus_index_);
@@ -3720,6 +3753,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                     const size_t strip_slot =
                         (folder_col * FAV_STRIP_VISIBLE) / static_cast<size_t>(DF_COLS);
                     fav_strip_focus_index_ = strip_slot < FAV_STRIP_VISIBLE ? strip_slot : 0u;
+                    dpad_focus_index_ = SIZE_MAX;  // v1.8.28: clear folder/dock ring while strip owns focus.
                     UL_LOG_INFO("qdesktop: dpad down (row1→strip) strip_slot=%zu", fav_strip_focus_index_);
                 } else {
                     // Empty favorites: skip strip, fall through to dock.

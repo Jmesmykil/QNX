@@ -48,7 +48,8 @@ QdLockscreenElement::QdLockscreenElement(const QdTheme &theme)
     : theme_(theme),
       time_tex_(nullptr), date_tex_(nullptr),
       name_tex_(nullptr), uid_tex_(nullptr),
-      hint_tex_(nullptr), status_tex_(nullptr)
+      hint_tex_(nullptr), status_tex_(nullptr),
+      hint_bar_tex_(nullptr)
 {
     UL_LOG_INFO("lockscreen: QdLockscreenElement ctor");
 
@@ -103,6 +104,15 @@ QdLockscreenElement::QdLockscreenElement(const QdTheme &theme)
         std::string("Press \xe2\x96\xb3 or any button to unlock"),
         theme_.text_secondary);
 
+    // Build the bottom hint bar once; freed in the destructor.
+    {
+        const pu::ui::Color hint_col { 0x99u, 0x99u, 0xBBu, 0xFFu };
+        hint_bar_tex_ = pu::ui::render::RenderText(
+            small_font,
+            std::string("A / Touch Unlock"),
+            hint_col);
+    }
+
     // Populate time + status for the first frame.
     UpdateTimeStrings();
     RefreshStatusLine();
@@ -117,6 +127,7 @@ QdLockscreenElement::~QdLockscreenElement() {
     pu::ui::render::DeleteTexture(uid_tex_);
     pu::ui::render::DeleteTexture(hint_tex_);
     pu::ui::render::DeleteTexture(status_tex_);
+    pu::ui::render::DeleteTexture(hint_bar_tex_);
 }
 
 // ── UpdateTimeStrings ─────────────────────────────────────────────────────────
@@ -298,6 +309,16 @@ void QdLockscreenElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         BlitCentred(r, status_tex_, small_font, status_str_,
                     theme_.text_secondary, status_changed, LS_STATUS_Y);
     }
+
+    // ── Bottom hint bar ───────────────────────────────────────────────────
+    if (hint_bar_tex_ != nullptr) {
+        int hw = 0, hh = 0;
+        SDL_QueryTexture(hint_bar_tex_, nullptr, nullptr, &hw, &hh);
+        const s32 hx = (1920 - hw) / 2;
+        const s32 hy = 1080 - 8 - hh;
+        const SDL_Rect hdst = { hx, hy, hw, hh };
+        SDL_RenderCopy(r, hint_bar_tex_, nullptr, &hdst);
+    }
 }
 
 // ── QdLockscreenLayout — constructor / destructor ─────────────────────────────
@@ -333,7 +354,7 @@ void QdLockscreenLayout::Refresh() {
 
 void QdLockscreenLayout::OnMenuInput(const u64 keys_down, const u64 /*keys_up*/,
                                      const u64 /*keys_held*/,
-                                     const pu::ui::TouchPoint /*touch_pos*/)
+                                     const pu::ui::TouchPoint touch_pos)
 {
     // Refresh battery+network every 30 frames even with no input.
     ++frame_counter_;
@@ -348,9 +369,19 @@ void QdLockscreenLayout::OnMenuInput(const u64 keys_down, const u64 /*keys_up*/,
         HidNpadButton_X    | HidNpadButton_Y   |
         HidNpadButton_Plus | HidNpadButton_ZR;
 
-    if ((keys_down & UNLOCK_MASK) != 0) {
-        UL_LOG_INFO("lockscreen: unlock key pressed (keys_down=0x%llx) — loading Main",
-                    (unsigned long long)keys_down);
+    bool should_unlock = (keys_down & UNLOCK_MASK) != 0;
+
+    // v1.8.29 Slice 2: touch tap unlocks — equivalent to pressing A.
+    if (!touch_pos.IsEmpty()) {
+        UL_LOG_INFO("lockscreen: touch tap at (%d,%d) — unlock",
+                    touch_pos.x, touch_pos.y);
+        should_unlock = true;
+    }
+
+    if (should_unlock) {
+        UL_LOG_INFO("lockscreen: unlock (keys_down=0x%llx touch=%s) — loading Main",
+                    (unsigned long long)keys_down,
+                    touch_pos.IsEmpty() ? "no" : "yes");
         if (g_MenuApplication) {
             g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Main);
         }

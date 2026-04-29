@@ -90,6 +90,7 @@ QdSettingsElement::QdSettingsElement(const QdTheme &theme)
     : account_uid_{},
       acc_has_user_(false),
       title_tex_(nullptr),
+      hint_bar_tex_(nullptr),
       theme_(theme),
       focus_area_(FocusArea::Sidebar),
       active_tab_(SettingsTab::System),
@@ -138,6 +139,13 @@ QdSettingsElement::QdSettingsElement(const QdTheme &theme)
     for (auto &t : sidebar_tex_) t = nullptr;
     for (auto &t : detail_tex_)  t = nullptr;
 
+    // Build the bottom hint bar once; freed in FreeAllTextures / dtor.
+    const pu::ui::Color hint_col { 0x99u, 0x99u, 0xBBu, 0xFFu };
+    hint_bar_tex_ = pu::ui::render::RenderText(
+        pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+        std::string("B / + Close   \xe2\x80\xa2   Up/Down Navigate   \xe2\x80\xa2   A Toggle / Open"),
+        hint_col);
+
     // Null-initialize row arrays.
     for (auto &row : system_rows_)  { row.label = nullptr; row.value[0] = '\0'; row.is_button = false; }
     for (auto &row : network_rows_) { row.label = nullptr; row.value[0] = '\0'; row.is_button = false; }
@@ -160,6 +168,10 @@ void QdSettingsElement::FreeAllTextures() {
         if (t) { pu::ui::render::DeleteTexture(t); }
     }
     if (title_tex_) { pu::ui::render::DeleteTexture(title_tex_); }
+    if (hint_bar_tex_ != nullptr) {
+        pu::ui::render::DeleteTexture(hint_bar_tex_);
+        hint_bar_tex_ = nullptr;
+    }
 }
 
 // ── Refresh: poll all live system data ────────────────────────────────────────
@@ -655,6 +667,16 @@ void QdSettingsElement::OnRender(pu::ui::render::Renderer::Ref &drawer,
 
     // ── Detail pane ────────────────────────────────────────────────────────
     RenderDetailPane(r, x, y);
+
+    // ── Bottom hint bar ────────────────────────────────────────────────────
+    if (hint_bar_tex_ != nullptr) {
+        int hw = 0, hh = 0;
+        SDL_QueryTexture(hint_bar_tex_, nullptr, nullptr, &hw, &hh);
+        const s32 hx = x + (1920 - hw) / 2;
+        const s32 hy = y + 1080 - 8 - hh;
+        SDL_Rect hdst { hx, hy, hw, hh };
+        SDL_RenderCopy(r, hint_bar_tex_, nullptr, &hdst);
+    }
 }
 
 void QdSettingsElement::RenderSidebar(SDL_Renderer *r, s32 ox, s32 oy) const {
@@ -796,9 +818,82 @@ void QdSettingsElement::OnInput(const u64 keys_down,
                                  const pu::ui::TouchPoint touch_pos) {
     (void)keys_up;
     (void)keys_held;
-    (void)touch_pos;
+
+    // v1.8.29 Slice 2: touch hit-test for sidebar and detail pane rows.
+    // The element renders at (0, 0) as a full-screen element; constants are
+    // in screen coordinates.  A touch in the sidebar selects that row (same
+    // as D-pad Up/Down + A); a touch in the detail pane selects that row and
+    // activates it (same as D-pad Up/Down + A); ZR activates the focused row.
+    if (!touch_pos.IsEmpty()) {
+        const s32 tx = touch_pos.x;
+        const s32 ty = touch_pos.y;
+        const s32 body_top = SETTINGS_BODY_TOP;  // 104
+
+        if (tx < SETTINGS_SIDEBAR_W) {
+            // Touch in the sidebar column.
+            if (ty >= body_top) {
+                const s32 rel = ty - body_top;
+                const size_t row = static_cast<size_t>(rel / SETTINGS_SIDEBAR_ROW_H);
+                if (row < SIDEBAR_ITEM_COUNT) {
+                    sidebar_focus_row_ = row;
+                    if (sidebar_focus_row_ < static_cast<size_t>(SettingsTab::Count)) {
+                        active_tab_ = static_cast<SettingsTab>(sidebar_focus_row_);
+                    }
+                    focus_area_ = FocusArea::Sidebar;
+                    detail_row_ = 0;
+                    if (sidebar_focus_row_ == SIDEBAR_ITEM_COUNT - 1) {
+                        ::ul::menu::ui::ShowSettingsMenu();
+                    } else {
+                        focus_area_ = FocusArea::Detail;
+                    }
+                }
+            }
+        } else {
+            // Touch in the detail pane.
+            if (ty >= body_top) {
+                const s32 rel = ty - body_top;
+                const size_t row = static_cast<size_t>(rel / SETTINGS_ROW_H);
+                const size_t n_rows = ActiveTabRowCount();
+                if (row < n_rows) {
+                    detail_row_  = row;
+                    focus_area_  = FocusArea::Detail;
+                    // Activate the row immediately (same as pressing A).
+                    const Row *rows = ActiveTabRows();
+                    if (rows && rows[row].is_button) {
+                        if (active_tab_ == SettingsTab::Account) {
+                            DoUserSwitch();
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
 
     if (!keys_down) return;
+
+    // v1.8.29 Slice 2: ZR activates the focused detail-pane row (same as A
+    // in detail mode).  If focus is in the sidebar, ZR enters the detail pane.
+    if (keys_down & HidNpadButton_ZR) {
+        if (focus_area_ == FocusArea::Sidebar) {
+            if (sidebar_focus_row_ == SIDEBAR_ITEM_COUNT - 1) {
+                ::ul::menu::ui::ShowSettingsMenu();
+            } else {
+                focus_area_ = FocusArea::Detail;
+                detail_row_ = 0;
+            }
+            return;
+        } else {
+            const size_t n_rows = ActiveTabRowCount();
+            const Row *rows     = ActiveTabRows();
+            if (rows && detail_row_ < n_rows && rows[detail_row_].is_button) {
+                if (active_tab_ == SettingsTab::Account) {
+                    DoUserSwitch();
+                }
+            }
+            return;
+        }
+    }
 
     if (focus_area_ == FocusArea::Sidebar) {
         if (keys_down & HidNpadButton_Up) {

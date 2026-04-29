@@ -126,6 +126,9 @@ private:
     bool    ts_inited_   = false;
     bool    psm_inited_  = false;
     bool    nifm_inited_ = false;
+
+    // Bottom hint bar — rendered once in ctor, freed in dtor.
+    SDL_Texture *hint_bar_tex_;
 };
 
 } // namespace ul::menu::qdesktop

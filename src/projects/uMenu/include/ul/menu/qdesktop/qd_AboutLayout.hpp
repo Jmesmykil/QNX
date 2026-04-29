@@ -94,6 +94,8 @@ private:
     SDL_Texture   *logo_tex_;
     /// Cached footer hint texture ("B  Back    Y  Refresh").
     SDL_Texture   *footer_tex_;
+    /// Cached bottom-of-screen hint bar texture (rendered once per Refresh).
+    SDL_Texture   *hint_bar_tex_;
 
     bool           refreshed_;   ///< true once Refresh() has completed
 

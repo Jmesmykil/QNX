@@ -348,6 +348,20 @@ private:
     // Launchpad open by default).
     InputSource             active_input_source_;
 
+    // v1.8.29 Slice 1: tab-strip D-pad focus.
+    // SIZE_MAX = D-pad focus is in the grid (normal mode).
+    // 0        = "All" tab focused.
+    // 1..N     = the N-th non-empty category tile focused (fi-th rendered tile,
+    //            counting only buckets where folder_bucket_count_[fi] > 0).
+    // Transitions:
+    //   D-pad UP from grid row 0  → enter tab mode; set to index matching active_folder_
+    //   D-pad LEFT/RIGHT in tab   → cycle among visible tab indices
+    //   D-pad DOWN in tab         → return to grid (dpad_focus_index_ = 0), SIZE_MAX
+    //   A in tab mode             → activate filter, return to grid, SIZE_MAX
+    //   B/Plus                    → close (unchanged)
+    // Reset to SIZE_MAX in Open() and Close().
+    size_t                  tab_focus_idx_;
+
     // F10 (stabilize-5): pagination state.
     // page_index_: 0-based current page (0 = first page).
     // page_count_: total pages = ceil(filtered_idxs_.size() / LP_ITEMS_PER_PAGE).

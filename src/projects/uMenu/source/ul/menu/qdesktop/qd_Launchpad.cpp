@@ -79,6 +79,8 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
       // user triggers Open via hot-corner tap or Plus — both are controller/touch
       // actions; D-pad or touch-tile navigation follows immediately).
       active_input_source_(InputSource::DPAD),
+      // v1.8.29 Slice 1: tab focus; SIZE_MAX = grid focus (normal mode).
+      tab_focus_idx_(SIZE_MAX),
       page_index_(0),    // F10 (stabilize-5): pagination
       page_count_(1),    // F10 (stabilize-5): pagination
       // v1.8.18: icon_cache_ removed; using GetSharedIconCache() singleton.
@@ -310,6 +312,7 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     query_.clear();
     dpad_focus_index_          = 0;
     mouse_hover_index_         = SIZE_MAX;
+    tab_focus_idx_             = SIZE_MAX;  // v1.8.29 Slice 1: grid focus on open
     pending_launch_            = false;
     pending_launch_from_mouse_ = false;
     filter_dirty_              = false;
@@ -520,6 +523,7 @@ void QdLaunchpadElement::Close() {
     query_.clear();
     dpad_focus_index_          = 0;
     mouse_hover_index_         = SIZE_MAX;
+    tab_focus_idx_             = SIZE_MAX;  // v1.8.29 Slice 1: reset on close
     pending_launch_            = false;
     pending_launch_from_mouse_ = false;
     filter_dirty_              = false;
@@ -864,39 +868,135 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         active_input_source_ = InputSource::DPAD;
     }
 
-    if (keys_down & HidNpadButton_Up) {
-        if (dpad_focus_index_ >= static_cast<size_t>(LP_COLS)) {
-            dpad_focus_index_ -= static_cast<size_t>(LP_COLS);
-        } else {
+    // v1.8.29 Slice 1: count visible tab tiles so tab_focus_idx_ stays in range.
+    // visible_tab_count = 1 ("All") + number of non-empty category buckets.
+    // "All" = index 0; category tiles = indices 1..visible_tab_count-1.
+    size_t visible_tab_count = 1u; // always includes "All"
+    for (size_t fi = 0u; fi < kTopLevelFolderCount; ++fi) {
+        if (folder_bucket_count_[fi] > 0u) {
+            ++visible_tab_count;
+        }
+    }
+
+    // v1.8.32: capture tab-mode-at-frame-start so the A-launch handler later
+    // can skip when an A press was already consumed by a tab activation. The
+    // tab-A handler clears tab_focus_idx_ to SIZE_MAX, which would otherwise
+    // make the grid-mode A launch fire on the same keys_down and double-
+    // dispatch (causing the black-screen-stuck symptom).
+    const bool was_in_tab_mode_ = (tab_focus_idx_ != SIZE_MAX);
+    bool       tab_a_consumed   = false;
+
+    if (tab_focus_idx_ != SIZE_MAX) {
+        // ── Tab-strip mode ─────────────────────────────────────────────────────
+        // D-pad LEFT/RIGHT cycles among visible tab tiles (no wrapping).
+        // D-pad DOWN returns to grid at (0, 0).
+        // D-pad UP is a no-op (already at the top).
+        if (keys_down & HidNpadButton_Left) {
+            if (tab_focus_idx_ > 0u) {
+                --tab_focus_idx_;
+            }
+        }
+        if (keys_down & HidNpadButton_Right) {
+            if (tab_focus_idx_ + 1u < visible_tab_count) {
+                ++tab_focus_idx_;
+            }
+        }
+        if (keys_down & HidNpadButton_Down) {
+            // Return to grid, first cell.
+            tab_focus_idx_    = SIZE_MAX;
             dpad_focus_index_ = 0u;
         }
-    }
-    if (keys_down & HidNpadButton_Down) {
-        const size_t stepped = dpad_focus_index_ + static_cast<size_t>(LP_COLS);
-        dpad_focus_index_ = (stepped < n) ? stepped : (n - 1u);
-    }
-    if (keys_down & HidNpadButton_Left) {
-        if (dpad_focus_index_ > 0u) {
-            dpad_focus_index_ -= 1u;
+        // A in tab mode activates the focused filter and returns to grid.
+        if (keys_down & HidNpadButton_A) {
+            if (tab_focus_idx_ == 0u) {
+                // "All" tab selected.
+                active_folder_ = AutoFolderIdx::None;
+            } else {
+                // Map tab_focus_idx_ (1-based) to the corresponding non-empty
+                // kTopLevelFolders entry.
+                size_t match = 0u;
+                for (size_t fi = 0u; fi < kTopLevelFolderCount; ++fi) {
+                    if (folder_bucket_count_[fi] > 0u) {
+                        ++match;
+                        if (match == tab_focus_idx_) {
+                            active_folder_ = kTopLevelFolders[fi].idx;
+                            break;
+                        }
+                    }
+                }
+            }
+            filter_dirty_     = true;
+            tab_focus_idx_    = SIZE_MAX;
+            dpad_focus_index_ = 0u;
+            tab_a_consumed    = true;  // v1.8.32: prevent grid-mode A from re-firing
         }
-    }
-    if (keys_down & HidNpadButton_Right) {
-        if (dpad_focus_index_ + 1u < n) {
-            dpad_focus_index_ += 1u;
+    } else {
+        // ── Grid mode ─────────────────────────────────────────────────────────
+        if (keys_down & HidNpadButton_Up) {
+            if (dpad_focus_index_ >= static_cast<size_t>(LP_COLS)) {
+                dpad_focus_index_ -= static_cast<size_t>(LP_COLS);
+            } else {
+                // Row 0: enter tab-strip mode. Set tab_focus_idx_ to the tab
+                // that corresponds to the currently active filter so focus lands
+                // on the right tile rather than always jumping to "All".
+                if (active_folder_ == AutoFolderIdx::None) {
+                    tab_focus_idx_ = 0u;
+                } else {
+                    // Find which rendered tab slot holds active_folder_.
+                    size_t match = 0u;
+                    bool found   = false;
+                    for (size_t fi = 0u; fi < kTopLevelFolderCount; ++fi) {
+                        if (folder_bucket_count_[fi] > 0u) {
+                            ++match;
+                            if (kTopLevelFolders[fi].idx == active_folder_) {
+                                tab_focus_idx_ = match;
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!found) {
+                        tab_focus_idx_ = 0u;  // fallback to "All"
+                    }
+                }
+            }
         }
-    }
+        if (keys_down & HidNpadButton_Down) {
+            const size_t stepped = dpad_focus_index_ + static_cast<size_t>(LP_COLS);
+            dpad_focus_index_ = (stepped < n) ? stepped : (n - 1u);
+        }
+        if (keys_down & HidNpadButton_Left) {
+            if (dpad_focus_index_ > 0u) {
+                dpad_focus_index_ -= 1u;
+            }
+        }
+        if (keys_down & HidNpadButton_Right) {
+            if (dpad_focus_index_ + 1u < n) {
+                dpad_focus_index_ += 1u;
+            }
+        }
 
-    // Fix B (v1.6.12): A and ZR are independent input sources.
-    // A launches the D-pad focused item; ZR launches the mouse-hovered item.
-    // pending_launch_from_mouse_ tells DispatchPendingLaunch() which index to use.
+        // Fix B (v1.6.12): A and ZR are independent input sources.
+        // A launches the D-pad focused item; ZR launches the mouse-hovered item.
+        // pending_launch_from_mouse_ tells DispatchPendingLaunch() which index to use.
+    } // end grid mode
 
-    // ── A: launch based on current input source ──────────────────────────────
+    // ── A: launch based on current input source (grid mode only) ─────────────
     // v1.8 Input-source latch: in DPAD mode, A launches the D-pad focused tile
     // (pending_launch_from_mouse_=false → DispatchPendingLaunch uses
     // dpad_focus_index_).  In MOUSE mode, A launches the cursor-hovered tile
     // (pending_launch_from_mouse_=true → uses mouse_hover_index_).
     // A does NOT change the active_input_source_ itself (spec requirement).
-    if (keys_down & HidNpadButton_A) {
+    //
+    // v1.8.32: Suppress this launch when the SAME A press was already consumed
+    // by a tab-strip activation this frame.  Without the guard the tab-A
+    // handler clears tab_focus_idx_ to SIZE_MAX, then the grid-mode launch
+    // fires on the still-pressed A and double-dispatches into the freshly
+    // filtered grid's first tile — stuck black screen if the launch path
+    // hasn't fully wired up yet for the new filter.
+    if (!was_in_tab_mode_ && !tab_a_consumed
+            && (tab_focus_idx_ == SIZE_MAX)
+            && (keys_down & HidNpadButton_A)) {
         if (dpad_focus_index_ < n) {
             pending_launch_            = true;
             pending_launch_from_mouse_ = (active_input_source_ == InputSource::MOUSE);
@@ -1135,6 +1235,38 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
                             items_.size(),
                             all_active);
         }
+
+        // v1.8.29 Slice 1: draw D-pad focus ring around the focused tab tile.
+        // tab_focus_idx_ == SIZE_MAX means grid mode (no tab ring).
+        // tab_focus_idx_ == 0 means "All" tile; 1..M are category tiles.
+        if (tab_focus_idx_ != SIZE_MAX) {
+            s32 ring_x;
+            if (tab_focus_idx_ == 0u) {
+                ring_x = LP_SEARCH_BAR_X - FTILE_W - FTILE_GAP;
+            } else {
+                // Walk non-empty buckets to find the tab_focus_idx_-th rendered tile.
+                size_t match = 0u;
+                ring_x = LP_SEARCH_BAR_X;
+                for (size_t fi = 0u; fi < kTopLevelFolderCount; ++fi) {
+                    if (bucket_count[fi] == 0u) continue;
+                    ++match;
+                    if (match == tab_focus_idx_) {
+                        break;
+                    }
+                    ring_x += FTILE_W + FTILE_GAP;
+                }
+            }
+            SDL_Rect ring_rect { ring_x - 2, FTILE_STRIP_Y - 2,
+                                 FTILE_W  + 4, FTILE_H  + 4 };
+            // Accent colour: bright cyan matching the active-tile accent.
+            SDL_SetRenderDrawColor(r, 0x00u, 0xE5u, 0xFFu, 0xFFu);
+            SDL_RenderDrawRect(r, &ring_rect);
+            // Second outline ring (1 px inset) for visibility on all backgrounds.
+            SDL_Rect ring_inner { ring_x - 1, FTILE_STRIP_Y - 1,
+                                  FTILE_W  + 2, FTILE_H  + 2 };
+            SDL_SetRenderDrawColor(r, 0x00u, 0x80u, 0xAAu, 0xFFu);
+            SDL_RenderDrawRect(r, &ring_inner);
+        }
     }
 
     // v1.8.23 Option C: F1 section-headers deferred-block removed.  The
@@ -1168,11 +1300,14 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         //               (cursor is hidden in DPAD mode, so no hover confusion).
         //   MOUSE mode → mouse_hover_index_ wins; dpad_focus_index_ is suppressed
         //               (D-pad focus ring would be misleading while cursor drives).
-        // dpad_focus_index_ and mouse_hover_index_ are global filtered indices.
+        // v1.8.31: when tab focus is active, suppress the grid focus ring so the
+        // user sees only the tab ring (mirrors the v1.8.28 favorites focus-clear
+        // fix). Without this guard, both rings render and the grid ring looks
+        // "stuck" — the user can't tell they entered tab mode.
         const bool dpad_active  = (active_input_source_ == InputSource::DPAD);
-        const bool cell_highlighted = dpad_active
+        const bool cell_highlighted = (tab_focus_idx_ == SIZE_MAX) && (dpad_active
             ? (vpos == dpad_focus_index_)
-            : (vpos == mouse_hover_index_);
+            : (vpos == mouse_hover_index_));
         PaintCell(r, items_[item_idx], item_idx, cx, cy, cell_highlighted);
     }
 

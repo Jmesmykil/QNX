@@ -178,6 +178,9 @@ private:
     // ── SDL text texture: title ────────────────────────────────────────────
     SDL_Texture *title_tex_;
 
+    // ── SDL text texture: bottom hint bar ─────────────────────────────────
+    SDL_Texture *hint_bar_tex_;
+
     // ── Focus state ────────────────────────────────────────────────────────
     QdTheme     theme_;
     FocusArea   focus_area_;

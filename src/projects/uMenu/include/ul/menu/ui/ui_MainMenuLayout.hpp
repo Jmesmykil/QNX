@@ -15,6 +15,7 @@
 #include <ul/menu/qdesktop/qd_Wallpaper.hpp>
 #include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
 #include <ul/menu/qdesktop/qd_Cursor.hpp>
+#include <ul/menu/qdesktop/qd_FirstBootWelcome.hpp>
 #include <ul/menu/bt/bt_Manager.hpp>
 #endif
 
@@ -99,6 +100,9 @@ namespace ul::menu::ui {
             // K-cycle Track B: Bluetooth top-bar icon (hidden when no BT audio device connected)
             pu::ui::elm::Image::Ref qdesktop_bt_top_icon;
             bool qdesktop_last_bt_connected = false;
+            // v1.8.27: one-time first-boot welcome modal (shown until flag file
+            // sdmc:/ulaunch/.welcome_seen is created on first dismiss).
+            qdesktop::QdFirstBootWelcome first_boot_welcome_;
 #endif
 
             void DoMoveTo(const std::string &new_path);

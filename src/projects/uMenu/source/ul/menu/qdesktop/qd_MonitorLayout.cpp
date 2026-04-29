@@ -28,7 +28,8 @@ namespace ul::menu::qdesktop {
 // ── Constructor / Destructor ──────────────────────────────────────────────────
 
 QdMonitorLayout::QdMonitorLayout(const QdTheme &theme)
-    : theme_(theme)
+    : theme_(theme),
+      hint_bar_tex_(nullptr)
 {
     // Open libnx service sessions. Failures are non-fatal; individual stat
     // queries check the init flags and report "N/A" on failure.
@@ -57,9 +58,20 @@ QdMonitorLayout::QdMonitorLayout(const QdTheme &theme)
 
     // Initial stat query so the first frame has data.
     RefreshStats();
+
+    // Build the bottom hint bar once; freed in the destructor.
+    const pu::ui::Color hint_col { 0x99u, 0x99u, 0xBBu, 0xFFu };
+    hint_bar_tex_ = pu::ui::render::RenderText(
+        pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+        std::string("B / + Close   \xe2\x80\xa2   Up/Down Scroll log   \xe2\x80\xa2   X Clear log"),
+        hint_col);
 }
 
 QdMonitorLayout::~QdMonitorLayout() {
+    if (hint_bar_tex_ != nullptr) {
+        pu::ui::render::DeleteTexture(hint_bar_tex_);
+        hint_bar_tex_ = nullptr;
+    }
     if (nifm_inited_) { nifmExit();  nifm_inited_ = false; }
     if (psm_inited_)  { psmExit();   psm_inited_  = false; }
     if (ts_inited_)   { tsExit();    ts_inited_   = false; }
@@ -429,6 +441,16 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         const s32 ty = ay + QD_MONITOR_BODY_TOP + QD_MONITOR_TILE_H + QD_MONITOR_TILE_GAP;
         RenderTile(r, tx, ty, "Uptime", l1, "svcGetSystemTick / 19.2 MHz",
                    theme_.text_secondary, true);
+    }
+
+    // ── 4. Bottom hint bar ────────────────────────────────────────────────────
+    if (hint_bar_tex_ != nullptr) {
+        int hw = 0, hh = 0;
+        SDL_QueryTexture(hint_bar_tex_, nullptr, nullptr, &hw, &hh);
+        const s32 hx = ax + (1920 - hw) / 2;
+        const s32 hy = ay + 1080 - 8 - hh;
+        SDL_Rect hdst { hx, hy, hw, hh };
+        SDL_RenderCopy(r, hint_bar_tex_, nullptr, &hdst);
     }
 }
 

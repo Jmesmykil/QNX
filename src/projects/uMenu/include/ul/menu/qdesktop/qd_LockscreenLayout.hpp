@@ -82,6 +82,7 @@ private:
     SDL_Texture *uid_tex_;
     SDL_Texture *hint_tex_;
     SDL_Texture *status_tex_;
+    SDL_Texture *hint_bar_tex_;  ///< bottom screen hint bar (rendered once in ctor)
 
     // Previous strings — used to detect changes so textures aren't rebuilt
     // every frame.

@@ -1653,10 +1653,12 @@ namespace ul::menu::ui {
             this->qdesktop_icons->SetSpecialEntries(entries);
         }
 
-        // v1.8.27: open the first-boot welcome overlay if this is the user's
-        // very first run (flag file absent).  Open() is safe to call here:
-        // the renderer is up, all Plutonium elements have been Add()ed, and
-        // the icon/wallpaper layers are already initialised above.
+        // v1.8.30: re-enable the first-boot welcome auto-open with the
+        // corrected render path.  The welcome instance lives in MainMenuLayout
+        // but renders via QdDesktopIconsElement::OnRender (after the help
+        // overlay) so it sits at the highest Z-order and isn't overpainted
+        // by element rendering.  v1.8.27 was invisible because OnMenuUpdate
+        // ran before element render and the elements painted on top of it.
         if (this->first_boot_welcome_.ShouldShow()) {
             SDL_Renderer *r = pu::ui::render::GetMainRenderer();
             if (r != nullptr) {

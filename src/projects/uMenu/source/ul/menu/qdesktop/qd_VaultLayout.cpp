@@ -92,6 +92,7 @@ QdVaultLayout::ClassifyByExtension(const char *ext) {
 
 QdVaultLayout::QdVaultLayout(const QdTheme &theme)
     : theme_(theme), entry_count_(0), focus_idx_(0), scroll_offset_(0),
+      hint_bar_tex_(nullptr),
       text_viewer_(QdTextViewer::New(theme)),
       image_viewer_(QdImageViewer::New(theme)),
       viewer_active_(false)
@@ -112,6 +113,14 @@ QdVaultLayout::QdVaultLayout(const QdTheme &theme)
         sidebar_tex_[i] = nullptr;
     }
 
+    // Build the bottom hint bar once; freed in the destructor.
+    // Text kept short so it fits at Small font size within 1920 px.
+    const pu::ui::Color hint_col { 0x99u, 0x99u, 0xBBu, 0xFFu };
+    hint_bar_tex_ = pu::ui::render::RenderText(
+        pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+        std::string("B / + Close   \xe2\x80\xa2   A Open   \xe2\x80\xa2   Y Sort   \xe2\x80\xa2   Up/Down Navigate"),
+        hint_col);
+
     // Open the default root so the vault is usable right after construction.
     Navigate("sdmc:/switch/");
 }
@@ -123,6 +132,10 @@ QdVaultLayout::~QdVaultLayout() {
         if (sidebar_tex_[i] != nullptr) {
             pu::ui::render::DeleteTexture(sidebar_tex_[i]);
         }
+    }
+    if (hint_bar_tex_ != nullptr) {
+        pu::ui::render::DeleteTexture(hint_bar_tex_);
+        hint_bar_tex_ = nullptr;
     }
 }
 
@@ -986,6 +999,18 @@ void QdVaultLayout::OnRender(pu::ui::render::Renderer::Ref &drawer,
     RenderSidebar(r, x, y);
     RenderMainPane(r, x, y);
 
+    // ── Bottom hint bar (v1.8.25) ──────────────────────────────────────────────
+    // Single-row keybind legend at y=1040, horizontally centred.
+    // Rendered below the file grid and above the dock area (1080-108=972 bottom
+    // of VAULT_BODY, so 1040 sits in the gap between VAULT_BODY and the dock).
+    static constexpr s32 VAULT_HINT_Y = 1040;
+    if (hint_bar_tex_ != nullptr) {
+        int hw = 0, hh = 0;
+        SDL_QueryTexture(hint_bar_tex_, nullptr, nullptr, &hw, &hh);
+        const SDL_Rect hdst { x + (1920 - hw) / 2, y + VAULT_HINT_Y, hw, hh };
+        SDL_RenderCopy(r, hint_bar_tex_, nullptr, &hdst);
+    }
+
     // Task B: context menu floats above the file grid but below the viewer.
     if (ctx_menu_active_) {
         RenderContextMenu(r);
@@ -1053,6 +1078,50 @@ void QdVaultLayout::OnInput(const u64 keys_down,
     }
 
     (void)keys_up;
+
+    // ── Plus: direct close — return to Desktop from any depth (v1.8.25) ────────
+    // Mirrors the Launchpad pattern (qd_Launchpad.cpp:643) where B and Plus are
+    // equivalent top-level close actions.  B in Vault means "navigate up one dir"
+    // (reaching desktop when already at the root); Plus gives the user a direct
+    // escape at any directory depth without having to back out step by step.
+    if (keys_down & HidNpadButton_Plus) {
+        UL_LOG_INFO("vault: Plus -> LoadMenu(Main)");
+        if (g_MenuApplication) {
+            g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Main);
+        }
+        return;
+    }
+
+    // ── Hot-corner close (v1.8.25) ────────────────────────────────────────────
+    // Edge-triggered tap of the top-left LP_HOTCORNER_W×LP_HOTCORNER_H region
+    // closes the Vault back to the Desktop.  Uses the same edge-trigger latch
+    // pattern as qd_Launchpad.cpp:655-704 to prevent repeated firings while the
+    // finger is held inside the corner.  The latch is vault_was_touch_active_
+    // (local static) mirroring lp_was_touch_active_last_frame_ in Launchpad.
+    // LP_HOTCORNER_W=96, LP_HOTCORNER_H=72 — imported from qd_Launchpad.hpp via
+    // the already-included Plutonium headers; hardcoded here to avoid a cross-
+    // header dependency.  Values must stay in sync with qd_Launchpad.hpp.
+    {
+        static constexpr s32 HC_W = 96;   // LP_HOTCORNER_W
+        static constexpr s32 HC_H = 72;   // LP_HOTCORNER_H
+        static bool vault_was_touch_active_ = false;
+        const bool  touch_active_now   = !touch_pos.IsEmpty();
+        const s32   tx                 = static_cast<s32>(touch_pos.x);
+        const s32   ty                 = static_cast<s32>(touch_pos.y);
+        const bool  touch_corner_now   = touch_active_now
+                                         && tx >= 0 && tx < HC_W
+                                         && ty >= 0 && ty < HC_H;
+        const bool  touch_corner_edge  = touch_corner_now
+                                         && !vault_was_touch_active_;
+        vault_was_touch_active_ = touch_active_now;
+        if (touch_corner_edge) {
+            UL_LOG_INFO("vault: hot-corner tap edge tx=%d ty=%d -> LoadMenu(Main)", tx, ty);
+            if (g_MenuApplication) {
+                g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Main);
+            }
+            return;
+        }
+    }
 
     // (stabilize-6 / RC-C3): D-pad auto-repeat — `keys_held` was previously
     // discarded, so a held direction never moved focus past the first frame.

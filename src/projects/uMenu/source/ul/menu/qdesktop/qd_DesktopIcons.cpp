@@ -6,6 +6,7 @@
 //   via LoadJpegIconToCache(); LaunchIcon() dispatches smi::LaunchApplication for apps.
 
 #include <ul/menu/qdesktop/qd_DesktopIcons.hpp>
+#include <ul/menu/qdesktop/qd_Tooltip.hpp>
 #include <ul/menu/qdesktop/qd_Launchpad.hpp>     // LP_HOTCORNER_W/H (hot corner geometry SSOT)
 #include <ul/menu/qdesktop/qd_AutoFolders.hpp>  // Fix D (v1.6.12): auto-folder side table
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
@@ -523,7 +524,7 @@ void QdDesktopIconsElement::InvalidateFavoritesCache() {
 // Toast-pending state for the next OnRender frame (g_MenuApplication is
 // available there but using ShowNotification synchronously inside OnInput
 // during a touch-up is fine; we do the latter).
-static constexpr size_t  MAX_FAVORITES = 12u;
+static constexpr size_t  MAX_FAVORITES = 20u;  // v1.8.26: bumped from 12 to 20.
 static constexpr const char *FAVORITES_PATH =
     "sdmc:/ulaunch/qos-favorites.toml";
 static constexpr const char *FAVORITES_TMP_PATH =
@@ -1161,14 +1162,30 @@ void QdDesktopIconsElement::PaintDesktopFolders(SDL_Renderer *r, s32 x, s32 y) {
 // folder grid (ends at y=650) and the dock (top at y=932). Strip is 130 px
 // tall (ICON_BG_H), lives at y=726..856 -> 76 px clearance above the dock and
 // 76 px clearance below the folder grid (centred in the 282 px gap).
-static constexpr s32 FAV_STRIP_VISIBLE = 6;
-// FAV_STRIP_W = 6 * ICON_BG_W + 5 * ICON_GRID_GAP_X = 6*140 + 5*28 = 980
+// v1.8.25: expanded to 11 tiles to span full 1920 px width.
+// FAV_STRIP_W = 11 * 140 + 10 * 28 = 1540 + 280 = 1820 px.
+// FAV_STRIP_LEFT = (1920 - 1820) / 2 = 50 px margin each side.
+static constexpr s32 FAV_STRIP_VISIBLE = 11;
+// FAV_STRIP_W = 11 * ICON_BG_W + 10 * ICON_GRID_GAP_X = 11*140 + 10*28 = 1820
 static constexpr s32 FAV_STRIP_W = FAV_STRIP_VISIBLE * ICON_BG_W
     + (FAV_STRIP_VISIBLE - 1) * ICON_GRID_GAP_X;
-static constexpr s32 FAV_STRIP_LEFT = (1920 - FAV_STRIP_W) / 2;  // 470
+static constexpr s32 FAV_STRIP_LEFT = (1920 - FAV_STRIP_W) / 2;  // 50
 static constexpr s32 FAV_STRIP_TOP  = 726;  // v1.8.23: between folders (y=210..650) and dock (y=932..1080).
 // Per-tile spacing on the strip (icon width + horizontal gap).
 static constexpr s32 FAV_TILE_SPACING = ICON_BG_W + ICON_GRID_GAP_X;  // 168
+
+// v1.8.27: scroll-indicator chevron arrows for the favorites strip.
+// Each arrow is a 7-row filled-triangle chevron, 2 px per row, 14 px tall total,
+// pointing left (<) or right (>). Total bounding box ~20 wide x 14 tall.
+// Center X: left arrow at FAV_STRIP_LEFT - 24, right arrow at FAV_STRIP_LEFT + FAV_STRIP_W + 24.
+// Center Y: FAV_STRIP_TOP + ICON_BG_H / 2  (= 726 + 65 = 791).
+// Zero allocations, zero textures — pure SDL_RenderFillRect rows.
+static constexpr s32 FAV_ARROW_HALF_H = 7;   // rows on each side of center row
+static constexpr s32 FAV_ARROW_ROW_H  = 2;   // pixel height of each row
+// Total chevron height = (2 * FAV_ARROW_HALF_H + 1) * FAV_ARROW_ROW_H = 15 * 2 = 30 px
+static constexpr s32 FAV_ARROW_CX_L  = FAV_STRIP_LEFT - 24;
+static constexpr s32 FAV_ARROW_CX_R  = FAV_STRIP_LEFT + FAV_STRIP_W + 24;
+static constexpr s32 FAV_ARROW_CY    = FAV_STRIP_TOP + ICON_BG_H / 2;  // 791
 
 // v1.8.23: coyote-timing constants (tick rate = 19.2 MHz on Erista)
 static constexpr u64 TAP_MAX_TICKS          = 4'800'000ULL;   // 250 ms — tap-vs-hold ceiling
@@ -1211,11 +1228,16 @@ void QdDesktopIconsElement::PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y) {
         cursor_x = cursor_ref_->GetCursorX();
         cursor_y = cursor_ref_->GetCursorY();
     }
-    size_t painted = 0u;
-    const size_t cap = (g_favorites_list_.size() < static_cast<size_t>(FAV_STRIP_VISIBLE))
-                        ? g_favorites_list_.size()
-                        : static_cast<size_t>(FAV_STRIP_VISIBLE);
-    for (size_t fi = 0u; fi < cap; ++fi) {
+    // v1.8.25: iterate the FAV_STRIP_VISIBLE slots starting from scroll_offset.
+    // Slot i on-screen reads from g_favorites_list_[fav_strip_scroll_offset_ + i].
+    // Slots that exceed g_favorites_list_.size() are rendered as empty (no tile).
+    const size_t fav_count = g_favorites_list_.size();
+    for (size_t slot = 0u; slot < static_cast<size_t>(FAV_STRIP_VISIBLE); ++slot) {
+        const size_t fi = fav_strip_scroll_offset_ + slot;
+        if (fi >= fav_count) {
+            // Past the end of the favorites list — render empty slot.
+            break;
+        }
         const FavoriteEntry &fav = g_favorites_list_[fi];
         const size_t idx = ResolveFavoriteToIconIdx(icons_, icon_count_, fav);
         if (idx >= icon_count_) {
@@ -1226,22 +1248,72 @@ void QdDesktopIconsElement::PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y) {
         }
         // Cell origin within the strip.
         const s32 cell_x = FAV_STRIP_LEFT
-            + static_cast<s32>(painted) * FAV_TILE_SPACING + x;
+            + static_cast<s32>(slot) * FAV_TILE_SPACING + x;
         const s32 cell_y = FAV_STRIP_TOP + y;
         NroEntry &entry = icons_[idx];
         // Bug #4 (v1.8): highlight the D-pad focused strip slot.
-        // `painted` is the paint-position index (0..FAV_STRIP_VISIBLE-1) which
+        // `slot` is the paint-position index (0..FAV_STRIP_VISIBLE-1) which
         // corresponds 1:1 with fav_strip_focus_index_ when the strip is active.
         // v1.8 Input-source latch: D-pad focus ring only shown in DPAD mode.
         const bool dpad_focused  = (active_input_source_ == InputSource::DPAD)
                                 && (fav_strip_focus_index_ != SIZE_MAX)
-                                && (fav_strip_focus_index_ == painted);
+                                && (fav_strip_focus_index_ == slot);
         const bool mouse_hovered =
             (cursor_x >= cell_x && cursor_x < cell_x + ICON_BG_W
              && cursor_y >= cell_y && cursor_y < cell_y + ICON_BG_H);
         PaintIconCell(r, entry, idx, cell_x, cell_y,
                       dpad_focused, mouse_hovered);
-        ++painted;
+    }
+
+    // v1.8.27: scroll-indicator chevron arrows.
+    // Show left arrow when there are entries scrolled off the left edge.
+    // Show right arrow when entries remain beyond the right visible boundary.
+    // Each chevron is drawn as (2*FAV_ARROW_HALF_H+1) horizontal SDL_RenderFillRect
+    // rows forming a filled triangle. Row i (0-based from top) maps to distance
+    // |i - FAV_ARROW_HALF_H| from the center row; width = (FAV_ARROW_HALF_H - dist + 1).
+    // Points right (>) for the right arrow; mirrored for left (<).
+    // Zero new allocations, zero new SDL textures.
+    if (fav_count > static_cast<size_t>(FAV_STRIP_VISIBLE)) {
+        const pu::ui::Color &ac = theme_.accent;
+        SDL_SetRenderDrawColor(r, ac.r, ac.g, ac.b, 0xCCu);
+
+        const s32 total_rows = 2 * FAV_ARROW_HALF_H + 1;       // 15
+        const s32 top_y = FAV_ARROW_CY + y - (total_rows * FAV_ARROW_ROW_H) / 2;
+
+        // Left chevron (<): visible when fav_strip_scroll_offset_ > 0.
+        if (fav_strip_scroll_offset_ > 0u) {
+            for (s32 ri = 0; ri < total_rows; ++ri) {
+                const s32 dist = (ri <= FAV_ARROW_HALF_H)
+                                 ? (FAV_ARROW_HALF_H - ri)
+                                 : (ri - FAV_ARROW_HALF_H);
+                // Width narrows toward center (fat at top/bottom, point at middle).
+                // For a left-pointing "<" the tip is at the left; rows widen right.
+                const s32 w = dist + 1;
+                // Tip of "<" is on the LEFT: x advances rightward with dist.
+                const s32 row_x = FAV_ARROW_CX_L + x - (FAV_ARROW_HALF_H / 2) + dist;
+                const s32 row_y = top_y + ri * FAV_ARROW_ROW_H;
+                SDL_Rect row_rect { row_x, row_y, w, FAV_ARROW_ROW_H };
+                SDL_RenderFillRect(r, &row_rect);
+            }
+        }
+
+        // Right chevron (>): visible when more entries follow the visible window.
+        if (fav_strip_scroll_offset_ + static_cast<size_t>(FAV_STRIP_VISIBLE) < fav_count) {
+            for (s32 ri = 0; ri < total_rows; ++ri) {
+                const s32 dist = (ri <= FAV_ARROW_HALF_H)
+                                 ? (FAV_ARROW_HALF_H - ri)
+                                 : (ri - FAV_ARROW_HALF_H);
+                const s32 w = dist + 1;
+                // Tip of ">" is on the RIGHT: x shrinks leftward with dist from right edge.
+                const s32 row_x = FAV_ARROW_CX_R + x + (FAV_ARROW_HALF_H / 2) - dist - w + 1;
+                const s32 row_y = top_y + ri * FAV_ARROW_ROW_H;
+                SDL_Rect row_rect { row_x, row_y, w, FAV_ARROW_ROW_H };
+                SDL_RenderFillRect(r, &row_rect);
+            }
+        }
+
+        // Restore draw color to transparent so subsequent draw calls are unaffected.
+        SDL_SetRenderDrawColor(r, 0x00u, 0x00u, 0x00u, 0x00u);
     }
 }
 
@@ -1258,24 +1330,24 @@ size_t QdDesktopIconsElement::HitTestFavorites(s32 tx, s32 ty) const {
                      + static_cast<s32>(FAV_STRIP_VISIBLE) * FAV_TILE_SPACING) {
         return SIZE_MAX;
     }
-    // Resolve to a paint-position; iterate live list to skip stale entries
-    // (mirrors PaintFavoritesStrip's painted-counter advance).
-    size_t painted = 0u;
-    const size_t cap = (g_favorites_list_.size() < static_cast<size_t>(FAV_STRIP_VISIBLE))
-                        ? g_favorites_list_.size()
-                        : static_cast<size_t>(FAV_STRIP_VISIBLE);
-    for (size_t fi = 0u; fi < cap; ++fi) {
+    // v1.8.25: iterate the FAV_STRIP_VISIBLE slots starting from scroll_offset,
+    // mirroring PaintFavoritesStrip exactly.
+    const size_t fav_count = g_favorites_list_.size();
+    for (size_t slot = 0u; slot < static_cast<size_t>(FAV_STRIP_VISIBLE); ++slot) {
+        const size_t fi = fav_strip_scroll_offset_ + slot;
+        if (fi >= fav_count) {
+            break;
+        }
         const FavoriteEntry &fav = g_favorites_list_[fi];
         const size_t idx = ResolveFavoriteToIconIdx(icons_, icon_count_, fav);
         if (idx >= icon_count_) {
             continue;
         }
         const s32 cell_x = FAV_STRIP_LEFT
-            + static_cast<s32>(painted) * FAV_TILE_SPACING;
+            + static_cast<s32>(slot) * FAV_TILE_SPACING;
         if (tx >= cell_x && tx < cell_x + ICON_BG_W) {
             return idx;
         }
-        ++painted;
     }
     return SIZE_MAX;
 }
@@ -1315,6 +1387,8 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
     : theme_(theme), icon_count_(0), dpad_focus_index_(0),
       // Bug #4 fix (v1.8): not in favorites strip mode at construction.
       fav_strip_focus_index_(SIZE_MAX),
+      // v1.8.25: scroll starts at the beginning of the list.
+      fav_strip_scroll_offset_(0u),
       mouse_hover_index_(SIZE_MAX),
       prev_magnify_center_(-1), magnify_center_(-1), frame_tick_(0),
       app_entry_start_idx_(0),
@@ -3007,6 +3081,11 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // Application entries (Slice 3 stabilize-6). Lazy-load no longer fires on
     // the desktop because we no longer paint NRO / Application / Special
     // tiles here.
+    // v1.8.27: track which surface (dock/folder) is active so we can show
+    // exactly one tooltip per frame.  sentinel = SIZE_MAX → nothing active.
+    size_t tooltip_dock_slot   = SIZE_MAX;  // dock slot that gets a tooltip
+    size_t tooltip_folder_slot = SIZE_MAX;  // folder slot that gets a tooltip
+
     for (size_t i = 0u; i < BUILTIN_ICON_COUNT; ++i) {
         if (!dev_dock_on) { break; }
         if (i >= icon_count_) { break; }  // defensive: dock not yet populated
@@ -3019,12 +3098,57 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         const bool mouse_hovered = (active_input_source_ == InputSource::MOUSE)
                                 && (mouse_hover_index_ == kDesktopFolderCount + i);
         PaintIconCell(r, entry, i, cell_x, cell_y, dpad_focused, mouse_hovered);
+        // v1.8.27: record which dock slot is active for tooltip.
+        if (dpad_focused || mouse_hovered) {
+            tooltip_dock_slot = i;
+        }
     }
 
     // ── v1.7.0-stabilize-7 Slice 4 (O-B): folder grid + Slice 5 (O-F): strip ─
     if (dev_icons_on) {
         PaintDesktopFolders(r, x, y);
         PaintFavoritesStrip(r, x, y);
+
+        // v1.8.27: determine if a folder slot is active for tooltip.
+        for (size_t fi = 0u; fi < kDesktopFolderCount; ++fi) {
+            const bool df = (active_input_source_ == InputSource::DPAD)
+                         && (dpad_focus_index_ == fi);
+            const bool mf = (active_input_source_ == InputSource::MOUSE)
+                         && (mouse_hover_index_ == fi);
+            if (df || mf) {
+                tooltip_folder_slot = fi;
+                break;
+            }
+        }
+    }
+
+    // ── v1.8.27: hover tooltip — dock icon label or folder "Name (N)" ────────
+    // Priority: dock first (dock loop set tooltip_dock_slot before folder loop).
+    // Exactly one of the two slots is populated, or neither → Hide().
+    if (tooltip_dock_slot != SIZE_MAX && dev_dock_on
+            && tooltip_dock_slot < icon_count_) {
+        // Anchor: horizontal centre of the dock slot, top of dock band.
+        const s32 ax = dock_slot_x_[tooltip_dock_slot]
+                     + dock_slot_w_[tooltip_dock_slot] / 2
+                     + x;
+        const s32 ay = kDockNominalTop + y;
+        const std::string label(icons_[tooltip_dock_slot].name);
+        tooltip_.Show(r, label, ax, ay, /*prefer_above=*/true);
+    } else if (tooltip_folder_slot != SIZE_MAX && dev_icons_on
+               && tooltip_folder_slot < kDesktopFolderCount) {
+        // Anchor: horizontal centre and top of the folder tile.
+        SDL_Rect cell {};
+        ComputeDesktopFolderRect(tooltip_folder_slot, cell);
+        const s32 ax = cell.x + x + cell.w / 2;
+        const s32 ay = cell.y + y;
+        // Format: "FolderName (N)"
+        char buf[96];
+        snprintf(buf, sizeof(buf), "%s (%zu)",
+                 kDesktopFolders[tooltip_folder_slot].name,
+                 g_desktop_folder_counts[tooltip_folder_slot]);
+        tooltip_.Show(r, std::string(buf), ax, ay, /*prefer_above=*/true);
+    } else {
+        tooltip_.Hide();
     }
 
     // ── v1.7.0-stabilize-2: hot-corner widget at top-left (96x72) ────────────
@@ -3089,6 +3213,17 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         if (usb_win_)     usb_win_->OnRender(null_drawer, 0, 0);
         if (log_win_)     log_win_->OnRender(null_drawer, 0, 0);
     }
+
+    // v1.8.27: tooltip renders above all icon/folder layers but below help overlay.
+    if (tooltip_.IsVisible()) {
+        tooltip_.Render(r);
+    }
+
+    // v1.8.25: help overlay renders last so it sits above every other surface.
+    if (help_overlay_.IsOpen()) {
+        SDL_Renderer *rh = pu::ui::render::GetMainRenderer();
+        if (rh != nullptr) help_overlay_.Render(rh);
+    }
 }
 
 // ── OnInput ───────────────────────────────────────────────────────────────────
@@ -3111,6 +3246,35 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                                      const pu::ui::TouchPoint touch_pos)
 {
     (void)keys_up;
+
+    // v1.8.25: help overlay — Home + Capture (Share) trigger.
+    // Track Capture-held every frame so the async OnHomeButtonPress callback
+    // can read it.  Also handle the Plus + Capture chord here as a same-press
+    // alternative trigger that doesn't depend on the cross-file Home flag.
+    SetCaptureHeld((keys_held & HiddbgNpadButton_Capture) != 0u);
+
+    // If the Home + Capture combo fired in MainMenuLayout::OnHomeButtonPress,
+    // OR Plus + Capture chord just edge-fired here, open the help overlay.
+    const bool home_request = ConsumeHelpOverlayOpenRequest();
+    const bool plus_capture =
+        (keys_held & HidNpadButton_Plus) != 0u &&
+        (keys_down & HiddbgNpadButton_Capture) != 0u;
+    if (!help_overlay_.IsOpen() && (home_request || plus_capture)) {
+        SDL_Renderer *r = pu::ui::render::GetMainRenderer();
+        if (r != nullptr) {
+            help_overlay_.Open(r);
+            UL_LOG_INFO("qdesktop: help overlay opened (home_request=%d plus_capture=%d)",
+                        home_request ? 1 : 0, plus_capture ? 1 : 0);
+        }
+        return;
+    }
+    // If overlay is open, any button press dismisses it; nothing else processes input.
+    if (help_overlay_.IsOpen()) {
+        if (help_overlay_.HandleInput(keys_down)) {
+            UL_LOG_INFO("qdesktop: help overlay closed");
+        }
+        return;
+    }
 
     // v1.8.23: coyote-timing — dpad-held repeat lambda (mirrors qd_VaultLayout.cpp:1062-1073).
     // Accumulates per-direction held-frame counters in coyote_.dpad_held_frames[0..3]
@@ -3164,17 +3328,18 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
         // Builtin, Special) via FavEntryFromNroEntry round-trip, fixing the
         // earlier Nro-only restriction in the v1.8 path.
         if (fav_strip_focus_index_ != SIZE_MAX) {
-            // Map fav_strip_focus_index_ (paint-position 0..FAV_STRIP_VISIBLE-1)
-            // to a g_favorites_list_ index. Because PaintFavoritesStrip skips
-            // stale (unresolved) favorites when computing `painted`, we walk
-            // the same way to land on the same on-screen tile.
+            // v1.8.25: Map fav_strip_focus_index_ (paint-position within the
+            // visible window) to a g_favorites_list_ index by adding scroll_offset.
+            // We walk the visible window [scroll_offset .. scroll_offset+VISIBLE)
+            // the same way PaintFavoritesStrip does so stale-skip behaviour matches.
             if (!g_favorites_list_.empty()) {
                 size_t painted = 0u;
-                const size_t cap =
-                    (g_favorites_list_.size() < static_cast<size_t>(FAV_STRIP_VISIBLE))
-                        ? g_favorites_list_.size()
-                        : static_cast<size_t>(FAV_STRIP_VISIBLE);
-                for (size_t fi = 0u; fi < cap; ++fi) {
+                const size_t fav_count = g_favorites_list_.size();
+                for (size_t slot = 0u; slot < static_cast<size_t>(FAV_STRIP_VISIBLE); ++slot) {
+                    const size_t fi = fav_strip_scroll_offset_ + slot;
+                    if (fi >= fav_count) {
+                        break;
+                    }
                     const FavoriteEntry &fav = g_favorites_list_[fi];
                     const size_t idx = ResolveFavoriteToIconIdx(icons_, icon_count_, fav);
                     if (idx >= icon_count_) {
@@ -3490,6 +3655,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                 (fav_strip_focus_index_ * static_cast<size_t>(DF_COLS)) / FAV_STRIP_VISIBLE;
             dpad_focus_index_ = static_cast<size_t>(DF_COLS) + strip_col;  // row 1 col = strip_col
             fav_strip_focus_index_ = SIZE_MAX;
+            fav_strip_scroll_offset_ = 0u;  // v1.8.25: reset scroll on strip exit.
             UL_LOG_INFO("qdesktop: dpad up (strip→row1) focus=%zu", dpad_focus_index_);
         } else {
             const size_t f = dpad_focus_index_;
@@ -3538,6 +3704,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
             dpad_focus_index_ = kDesktopFolderCount
                               + (target_dock < BUILTIN_ICON_COUNT ? target_dock : 0u);
             fav_strip_focus_index_ = SIZE_MAX;
+            fav_strip_scroll_offset_ = 0u;  // v1.8.25: reset scroll on strip exit.
             UL_LOG_INFO("qdesktop: dpad down (strip→dock) focus=%zu", dpad_focus_index_);
         } else {
             const size_t f = dpad_focus_index_;
@@ -3569,11 +3736,19 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
     }
     if ((keys_down & HidNpadButton_Left) || repeat_left) {
         if (fav_strip_focus_index_ != SIZE_MAX) {
-            // Bug #4 fix (v1.8): in strip → move left within strip (clamp at 0).
-            if (fav_strip_focus_index_ > 0u) {
+            // v1.8.25: at leftmost visible slot AND scroll_offset > 0 → scroll left.
+            // At leftmost slot with no more items to scroll → clamp (no-op).
+            // Otherwise just move focus one slot left.
+            if (fav_strip_focus_index_ == 0u) {
+                if (fav_strip_scroll_offset_ > 0u) {
+                    --fav_strip_scroll_offset_;
+                    // Keep focus pinned at slot 0; new tile slides in from the left.
+                }
+            } else {
                 --fav_strip_focus_index_;
             }
-            UL_LOG_INFO("qdesktop: dpad left (strip) slot=%zu", fav_strip_focus_index_);
+            UL_LOG_INFO("qdesktop: dpad left (strip) slot=%zu offset=%zu",
+                        fav_strip_focus_index_, fav_strip_scroll_offset_);
         } else {
             if (dpad_focus_index_ > 0u) {
                 --dpad_focus_index_;
@@ -3583,12 +3758,26 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
     }
     if ((keys_down & HidNpadButton_Right) || repeat_right) {
         if (fav_strip_focus_index_ != SIZE_MAX) {
-            // Bug #4 fix (v1.8): in strip → move right within strip
-            // (clamp at FAV_STRIP_VISIBLE-1).
-            if (fav_strip_focus_index_ + 1u < FAV_STRIP_VISIBLE) {
+            // v1.8.25: at rightmost visible slot AND more favorites exist past the
+            // window → scroll right (keep focus pinned at rightmost slot, shift
+            // offset so a new tile slides in from the right).
+            // At rightmost slot with no more items → clamp (no-op).
+            // Otherwise just move focus one slot right.
+            const size_t fav_count = g_favorites_list_.size();
+            const size_t rightmost = static_cast<size_t>(FAV_STRIP_VISIBLE) - 1u;
+            if (fav_strip_focus_index_ >= rightmost) {
+                // Already at the rightmost visible slot.
+                if (fav_strip_scroll_offset_ + FAV_STRIP_VISIBLE < fav_count) {
+                    ++fav_strip_scroll_offset_;
+                    // Keep focus pinned at rightmost slot.
+                    fav_strip_focus_index_ = rightmost;
+                }
+                // else: no more items — clamp (no-op).
+            } else {
                 ++fav_strip_focus_index_;
             }
-            UL_LOG_INFO("qdesktop: dpad right (strip) slot=%zu", fav_strip_focus_index_);
+            UL_LOG_INFO("qdesktop: dpad right (strip) slot=%zu offset=%zu",
+                        fav_strip_focus_index_, fav_strip_scroll_offset_);
         } else {
             const size_t max_idx = kDesktopFolderCount + BUILTIN_ICON_COUNT - 1u;
             if (dpad_focus_index_ < max_idx) {

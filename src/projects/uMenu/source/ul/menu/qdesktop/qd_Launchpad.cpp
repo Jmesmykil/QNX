@@ -65,6 +65,7 @@ bool IsFavoriteByLpItem(const LpItem &item);
 QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
     : theme_(theme),
       is_open_(false),
+      closed_(false),  // B68 (v1.8.27): idempotent Close() guard; false = not yet closed.
       pending_launch_(false),
       pending_launch_from_mouse_(false),
       desktop_icons_ptr_(nullptr),
@@ -81,7 +82,6 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
       page_index_(0),    // F10 (stabilize-5): pagination
       page_count_(1),    // F10 (stabilize-5): pagination
       // v1.8.18: icon_cache_ removed; using GetSharedIconCache() singleton.
-      folder_bucket_count_{},  // A-4 (v1.7.2): zero-init; populated in RebuildFilter()
       // v1.8.24 F-2: status-bar counters; zero-init; populated in RebuildFilter().
       status_counts_{},
       // v1.8.24 F-3: search bar texture cache; null until first render in Open().
@@ -89,7 +89,8 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
       search_bar_cached_text_(),
       search_bar_caret_visible_(false),
       // v1.8.24 F-4: hot-corner Q glyph; rendered once in Open(), freed in Close()/dtor.
-      q_glyph_tex_(nullptr)
+      q_glyph_tex_(nullptr),
+      folder_bucket_count_{}  // A-4 (v1.7.2): zero-init; populated in RebuildFilter()
 {
     // items_, filtered_idxs_, query_ default-initialise to empty.
     // Texture vectors start empty; slots are pushed in Open().
@@ -459,6 +460,7 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     // RebuildFilter).
 
     is_open_ = true;
+    closed_  = false;  // B68 (v1.8.27): re-arm idempotent guard for this cycle.
 
     // Count by category for the log line.
     size_t nintendo_count = 0u, homebrew_count = 0u,
@@ -486,6 +488,10 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
 // ── Close ─────────────────────────────────────────────────────────────────────
 
 void QdLaunchpadElement::Close() {
+    // B68 (v1.8.27): idempotent guard — second call during Finalize is a no-op.
+    if (closed_) return;
+    closed_ = true;
+
     // v1.8.23 Option C: reap the background prewarm thread BEFORE
     // FreeAllTextures() / items_.clear() — the thread reads icon_tex_ and
     // items_, so destroying those out from under it would be UB.
@@ -1804,7 +1810,10 @@ void QdLaunchpadElement::PaintStatusLine(SDL_Renderer *r,
         const s32 sy = 1080 - sh - 8;
         SDL_Rect sd { sx, sy, sw, sh };
         SDL_RenderCopy(r, st, nullptr, &sd);
-        SDL_DestroyTexture(st);
+        // v1.8.25.1: B41/B42 cache contract — st is RenderText-cache-owned.
+        // Use DeleteTexture so the LRU map drops the entry; raw SDL_DestroyTexture
+        // here leaked a stale pointer per frame, blowing up on eventual eviction.
+        pu::ui::render::DeleteTexture(st);
     }
 }
 

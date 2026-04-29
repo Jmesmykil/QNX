@@ -14,6 +14,8 @@
 #include <ul/menu/qdesktop/qd_Curve.hpp>
 #include <ul/menu/qdesktop/qd_RecordsBin.hpp>
 #include <ul/menu/qdesktop/qd_HomeMiniMenu.hpp>
+#include <ul/menu/qdesktop/qd_HelpOverlay.hpp>
+#include <ul/menu/qdesktop/qd_FirstBootWelcome.hpp>
 #include <ul/menu/bt/bt_Manager.hpp>
 #include <unordered_map>
 #endif
@@ -1106,6 +1108,15 @@ namespace ul::menu::ui {
 
     void MainMenuLayout::OnMenuInput(const u64 keys_down, const u64 keys_up, const u64 keys_held, const pu::ui::TouchPoint touch_pos) {
 #ifdef QDESKTOP_MODE
+        // v1.8.27: first-boot welcome overlay consumes all input while visible.
+        // Any button dismisses it (HandleInput returns true); no other handler
+        // runs until the overlay has been closed and the flag file written.
+        if (this->first_boot_welcome_.IsOpen()) {
+            this->first_boot_welcome_.HandleInput(keys_down);
+            (void)keys_up; (void)keys_held; (void)touch_pos;
+            return;
+        }
+
         // qdesktop input is dispatched to child elements (QdDesktopIconsElement,
         // future QdCursor/HUD/Launchpad) by Plutonium's own per-element OnInput
         // chain.  This layout-level handler intentionally does nothing — the
@@ -1408,11 +1419,33 @@ namespace ul::menu::ui {
                 this->qdesktop_bt_top_icon->SetVisible(bt_now);
             }
         }
+
+        // v1.8.27: render the first-boot welcome overlay on top of every other
+        // layer.  OnMenuUpdate() is called once per frame by MenuApplication
+        // after Plutonium has blitted all elements, so blitting here puts the
+        // overlay at the highest Z-order (same pattern as QdHelpOverlay in
+        // QdDesktopIconsElement::OnRender).
+        if (this->first_boot_welcome_.IsOpen()) {
+            SDL_Renderer *r = pu::ui::render::GetMainRenderer();
+            if (r != nullptr) {
+                this->first_boot_welcome_.Render(r);
+            }
+        }
 #endif
     }
 
     bool MainMenuLayout::OnHomeButtonPress() {
 #ifdef QDESKTOP_MODE
+        // v1.8.25: Home + Capture (Share) → open the help overlay.  The Capture
+        // button's held state is tracked every frame by QdDesktopIconsElement::OnInput
+        // via SetCaptureHeld(); when Home fires we read it here and raise the
+        // open request that QdDesktopIconsElement::OnInput consumes on the next frame.
+        if (::ul::menu::qdesktop::IsCaptureHeld()) {
+            UL_LOG_INFO("qdesktop: Home + Capture detected → request help overlay");
+            ::ul::menu::qdesktop::RequestHelpOverlayOpen();
+            return true;  // swallow the Home press; do NOT run dev-menu / cursor-centre logic
+        }
+
         // Q OS desktop: Cycle D5 (SP4.12) — Home press is a deliberate no-op
         // beyond cursor recentering, except when pressed twice within a short
         // window. That second press inside the window is the dev-menu trigger.
@@ -1618,6 +1651,17 @@ namespace ul::menu::ui {
 
             this->qdesktop_icons->SetApplicationEntries(entries);
             this->qdesktop_icons->SetSpecialEntries(entries);
+        }
+
+        // v1.8.27: open the first-boot welcome overlay if this is the user's
+        // very first run (flag file absent).  Open() is safe to call here:
+        // the renderer is up, all Plutonium elements have been Add()ed, and
+        // the icon/wallpaper layers are already initialised above.
+        if (this->first_boot_welcome_.ShouldShow()) {
+            SDL_Renderer *r = pu::ui::render::GetMainRenderer();
+            if (r != nullptr) {
+                this->first_boot_welcome_.Open(r);
+            }
         }
 #endif
     }

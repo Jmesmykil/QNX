@@ -283,6 +283,9 @@ private:
     // ── State ─────────────────────────────────────────────────────────────────
     QdTheme                 theme_;
     bool                    is_open_;
+    // B68 (v1.8.27): idempotent Close() guard. True after first Close(); reset
+    // to false in Open() so each Open/Close cycle arms fresh. Object is reused.
+    bool                    closed_;
     bool                    pending_launch_;
     // Fix B (v1.6.12): distinguishes A (D-pad launch) from ZR (mouse launch)
     // so DispatchPendingLaunch can pick the correct index without changing the

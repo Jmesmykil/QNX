@@ -142,6 +142,10 @@ private:
     SortMode sort_mode_      = SortMode::ByName;
     bool     show_dotfiles_  = false;
 
+    // Bottom hint bar texture — rendered once in ctor, freed in dtor.
+    // Displays keybind legend: "B / + Close  •  A Open  •  Y Sort  •  Up/Down Navigate"
+    SDL_Texture *hint_bar_tex_;
+
     // Cached SDL text textures for sidebar labels.
     // 6 sidebar entries, rendered once and reused.
     SDL_Texture *sidebar_tex_[SIDEBAR_ROOT_COUNT];

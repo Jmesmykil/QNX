@@ -7,6 +7,8 @@
 #include <pu/Plutonium>
 #include <pu/sdl2/sdl2_Types.hpp>
 #include <ul/menu/qdesktop/qd_Theme.hpp>
+#include <ul/menu/qdesktop/qd_HelpOverlay.hpp>
+#include <ul/menu/qdesktop/qd_Tooltip.hpp>
 #include <ul/menu/qdesktop/qd_IconCache.hpp>
 #include <ul/menu/qdesktop/qd_NroAsset.hpp>
 #include <ul/menu/qdesktop/qd_IconCategory.hpp>
@@ -393,8 +395,12 @@ private:
     // SIZE_MAX = "not in favorites strip mode".  Set to 0..FAV_STRIP_VISIBLE-1
     // when Up is pressed from dpad_focus_index_==0 (folder row 0); set back to
     // SIZE_MAX when Down is pressed from the strip (returns to folder row 0).
-    // Left/Right wrap within the visible strip slots.
+    // Left/Right wrap within the visible strip slots; at edges the strip scrolls.
     size_t fav_strip_focus_index_;
+    // v1.8.25: index into g_favorites_list_ of the leftmost visible strip tile.
+    // Strip renders favorites [scroll_offset_ .. scroll_offset_ + FAV_STRIP_VISIBLE).
+    // Reset to 0 in the constructor and whenever the strip layout is reset.
+    size_t fav_strip_scroll_offset_;
     size_t mouse_hover_index_;  // Cursor-hover icon; mutated only by cursor hit-test (ZR path)
     // v1.8.18: cache_ removed — replaced by GetSharedIconCache() singleton so
     // Desktop and Launchpad share one QdIconCache object.
@@ -688,6 +694,17 @@ private:
     // so no public accessors (which would widen the API surface for all callers)
     // are needed.
     friend class QdLaunchpadElement;
+
+    // v1.8.25: help overlay (Home + Capture/Share trigger).  pending_open_help_
+    // is set by OnInput when the trigger combo is detected; consumed by the
+    // next OnRender which has the SDL_Renderer* needed for Open().
+    QdHelpOverlay help_overlay_;
+    bool          pending_open_help_ = false;
+
+    // v1.8.27: shared hover tooltip — reused for dock icon labels and
+    // desktop folder "Name (N)" labels. One instance; only one tooltip
+    // visible at a time (dock/folder focus is mutually exclusive).
+    QdTooltip tooltip_;
 };
 
 } // namespace ul::menu::qdesktop

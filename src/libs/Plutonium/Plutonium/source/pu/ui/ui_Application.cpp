@@ -4,7 +4,21 @@ namespace pu::ui {
 
     void Application::OnRender() {
         this->LockRender();
+
+        // v1.8.1 input fix: single padUpdate() per frame (reverts v1.8 2x-poll).
+        //
+        // The v1.8 "Hekate pattern 4" double-poll called UpdateInput() (which calls
+        // padUpdate() internally) twice per OnRender().  libnx's padGetButtonsDown()
+        // returns the set of buttons that transitioned UP→DOWN *since the last
+        // padUpdate()*.  The second padUpdate() call cleared the down-accumulator
+        // that the first call had just populated.  keys_down (captured after both
+        // calls) therefore reflected only events that arrived in the sub-millisecond
+        // window between the two calls — effectively nothing.  Result: L/R page-
+        // bumper presses silently dropped, all discrete button input unreliable,
+        // general input sluggishness.  Reverted to 1x per LRU-Recalibrate companion
+        // recommendation and per Input-Speed-Audit root-cause diagnosis.
         this->renderer->UpdateInput();
+
         const auto keys_down = this->GetButtonsDown();
         const auto keys_up = this->GetButtonsUp();
         const auto keys_held = this->GetButtonsHeld();
@@ -26,6 +40,11 @@ namespace pu::ui {
                 (u32)((double)tch_state.touches[0].x * render::ScreenFactor),
                 (u32)((double)tch_state.touches[0].y * render::ScreenFactor)
             };
+            // Task D — touch activity resets the cursor-hide idle timer.
+            // Button presses are handled inside UpdateInput(); touch requires a
+            // separate notification because it comes from HID touch state rather
+            // than from padUpdate().
+            this->renderer->NotifyTouchActivity();
         }
         const auto sim_tch_pos = this->lyt->ConsumeSimulatedTouchPosition();
         if(!sim_tch_pos.IsEmpty()) {
@@ -147,6 +166,11 @@ namespace pu::ui {
         this->fade_bg_tex = {};
         this->fade_bg_clr = { 0, 0, 0, 0xFF };
         rmutexInit(&this->render_lock);
+        // Task A/B — zero-init USB HID state; hidInitializeMouse/Keyboard called in Load()
+        this->usb_mouse_state_ = {};
+        this->usb_kbd_state_ = {};
+        this->usb_mouse_cursor_x_ = 0;
+        this->usb_mouse_cursor_y_ = 0;
     }
 
     Application::~Application() {
@@ -155,6 +179,14 @@ namespace pu::ui {
 
     Result Application::Load() {
         PU_RC_TRY(this->renderer->Initialize());
+
+        // Task A — USB mouse: register the HID mouse service client once, after the renderer
+        // initializes its own HID pad services.  hidInitializeMouse() is idempotent (safe to
+        // call multiple times per libnx convention) and returns void — no error to propagate.
+        hidInitializeMouse();
+
+        // Task B — USB keyboard: same contract as hidInitializeMouse().
+        hidInitializeKeyboard();
 
         if(!this->loaded) {
             this->OnLoad();

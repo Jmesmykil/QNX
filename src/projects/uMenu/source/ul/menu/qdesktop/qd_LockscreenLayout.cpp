@@ -111,12 +111,12 @@ QdLockscreenElement::QdLockscreenElement(const QdTheme &theme)
 QdLockscreenElement::~QdLockscreenElement() {
     UL_LOG_INFO("lockscreen: QdLockscreenElement dtor");
     // Destroy all cached textures.
-    if (time_tex_)   { SDL_DestroyTexture(time_tex_);   time_tex_   = nullptr; }
-    if (date_tex_)   { SDL_DestroyTexture(date_tex_);   date_tex_   = nullptr; }
-    if (name_tex_)   { SDL_DestroyTexture(name_tex_);   name_tex_   = nullptr; }
-    if (uid_tex_)    { SDL_DestroyTexture(uid_tex_);    uid_tex_    = nullptr; }
-    if (hint_tex_)   { SDL_DestroyTexture(hint_tex_);   hint_tex_   = nullptr; }
-    if (status_tex_) { SDL_DestroyTexture(status_tex_); status_tex_ = nullptr; }
+    pu::ui::render::DeleteTexture(time_tex_);
+    pu::ui::render::DeleteTexture(date_tex_);
+    pu::ui::render::DeleteTexture(name_tex_);
+    pu::ui::render::DeleteTexture(uid_tex_);
+    pu::ui::render::DeleteTexture(hint_tex_);
+    pu::ui::render::DeleteTexture(status_tex_);
 }
 
 // ── UpdateTimeStrings ─────────────────────────────────────────────────────────
@@ -187,8 +187,7 @@ void QdLockscreenElement::BlitCentred(SDL_Renderer *r,
                                       s32 centre_y)
 {
     if (rebuild_tex && tex_ptr != nullptr) {
-        SDL_DestroyTexture(tex_ptr);
-        tex_ptr = nullptr;
+        pu::ui::render::DeleteTexture(tex_ptr);
     }
     if (tex_ptr == nullptr && text[0] != '\0') {
         tex_ptr = pu::ui::render::RenderText(font_path, std::string(text), clr);

@@ -55,20 +55,9 @@ namespace ul::menu::ui {
             this->qd_wallpaper = qdesktop::QdWallpaperElement::New(qdt);
             this->Add(this->qd_wallpaper);
 
-            // ── 2. "Q OS" brand — programmatic SDL_Texture*, lazy-rasterised on
-            //    first render frame via EnsureBrandingTextures().  No upstream
-            //    romfs:/Logo.png loaded; qd_brand_tex_ is nullptr until then.
-            // (nothing to construct here — rendered directly in OnMenuUpdate)
-
-            // ── 3. "Q OS" wordmark below brand ───────────────────────────────
-            // Approximate centre; exact x depends on rendered text width.
-            // TextBlock anchors at top-left, so we offset by ~half of the
-            // expected rendered width.  The theme's large size is ~48 px.
-            this->qd_wordmark = pu::ui::elm::TextBlock::New(0, 420, "Q OS");
-            this->qd_wordmark->SetColor(g_MenuApplication->GetTextColor());
-            this->qd_wordmark->SetFont(pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large));
-            g_GlobalSettings.ApplyConfigForElement("startup_menu", "qd_wordmark", this->qd_wordmark);
-            this->Add(this->qd_wordmark);
+            // ── 2. "Q OS" brand — rendered per-frame into a local SDL_Texture* in
+            //    OnMenuUpdate() (v1.8.2 LRU fix: no stored member pointer).
+            // (nothing to construct here)
 
             // ── 4. Version string below wordmark ─────────────────────────────
             this->qd_version = pu::ui::elm::TextBlock::New(0, 478, UL_VERSION);
@@ -77,14 +66,15 @@ namespace ul::menu::ui {
             g_GlobalSettings.ApplyConfigForElement("startup_menu", "qd_version", this->qd_version);
             this->Add(this->qd_version);
 
-            // ── 5. Clock (top-right, mirrored from main_menu config slot) ────
-            this->InitializeTimeText(this->time_mtext, "main_menu", "time_text");
-            this->Add(this->time_mtext);
+            // ── 5. Clock (top-right, startup_menu config slot) ────────────
+            this->InitializeTimeText(this->time_mtext, "startup_menu", "time_text");
+            // NOTE: InitializeTimeText already calls this->Add(this->time_mtext) internally.
+            // Do NOT add a second this->Add() here — B49 duplicate removed.
 
             // ── 6. Date below clock ────────────────────────────────────────
             this->date_text = pu::ui::elm::TextBlock::New(0, 0, "...");
             this->date_text->SetColor(g_MenuApplication->GetTextColor());
-            g_GlobalSettings.ApplyConfigForElement("main_menu", "date_text", this->date_text);
+            g_GlobalSettings.ApplyConfigForElement("startup_menu", "date_text", this->date_text);
             this->Add(this->date_text);
 
             // ── 7. User cards (one per Switch account, centred horizontally) ─
@@ -333,26 +323,39 @@ namespace ul::menu::ui {
         this->UpdateDateText(this->date_text);
         this->RefreshDevToolLabels();
 
-        // Lazy-build brand + hints textures on the first frame when the
-        // renderer is up, then blit them every frame.
-        this->EnsureBrandingTextures();
-
+        // v1.8.2 LRU fix: brand and hints rendered per-frame into local ptrs.
         SDL_Renderer *r = pu::ui::render::GetMainRenderer();
         if(r != nullptr) {
-            // ── "Q OS" brand title ────────────────────────────────────────────
-            if(this->qd_brand_tex_ != nullptr) {
-                int bw = 0, bh = 0;
-                SDL_QueryTexture(this->qd_brand_tex_, nullptr, nullptr, &bw, &bh);
-                const SDL_Rect bdst { this->qd_brand_x_, this->qd_brand_y_, bw, bh };
-                SDL_RenderCopy(r, this->qd_brand_tex_, nullptr, &bdst);
+            // ── "Q OS" brand title (per-frame local) ──────────────────────────
+            {
+                const pu::ui::Color white { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+                SDL_Texture *brand_tex = pu::ui::render::RenderText(
+                    pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large),
+                    "Q OS", white);
+                if(brand_tex != nullptr) {
+                    int bw = 0, bh = 0;
+                    SDL_QueryTexture(brand_tex, nullptr, nullptr, &bw, &bh);
+                    const s32 brand_x = (1920 - bw) / 2;
+                    const SDL_Rect bdst { brand_x, 220, bw, bh };
+                    SDL_RenderCopy(r, brand_tex, nullptr, &bdst);
+                }
             }
 
-            // ── Controller hints bar (bottom of screen) ───────────────────────
-            if(this->qd_hints_tex_ != nullptr) {
-                int hw = 0, hh = 0;
-                SDL_QueryTexture(this->qd_hints_tex_, nullptr, nullptr, &hw, &hh);
-                const SDL_Rect hdst { this->qd_hints_x_, QD_HINTS_Y, hw, hh };
-                SDL_RenderCopy(r, this->qd_hints_tex_, nullptr, &hdst);
+            // ── Controller hints bar (per-frame local) ────────────────────────
+            {
+                const pu::ui::Color hint_clr { 0xFFu, 0xFFu, 0xFFu, 0xB3u };
+                const std::string hint_str =
+                    "← →  Select user        A  Log in        + Power      − Dev Tools";
+                SDL_Texture *hints_tex = pu::ui::render::RenderText(
+                    pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+                    hint_str, hint_clr, 1880u);
+                if(hints_tex != nullptr) {
+                    int hw = 0, hh = 0;
+                    SDL_QueryTexture(hints_tex, nullptr, nullptr, &hw, &hh);
+                    const s32 hints_x = (1920 - hw) / 2;
+                    const SDL_Rect hdst { hints_x, QD_HINTS_Y, hw, hh };
+                    SDL_RenderCopy(r, hints_tex, nullptr, &hdst);
+                }
             }
         }
 #endif
@@ -406,57 +409,10 @@ namespace ul::menu::ui {
 #ifdef QDESKTOP_MODE
 
     StartupMenuLayout::~StartupMenuLayout() {
-        if(this->qd_brand_tex_ != nullptr) {
-            SDL_DestroyTexture(this->qd_brand_tex_);
-            this->qd_brand_tex_ = nullptr;
-        }
-        if(this->qd_hints_tex_ != nullptr) {
-            SDL_DestroyTexture(this->qd_hints_tex_);
-            this->qd_hints_tex_ = nullptr;
-        }
-    }
-
-    void StartupMenuLayout::EnsureBrandingTextures() {
-        // Both textures are nullptr until the renderer is live (first OnMenuUpdate
-        // frame).  After that they're never rebuilt — freed only in the destructor.
-
-        if(this->qd_brand_tex_ == nullptr) {
-            // "Q OS" in white at the largest available registered font size (45pt).
-            const pu::ui::Color white { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-            this->qd_brand_tex_ = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Large),
-                "Q OS", white);
-            if(this->qd_brand_tex_ != nullptr) {
-                int bw = 0, bh = 0;
-                SDL_QueryTexture(this->qd_brand_tex_, nullptr, nullptr, &bw, &bh);
-                // Centre horizontally on 1920-wide screen; y already set to 220.
-                this->qd_brand_x_ = (1920 - bw) / 2;
-                UL_LOG_INFO("qdesktop: brand tex %dx%d x=%d y=%d",
-                            bw, bh, this->qd_brand_x_, this->qd_brand_y_);
-            } else {
-                UL_LOG_WARN("qdesktop: brand tex RenderText returned nullptr");
-            }
-        }
-
-        if(this->qd_hints_tex_ == nullptr) {
-            // Controller-hint bar: soft-white (70% alpha) at Small font size.
-            const pu::ui::Color hint_clr { 0xFFu, 0xFFu, 0xFFu, 0xB3u };
-            // Unicode left/right arrows + A glyph, readable on any TTF font:
-            const std::string hint_str =
-                "\u2190 \u2192  Select user        A  Log in        + Power      \u2212 Dev Tools";
-            this->qd_hints_tex_ = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-                hint_str, hint_clr, 1880u);  // soft cap 20px margin each side
-            if(this->qd_hints_tex_ != nullptr) {
-                int hw = 0, hh = 0;
-                SDL_QueryTexture(this->qd_hints_tex_, nullptr, nullptr, &hw, &hh);
-                this->qd_hints_x_ = (1920 - hw) / 2;
-                UL_LOG_INFO("qdesktop: hints tex %dx%d x=%d y=%d",
-                            hw, hh, this->qd_hints_x_, QD_HINTS_Y);
-            } else {
-                UL_LOG_WARN("qdesktop: hints tex RenderText returned nullptr");
-            }
-        }
+        // v1.8.2 LRU fix: qd_brand_tex_ and qd_hints_tex_ were removed from the
+        // header (they held cache-owned SDL_Texture* -- destroying them was a
+        // double-free).  All branding text is now rendered per-frame into local
+        // SDL_Texture* variables; the LRU cache owns their lifetimes.
     }
 
     void StartupMenuLayout::onUserSelected(const AccountUid uid) {

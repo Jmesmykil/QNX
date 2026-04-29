@@ -29,7 +29,7 @@
 // Mirror of the IconKind / IconCategory / NroCategory enums (u8 underlying).
 namespace mirror {
     enum class IconCategory : u8 {
-        Nintendo = 0, Homebrew = 1, Extras = 2, Payloads = 3, Builtin = 4,
+        Nintendo = 0, Homebrew = 1, Extras = 2, Builtin = 3,  // v1.8.10: Payloads removed
     };
     enum class NroCategory : u8 {
         Emulator = 0, FileManager = 1, SystemTool = 2, Utility = 3,

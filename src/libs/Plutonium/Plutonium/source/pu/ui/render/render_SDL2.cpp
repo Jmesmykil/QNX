@@ -57,7 +57,13 @@ namespace pu::ui::render {
 
     void DeleteTexture(sdl2::Texture &texture) {
         if(texture != nullptr) {
-            SDL_DestroyTexture(texture);
+            if(!IsCacheOwnedTexture(texture)) {
+                SDL_DestroyTexture(texture);
+            }
+            // Cache-owned pointers are managed by the cache. They will be
+            // destroyed at the next frame boundary via the deferred-destroy
+            // queue (after LRU eviction). Setting texture=nullptr here is
+            // correct — callers must not reuse the pointer either way.
             texture = nullptr;
         }
     }

@@ -9,7 +9,7 @@ namespace ul::menu::qdesktop {
 
 // NRO ASET icon extraction constants.
 // All values confirmed against nro_asset.rs v1.1.12.
-static constexpr size_t NRO_OFFSET_NRO_SIZE   = 0x28; // v1.1.12 fix: 0x10 base + 0x18 field
+static constexpr size_t NRO_OFFSET_NRO_SIZE   = 0x18; // v1.8.17 B65: file offset; NroStart 0x10 base + size@0x08 in NroHeader = 0x18 (absolute)
 static constexpr size_t ASET_HEADER_SIZE       = 0x38;
 static constexpr size_t MAX_JPEG_BYTES         = 4 * 1024 * 1024;
 static constexpr size_t MAX_PIXEL_BYTES        = 512 * 512 * 4;
@@ -33,11 +33,11 @@ struct NroIconResult {
 };
 
 // Extract the 256×256 JPEG icon from the ASET section of an NRO file.
-// Falls back to DJB2-derived solid-color icon on any parse/decode failure.
+// Falls back to a flat #3A3A3A neutral-gray icon on any parse/decode failure.
 //
 // nro_path: null-terminated path on sdmc: (e.g. "sdmc:/switch/hbmenu.nro")
 //
-// Algorithm (from nro_asset.rs):
+// Algorithm:
 //   1. Read NRO header; verify NRO0 magic at hdr[0x10..0x14].
 //   2. nro_size = *(u32 *)(hdr + NRO_OFFSET_NRO_SIZE)  [little-endian]
 //   3. Seek to nro_size; read ASET_HEADER_SIZE bytes.
@@ -47,8 +47,8 @@ struct NroIconResult {
 //   7. Seek to (nro_size + icon_off); read icon_size bytes of JPEG.
 //   8. Decode JPEG with SDL2_image → SDL_Surface; convert to RGBA.
 // Fallback:
-//   9. DJB2-hash the nro_path bytes; hue = hash % 360; HSL(hue,0.55,0.40) → RGB.
-//  10. Allocate 64×64 solid-color RGBA buffer.
+//   9. Allocate 64×64 RGBA buffer filled with solid #3A3A3A (R=0x3A G=0x3A B=0x3A A=0xFF).
+//      (Previous DJB2/HSL color-derivation removed; neutral gray avoids palette noise.)
 //
 // Returns NroIconResult with valid=true on success, valid=false on failure.
 NroIconResult ExtractNroIcon(const char *nro_path);

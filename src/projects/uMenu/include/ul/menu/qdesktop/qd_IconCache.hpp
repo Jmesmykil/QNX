@@ -1,9 +1,20 @@
 // qd_IconCache.hpp — LRU icon cache for uMenu C++ SP1 (v1.1.12).
 // Ported from tools/mock-nro-desktop-gui/src/icon_cache.rs.
+//
+// v1.8.18: GetSharedIconCache() / GetSharedIconCacheMutex() provide the
+// process-wide singleton shared between Desktop and Launchpad.
+// v1.8.20 Change 4: LoadFromDisk / SaveToDisk persist the full in-memory LRU
+// as a single binary blob at sdmc:/ulaunch/cache/icons.bgra so icons survive
+// across sessions without re-extracting NROs.  Both use kernel IPC (fsFsOpenFile /
+// fsFileRead / fsFileWrite) rather than the fsdev POSIX shim.
 #pragma once
 #include <pu/Plutonium>
+#include <switch/runtime/devices/fs_dev.h>
 #include <array>
+#include <mutex>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace ul::menu::qdesktop {
 
@@ -23,8 +34,13 @@ static constexpr size_t MEM_CACHE_CAP      = 128;
 // F5 (stabilize-5): RC-B4 — directory bumped to "qos-icon-cache-v3" to invalidate
 // any stale gray-block entries from builds where nsextGetApplicationControlData
 // was returning 0x196002 (all NS icons landed as gray blobs in v2).
+// v1.8.22g B66 root cause: directory bumped to "qos-icon-cache-v4" to invalidate
+// stale gray-block entries written by v1.8.21/v1.8.22b LoadJpegIconToCache::do_fallback
+// for romfs:/ keyed payload icons. Get() reads these on a fresh process, returns
+// the gray, displaces the v1.8.22d 2a-romfs LoadImageFromFile lazy load. v3 files
+// stay on SD and can be deleted at leisure.
 // EnsureDir() also writes a generation.txt sentinel (see qd_IconCache.cpp).
-static constexpr const char ICON_CACHE_DIR[]        = "sdmc:/switch/qos-icon-cache-v3/";
+static constexpr const char ICON_CACHE_DIR[]        = "sdmc:/switch/qos-icon-cache-v4/";
 static constexpr const char ICON_CACHE_GENERATION[] = "1";  // bump when on-disk format changes
 
 // Single LRU slot.
@@ -63,6 +79,18 @@ public:
     // Tick counter — incremented every frame by QdDesktopIconsElement.
     void AdvanceTick();
 
+    // v1.8.20 Change 4 — Bulk BGRA persistence.
+    // LoadFromDisk: called from constructor.  Reads the blob at `path` (format:
+    //   CacheFileHeader + N * (CacheEntryHeader + bgra_bytes)).
+    //   Returns false if file absent, corrupt, version-mismatch, or > 7 days old.
+    //   On success, populates entries_ and hash_index_ from the blob; tick_counter_
+    //   for loaded entries is set to 1 (distinct from 0 = invalid, but pre-dating
+    //   any frame-advance ticks from this session).
+    // SaveToDisk: called from destructor.  Writes all valid entries_ to `path`
+    //   using kernel IPC (fsFsOpenFile + fsFileWrite).  Silently ignores errors.
+    bool LoadFromDisk(const char *path);
+    void SaveToDisk(const char *path);
+
 protected:
     // ── Pure-logic helpers exposed to test shim via inheritance ───────────────
     // DJB2 path hash — u64 accumulator, wrapping mul as in icon_cache.rs.
@@ -77,11 +105,16 @@ protected:
     size_t LruSlot() const;
 
     // Find an existing slot by hash, returns MEM_CACHE_CAP if not found.
+    // v1.8.19: O(1) via hash_index_ unordered_map (was O(N) linear scan).
     size_t FindSlot(u64 hash) const;
 
 private:
     std::array<IconCacheEntry, MEM_CACHE_CAP> entries_;
     u64 tick_counter_;
+    // v1.8.19: parallel index maps DJB2 hash → entries_ slot index.
+    // Maintained by Put() (insert/update) and eviction in LruSlot() (erase stale key).
+    // Enables O(1) FindSlot() replacing the prior O(N) linear scan.
+    std::unordered_map<u64, size_t> hash_index_;
 
     // Build the on-disk filename for a hash.
     static std::string DiskPath(u64 hash);
@@ -92,5 +125,20 @@ private:
     // Write 64×64 BGRA to disk. Silently ignores write errors.
     void WriteToDisk(u64 hash, const u8 *bgra);
 };
+
+// ── Process-wide shared singleton (v1.8.18) ────────────────────────────────
+// Both QdDesktopIconsElement and QdLaunchpadElement share the same QdIconCache
+// and the same std::mutex via these two accessors.  All Get/Put callers MUST
+// hold GetSharedIconCacheMutex() for the duration of the call.
+QdIconCache& GetSharedIconCache();
+std::mutex&  GetSharedIconCacheMutex();
+
+// ── Negative-extract cache accessor (v1.8.19) ──────────────────────────────
+// Per-session set of NRO paths for which ExtractNroIcon() returned invalid.
+// QdDesktopIconsElement::LoadNroIconToCache() checks this at entry; if the
+// path is present, it returns false immediately (no disk I/O, no ASET parse).
+// On extraction failure the path is inserted.  Lifetime: static storage
+// duration, same as GetSharedIconCache().
+std::unordered_set<std::string>& GetFailedExtractPaths();
 
 } // namespace ul::menu::qdesktop

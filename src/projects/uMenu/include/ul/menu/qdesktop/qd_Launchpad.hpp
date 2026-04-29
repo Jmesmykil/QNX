@@ -77,6 +77,8 @@
 #include <string>
 #include <vector>
 #include <cstddef>
+#include <atomic>   // v1.8.23 Option C: lp_prewarm_stop_ flag (mirrors qd_DesktopIcons.hpp)
+#include <thread>   // v1.8.23 Option C: lp_prewarm_thread_ background prewarm
 
 namespace ul::menu::qdesktop {
 
@@ -93,19 +95,27 @@ namespace ul::menu::qdesktop {
 // LP_GRID_Y=144 placed cells 30 px INSIDE the strip; All / SystemUtil / etc.
 // filter tiles overlapped the first row of icons (creator HW report).  Cull
 // at y=1032 still leaves 5 rows visible (row 4 bottom = 990 < 1032), so
-// LP_ROWS=5 / LP_ITEMS_PER_PAGE=50 are unchanged.
+// D-1 (v1.7.2.2): LP_ROWS = 5 → 4 (LP_ITEMS_PER_PAGE auto-derives 50 → 40).
+//   Resolves the LP_ITEMS_PER_PAGE=50 vs MAX_ICONS=48 mismatch flagged by
+//   OPT-2 B1: with page=50 and content cap=48, page 1 was permanently
+//   unreachable and the pagination loop allocated dead LpItem structs every
+//   Open() call.  Shrinking the page (40) lets the 48-item content cap
+//   trigger a meaningful 2-page split (40 + 8) — L/R page nav becomes
+//   reachable, page indicator dots fire correctly (MNR §28).
+//   MAX_ICONS=48 is preserved (touching it would resize 5+ desktop-side
+//   std::array<...> members in qd_DesktopIcons.hpp; out of scope here).
 // Search bar and hot-corner are spec-defined values from the task.
 
 constexpr s32 LP_COLS          = 10;
-// F10 (stabilize-5): explicit row count so Items-Per-Page is a constant, not
-// derived at runtime.  5 rows × 10 cols = 50 items per page.
-// Derivation (post-stabilize-7.1): usable height = 1080 - LP_GRID_Y(192) -
+// D-1 (v1.7.2.2): explicit row count so Items-Per-Page is a constant, not
+// derived at runtime.  4 rows × 10 cols = 40 items per page.
+// Derivation (post-stabilize-7.1, post-D-1): usable height = 1080 - LP_GRID_Y(192) -
 // status_line(40) = 848 px.  Each row = LP_CELL_H(150) + LP_GAP_Y(12) = 162 px.
-// 848 / 162 = 5.23 → 5.  Row 5 (0-indexed) would start at y=192+810=1002;
-// bottom=1152 > 1032 cull → clips.  Row 4 bottom = 192+4*162+150 = 990
-// → fully visible.  5 rows is the safe maximum (unchanged from pre-fix).
-constexpr s32 LP_ROWS          = 5;
-constexpr size_t LP_ITEMS_PER_PAGE = static_cast<size_t>(LP_COLS * LP_ROWS);  // 50
+// 4 × 162 = 648 px used; 848 - 648 = 200 px clearance below row 4 bottom
+// (y = 192 + 4*162 = 840) before the page-indicator dot row at y≈1040.
+// Row 3 (last in grid) bottom = 192 + 3*162 + 150 = 828 → fully visible.
+constexpr s32 LP_ROWS          = 4;
+constexpr size_t LP_ITEMS_PER_PAGE = static_cast<size_t>(LP_COLS * LP_ROWS);  // 40
 constexpr s32 LP_CELL_W        = 156;   // icon + label column width
 constexpr s32 LP_CELL_H        = 150;   // icon + label row height (incl. label)
 constexpr s32 LP_GAP_X         = 12;
@@ -320,6 +330,21 @@ private:
     // Open() does not immediately self-close on a still-down finger.
     bool                    lp_was_touch_active_last_frame_;
 
+    // v1.8 Input-source latch: mirrors QdDesktopIconsElement::active_input_source_.
+    // Launchpad maintains its own copy so OnInput can make source-sensitive
+    // decisions (e.g., A-press launches dpad-focused tile in DPAD mode or
+    // cursor-hovered tile in MOUSE mode) without touching the desktop element.
+    //
+    // Transition rules inside Launchpad:
+    //   D-pad Up/Down/Left/Right pressed → InputSource::DPAD
+    //   Touch tap OR mouse button (ZR) pressed → InputSource::MOUSE
+    //   A/B/X/Y/L/R/ZL/ZR do NOT change source on their own (A defers to
+    //   the current source to choose which index to launch).
+    //
+    // Initialized to DPAD (Switch is a gamepad-first device; no cursor on
+    // Launchpad open by default).
+    InputSource             active_input_source_;
+
     // F10 (stabilize-5): pagination state.
     // page_index_: 0-based current page (0 = first page).
     // page_count_: total pages = ceil(filtered_idxs_.size() / LP_ITEMS_PER_PAGE).
@@ -330,19 +355,35 @@ private:
     size_t                  page_index_;
     size_t                  page_count_;
 
-    // Per-slot cached text and icon textures; same pattern as DesktopIcons.
+    // Per-slot icon textures (NOT text — text is rendered per-frame locally).
     // Max LP items == MAX_ICONS == 48; vector index mirrors items_ index.
-    std::vector<SDL_Texture *> name_tex_;
-    std::vector<SDL_Texture *> glyph_tex_;
     std::vector<SDL_Texture *> icon_tex_;
     // True when the icon cache has been checked for this slot.
     std::vector<bool>          icon_loaded_;
+    // v1.8.22f: per-slot one-shot diagnostic log guard.
+    // v1.8.23 Option C: removed — diagnostic served its purpose; v1.8.22d
+    // 2a-romfs branch state is already proven by cumulative HW logs.
 
-    // Shared icon cache reference (borrowed; host owns QdIconCache lifetime).
-    // Set by Open() from the desktop_icons parameter.  Reset to nullptr on Close().
-    // We store a non-owning pointer; the cache lives in QdDesktopIconsElement
-    // which outlives all Launchpad open/close cycles.
-    QdIconCache                *icon_cache_;
+    // v1.8.18: icon_cache_ pointer removed.  PaintCell calls GetSharedIconCache()
+    // directly so Desktop and Launchpad always share the same QdIconCache object
+    // regardless of lifetime or initialisation order.
+
+    // A-4 (v1.7.2): per-bucket item counts for the auto-folder tile strip.
+    // Populated once in RebuildFilter() so OnRender() does not re-walk items_
+    // every frame.  Index mirrors kTopLevelFolders[]: bucket_count_[fi] holds
+    // the number of items whose StableId maps to kTopLevelFolders[fi].idx.
+    size_t                     folder_bucket_count_[kTopLevelFolderCount];
+
+    // ── v1.8.23 Option C: background Launchpad prewarm threading ──────────────
+    // Mirrors the v1.8.15 desktop-prewarm pattern in qd_DesktopIcons.hpp:
+    // synchronous prewarm in Open() blocked the user with a frozen menu for
+    // ~2000 ms (HW evidence).  Now the prewarm body runs on a background
+    // std::thread spawned at the end of Open() and reaped in Close()/destructor
+    // before any member destruction.  Stop polled per-iteration so join() is
+    // prompt.  Cache writes inside the prewarm helpers are serialised through
+    // GetSharedIconCacheMutex() (same mutex the desktop prewarm thread uses).
+    std::atomic<bool>          lp_prewarm_stop_{false};
+    std::thread                lp_prewarm_thread_;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     // Rebuild filtered_idxs_ from query_ and items_.  Called lazily.
@@ -400,6 +441,27 @@ private:
     // Renders a row of small circles centred horizontally above the status line.
     // The active page's dot is rendered bright; inactive dots are dim.
     void PaintPageDots(SDL_Renderer *r) const;
+
+    // ── v1.8.23 Option C: background prewarm helpers ─────────────────────────
+    // Runs the cache prewarm loop on the background thread.  Body relocated
+    // from QdLaunchpadElement::Open() (was inline at qd_Launchpad.cpp ~247-329
+    // in v1.8.22).  Polls lp_prewarm_stop_ between each item so the destructor
+    // / Close() join completes promptly.  Reads items_, icon_tex_, and
+    // desktop_icons_ptr_ — must be reaped before any of those are mutated.
+    void PrewarmLaunchpadIcons();
+
+    // Spawn the background prewarm thread.  Idempotent — guarded by
+    // lp_prewarm_thread_.joinable() so a duplicate call is a no-op.  Resets
+    // the stop flag to false before launching.  Called from the END of Open()
+    // after items_ + filtered_idxs_ + RebuildFilter() are complete, so the
+    // thread sees a fully-built snapshot.
+    void SpawnLpPrewarmThread();
+
+    // Set the stop flag and join the thread if it is running.  Idempotent.
+    // Called FIRST in Open() (before items_.clear() / FreeAllTextures), in
+    // Close() (before FreeAllTextures), and in the destructor (before any
+    // member destruction).  Mirrors QdDesktopIconsElement::StopPrewarmThread.
+    void StopLpPrewarmThread();
 };
 
 } // namespace ul::menu::qdesktop

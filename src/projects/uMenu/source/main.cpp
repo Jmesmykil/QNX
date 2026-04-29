@@ -168,6 +168,15 @@ namespace {
 
         UL_RC_ASSERT(setsysGetDeviceNickname(&g_GlobalSettings.nickname));
         UL_RC_ASSERT(setsysGetBatteryLot(&g_GlobalSettings.battery_lot));
+
+        // v1.8.10: pull system theme colour preference once at startup.
+        // appletInitialize() runs in __appInit before InitializeSettings, so
+        // appletGetThemeColorType() is safe to call here.  The libnx function
+        // returns the AppletThemeColorType value directly (not via Result+pointer),
+        // so we assign it unconditionally; on any unexpected state libnx returns
+        // AppletThemeColorType_Default (0) which is a safe sentinel.
+        g_GlobalSettings.theme_color_type = appletGetThemeColorType();
+        UL_LOG_INFO("InitializeSettings: theme_color_type=%d", static_cast<int>(g_GlobalSettings.theme_color_type));
     }
 
     void MainLoop() {

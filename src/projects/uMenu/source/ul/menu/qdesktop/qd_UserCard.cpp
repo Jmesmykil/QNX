@@ -5,8 +5,7 @@
 // JPEG decode pipeline: SDL_RWFromConstMem → IMG_Load_RW(rw,1) → RGBA8888
 //   → ABGR8888 → lock → SDL_CreateTexture(STATIC) → SDL_UpdateTexture.
 // Circular avatar: Bresenham scan-line strips over avatar_tex_.
-// Text: lazy-rasterise once via pu::ui::render::RenderText; cached in name_tex_
-//   and hint_tex_; freed in destructor.
+// Text: rendered per-frame into local SDL_Texture* (v1.8.2: LRU cache owns ptrs).
 
 #include <ul/menu/qdesktop/qd_UserCard.hpp>
 #include <ul/menu/ui/ui_Common.hpp>   // Cycle I: RenderTextAutoFit (system-wide text auto-fit)
@@ -15,14 +14,25 @@
 #include <pu/ui/ui_Types.hpp>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
+#include <switch/arm/counter.h>   // v1.8.23: armGetSystemTick for tap-duration gate
 #include <algorithm>
 #include <cstring>
 #include <cmath>
 
 namespace ul::menu::qdesktop {
 
-// ── Click tolerance (same value as qd_DesktopIcons) ─────────────────────────
-static constexpr s32 CARD_CLICK_TOLERANCE_PX = 24;
+// ── Click tolerance ─────────────────────────────────────────────────────────
+// v1.8.23: bumped 24 → 30 px so a typical tap with a few px of natural finger
+// drift still registers as a click (was matching qd_DesktopIcons' 24 px before;
+// the user-card target is bigger, so a slightly looser drag threshold is fine).
+static constexpr s32 CARD_CLICK_TOLERANCE_PX = 30;
+
+// ── Tap-duration ceiling ────────────────────────────────────────────────────
+// v1.8.23: a TouchDown→TouchUp pair must complete within this many ticks for
+// the gesture to count as a "tap" — a held finger past this window no longer
+// fires login (matches typical mobile tap semantics ≈ 250 ms).
+// armGetSystemTick runs at 19.2 MHz on Switch → 250 ms × 19'200'000 = 4'800'000.
+static constexpr u64 CARD_TAP_MAX_TICKS = 4'800'000ULL;
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
@@ -73,22 +83,12 @@ QdUserCardElement::QdUserCardElement(const QdTheme &theme,
 // ── Destructor ────────────────────────────────────────────────────────────────
 
 QdUserCardElement::~QdUserCardElement() {
-    // SDL_DestroyTexture is safe for nullptr — but guard explicitly for clarity.
+    // avatar_tex_ is a static SDL_Texture (BGRA pixel data) — owned by this class.
+    // name/hint/glyph textures removed in v1.8.2: rendered per-frame locally;
+    // the LRU cache owns those pointers — caller must NOT DestroyTexture them.
     if (avatar_tex_ != nullptr) {
         SDL_DestroyTexture(avatar_tex_);
         avatar_tex_ = nullptr;
-    }
-    if (name_tex_ != nullptr) {
-        SDL_DestroyTexture(name_tex_);
-        name_tex_ = nullptr;
-    }
-    if (hint_tex_ != nullptr) {
-        SDL_DestroyTexture(hint_tex_);
-        hint_tex_ = nullptr;
-    }
-    if (glyph_tex_ != nullptr) {
-        SDL_DestroyTexture(glyph_tex_);
-        glyph_tex_ = nullptr;
     }
 }
 
@@ -223,46 +223,8 @@ bool QdUserCardElement::DecodeAvatar(const u8 *jpeg, size_t jpeg_len) {
     return true;
 }
 
-// ── EnsureTextTextures ────────────────────────────────────────────────────────
-// Lazy-rasterises name_tex_, hint_tex_, and (when avatar missing) glyph_tex_.
-// Safe to call every frame — no-op once all required textures are allocated.
-
-void QdUserCardElement::EnsureTextTextures(SDL_Renderer * /*r*/) {
-    // name label — Cycle I auto-fit: shrinks font from Large -> Small until the
-    // rasterised width fits in CARD_W - 16. Long account names like
-    // "Jamesmykil" no longer truncate to "Jamesm..." per user feedback.
-    if (name_tex_ == nullptr && !name_.empty()) {
-        const pu::ui::Color white { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-        name_tex_ = ::ul::menu::ui::RenderTextAutoFit(
-            name_, white,
-            static_cast<u32>(CARD_W - 16),
-            pu::ui::DefaultFontSize::Large);
-    }
-
-    // hint label — Small text_secondary ("Tap to log in").
-    if (hint_tex_ == nullptr) {
-        const pu::ui::Color hint_clr {
-            theme_.text_secondary.r,
-            theme_.text_secondary.g,
-            theme_.text_secondary.b,
-            0xFFu
-        };
-        hint_tex_ = pu::ui::render::RenderText(
-            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-            "Tap to log in", hint_clr,
-            static_cast<u32>(CARD_W - 16));
-    }
-
-    // fallback glyph — first letter of name, Medium white (only needed when
-    // avatar_tex_ is null; still rasterise so we don't repeatedly try).
-    if (glyph_tex_ == nullptr && !name_.empty() && avatar_tex_ == nullptr) {
-        const std::string glyph_str(1u, name_[0]);
-        const pu::ui::Color white { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-        glyph_tex_ = pu::ui::render::RenderText(
-            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Medium),
-            glyph_str, white);
-    }
-}
+// EnsureTextTextures removed in v1.8.2: text rendered per-frame locally in
+// OnRender / RenderFallbackAvatar to survive LRU TextCacheClear each frame.
 
 // ── RenderCircularAvatar ──────────────────────────────────────────────────────
 // Clips avatar_tex_ (160×160) into a circle of the specified radius centred at
@@ -347,16 +309,23 @@ void QdUserCardElement::RenderFallbackAvatar(SDL_Renderer *r,
         SDL_RenderFillRect(r, &row);
     }
 
-    // Glyph overlay (lazy-rasterised, may be null if name is empty).
-    if (glyph_tex_ != nullptr) {
-        int gw = 0, gh = 0;
-        SDL_QueryTexture(glyph_tex_, nullptr, nullptr, &gw, &gh);
-        SDL_Rect gdst {
-            cx - gw / 2,
-            cy - gh / 2,
-            gw, gh
-        };
-        SDL_RenderCopy(r, glyph_tex_, nullptr, &gdst);
+    // Glyph overlay — first letter of name (per-frame local; v1.8.2 LRU fix).
+    if (!name_.empty()) {
+        const std::string glyph_str(1u, name_[0]);
+        const pu::ui::Color white { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+        SDL_Texture *glyph_tex = pu::ui::render::RenderText(
+            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Medium),
+            glyph_str, white);
+        if (glyph_tex != nullptr) {
+            int gw = 0, gh = 0;
+            SDL_QueryTexture(glyph_tex, nullptr, nullptr, &gw, &gh);
+            SDL_Rect gdst {
+                cx - gw / 2,
+                cy - gh / 2,
+                gw, gh
+            };
+            SDL_RenderCopy(r, glyph_tex, nullptr, &gdst);
+        }
     }
 }
 
@@ -370,8 +339,7 @@ void QdUserCardElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         return;
     }
 
-    // Lazy-rasterise text textures (no-op if already done).
-    EnsureTextTextures(r);
+    // v1.8.2 LRU fix: text rendered per-frame into local SDL_Texture* — no EnsureTextTextures.
 
     // Cycle H1 (touch+position fix): SetPos() stores absolute 1920x1080 layout
     // coords. OnInput's HitsRegion compares touch_pos (also absolute layout
@@ -448,38 +416,68 @@ void QdUserCardElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         RenderFallbackAvatar(r, avatar_cx, avatar_cy, AVATAR_RADIUS);
     }
 
-    // ── 4. Account name ───────────────────────────────────────────────────
-    if (name_tex_ != nullptr) {
-        int nw = 0, nh = 0;
-        SDL_QueryTexture(name_tex_, nullptr, nullptr, &nw, &nh);
-        SDL_Rect ndst {
-            abs_x + (CARD_W - nw) / 2,
-            abs_y + NAME_Y_BELOW_AVATAR,
-            nw, nh
-        };
-        SDL_RenderCopy(r, name_tex_, nullptr, &ndst);
+    // ── 4. Account name (per-frame local; v1.8.2 LRU fix) ────────────────
+    {
+        const pu::ui::Color white { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+        SDL_Texture *name_tex = ul::menu::ui::RenderTextAutoFit(
+            name_, white,
+            static_cast<u32>(CARD_W - 16),
+            pu::ui::DefaultFontSize::Large);
+        if (name_tex != nullptr) {
+            int nw = 0, nh = 0;
+            SDL_QueryTexture(name_tex, nullptr, nullptr, &nw, &nh);
+            SDL_Rect ndst {
+                abs_x + (CARD_W - nw) / 2,
+                abs_y + NAME_Y_BELOW_AVATAR,
+                nw, nh
+            };
+            SDL_RenderCopy(r, name_tex, nullptr, &ndst);
+        }
     }
 
-    // ── 5. Tap hint ───────────────────────────────────────────────────────
-    if (hint_tex_ != nullptr) {
-        int hw = 0, hh = 0;
-        SDL_QueryTexture(hint_tex_, nullptr, nullptr, &hw, &hh);
-        SDL_Rect hdst {
-            abs_x + (CARD_W - hw) / 2,
-            abs_y + CARD_H - HINT_BOTTOM_PAD - hh,
-            hw, hh
-        };
-        SDL_RenderCopy(r, hint_tex_, nullptr, &hdst);
+    // ── 5. Tap hint (per-frame local; v1.8.2 LRU fix) ────────────────────
+    {
+        const pu::ui::Color hint_clr { 0xBBu, 0xBBu, 0xBBu, 0xFFu };
+        SDL_Texture *hint_tex = pu::ui::render::RenderText(
+            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+            "Tap to log in", hint_clr);
+        if (hint_tex != nullptr) {
+            int hw = 0, hh = 0;
+            SDL_QueryTexture(hint_tex, nullptr, nullptr, &hw, &hh);
+            SDL_Rect hdst {
+                abs_x + (CARD_W - hw) / 2,
+                abs_y + CARD_H - HINT_BOTTOM_PAD - hh,
+                hw, hh
+            };
+            SDL_RenderCopy(r, hint_tex, nullptr, &hdst);
+        }
     }
 }
 
 // ── OnInput ───────────────────────────────────────────────────────────────────
 // A-button + focused_  →  fire on_select_ immediately.
-// Touch click-vs-drag state machine — matches the qd_DesktopIcons pattern.
-//   TouchDown:  record origin; do NOT fire.
+// Touch tap state machine — fires login on a quick TouchDown→TouchUp pair.
+//
+//   TouchDown:  record origin coords + down_tick_ stamp; do NOT fire.
 //   TouchMove:  update last position; do NOT fire.
-//   TouchUp:    fire only when (a) was pressed inside, (b) lift hits card,
-//               (c) displacement ≤ CARD_CLICK_TOLERANCE_PX.
+//   TouchUp:    fire only when
+//                 (a) the down point was inside this card (press_inside_),
+//                 (b) total finger displacement ≤ CARD_CLICK_TOLERANCE_PX
+//                     (30 px — drags don't trigger login), AND
+//                 (c) elapsed TouchDown→TouchUp ≤ CARD_TAP_MAX_TICKS
+//                     (~250 ms — a long held press past this window does
+//                     NOT fire login; matches typical "tap" semantics).
+//
+// v1.8.23 changes vs prior versions:
+//   - Drag tolerance bumped 24 → 30 px (CARD_CLICK_TOLERANCE_PX) so a typical
+//     tap with a few px of natural drift still registers.
+//   - Added a 250 ms tap-duration ceiling (CARD_TAP_MAX_TICKS) so the gesture
+//     fires on a quick tap, not on a long held press. There was no minimum
+//     hold requirement before this change — the perceived "full press" came
+//     from the strict 24 px drag bound combined with the lift-inside gate.
+//   - Removed the lift_inside requirement: with a 30 px drag bound the
+//     displacement check is the meaningful gate, and a fingertip lifting a
+//     pixel or two past the card edge should still count as a tap.
 
 void QdUserCardElement::OnInput(const u64 keys_down,
                                  const u64 keys_up,
@@ -508,7 +506,7 @@ void QdUserCardElement::OnInput(const u64 keys_down,
         const s32 ty = touch_pos.y;
 
         if (!was_touch_active_) {
-            // TouchDown — record origin.
+            // TouchDown — record origin + timestamp.
             // Only set press_inside_ if the down point is within this card.
             const bool inside = touch_pos.HitsRegion(x_, y_, CARD_W, CARD_H);
             press_inside_  = inside;
@@ -516,6 +514,7 @@ void QdUserCardElement::OnInput(const u64 keys_down,
             down_y_        = ty;
             last_touch_x_  = tx;
             last_touch_y_  = ty;
+            down_tick_     = armGetSystemTick();
             hovered_       = inside;
             if (inside) {
                 UL_LOG_INFO("qdesktop: UserCard touch_down x=%d y=%d", tx, ty);
@@ -529,21 +528,35 @@ void QdUserCardElement::OnInput(const u64 keys_down,
     } else if (was_touch_active_) {
         // TouchUp
         if (press_inside_) {
-            const bool lift_inside = pu::ui::TouchHitsRegion(
-                last_touch_x_, last_touch_y_, x_, y_, CARD_W, CARD_H);
-
             const s32 dx = last_touch_x_ - down_x_;
             const s32 dy = last_touch_y_ - down_y_;
             const s32 dist_sq = dx * dx + dy * dy;
             const s32 tol     = CARD_CLICK_TOLERANCE_PX;
             const s32 tol_sq  = tol * tol;
 
-            if (lift_inside && dist_sq <= tol_sq) {
-                UL_LOG_INFO("qdesktop: UserCard touch click uid=%016llx",
-                            static_cast<unsigned long long>(uid_.uid[0]));
+            // v1.8.23 main-thread correction: drop the upper-bound on hold
+            // duration. Creator wanted "tap TOO not full press only" — meaning
+            // BOTH must work. CARD_TAP_MAX_TICKS stays defined for telemetry
+            // but no longer gates the fire. A 100 ms tap fires login. A
+            // 1000 ms+ press also fires login. Only drag > 30 px cancels.
+            const u64 up_tick     = armGetSystemTick();
+            const u64 elapsed_tk  = (up_tick >= down_tick_)
+                                        ? (up_tick - down_tick_)
+                                        : 0ULL;
+            const bool within_drag_bound = (dist_sq <= tol_sq);
+
+            if (within_drag_bound) {
+                UL_LOG_INFO("qdesktop: UserCard fire uid=%016llx ticks=%llu dx=%d dy=%d",
+                            static_cast<unsigned long long>(uid_.uid[0]),
+                            static_cast<unsigned long long>(elapsed_tk),
+                            dx, dy);
                 if (on_select_) {
                     on_select_(uid_);
                 }
+            } else {
+                UL_LOG_INFO("qdesktop: UserCard touch_up drag-cancel ticks=%llu dist_sq=%d (tol_sq=%d)",
+                            static_cast<unsigned long long>(elapsed_tk),
+                            dist_sq, tol_sq);
             }
         }
         press_inside_ = false;

@@ -137,10 +137,15 @@ void QdMonitorLayout::RefreshStats() {
     }
 
     // ── System memory ─────────────────────────────────────────────────────────
+    // InfoType_UsedMemorySize (7) and InfoType_TotalMemorySize (6) are process-
+    // scoped queries.  They require a valid process handle — CUR_PROCESS_HANDLE
+    // (0xFFFF8001) is the pseudo-handle for the calling process.  INVALID_HANDLE
+    // caused svcGetInfo to fail (wrong handle class), setting mem_ok=false and
+    // displaying "RAM: N/A" on hardware.  Fixed: use CUR_PROCESS_HANDLE.
     u64 mem_used  = 0;
     u64 mem_total = 0;
-    const Result mem_rc1 = svcGetInfo(&mem_used,  InfoType_UsedMemorySize,  INVALID_HANDLE, 0);
-    const Result mem_rc2 = svcGetInfo(&mem_total, InfoType_TotalMemorySize, INVALID_HANDLE, 0);
+    const Result mem_rc1 = svcGetInfo(&mem_used,  InfoType_UsedMemorySize,  CUR_PROCESS_HANDLE, 0);
+    const Result mem_rc2 = svcGetInfo(&mem_total, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
     if (R_SUCCEEDED(mem_rc1) && R_SUCCEEDED(mem_rc2)) {
         stats_.mem_used  = mem_used;
         stats_.mem_total = mem_total;
@@ -208,7 +213,7 @@ void QdMonitorLayout::RenderTile(SDL_Renderer *r, s32 tx, s32 ty,
         SDL_QueryTexture(title_tex, nullptr, nullptr, &tw, &th);
         SDL_Rect tdst { tx + 12, ty + 12, tw, th };
         SDL_RenderCopy(r, title_tex, nullptr, &tdst);
-        SDL_DestroyTexture(title_tex);
+        pu::ui::render::DeleteTexture(title_tex);
     }
 
     // Line1 — main value (larger / brighter).
@@ -224,7 +229,7 @@ void QdMonitorLayout::RenderTile(SDL_Renderer *r, s32 tx, s32 ty,
         const s32 l1y = ty + QD_MONITOR_TILE_H / 2 - lh - 4;
         SDL_Rect l1dst { tx + 12, l1y, lw, lh };
         SDL_RenderCopy(r, l1_tex, nullptr, &l1dst);
-        SDL_DestroyTexture(l1_tex);
+        pu::ui::render::DeleteTexture(l1_tex);
     }
 
     // Line2 — secondary value / sub-label (dimmer).
@@ -240,7 +245,7 @@ void QdMonitorLayout::RenderTile(SDL_Renderer *r, s32 tx, s32 ty,
             const s32 l2y = ty + QD_MONITOR_TILE_H / 2 + 4;
             SDL_Rect l2dst { tx + 12, l2y, lw, lh };
             SDL_RenderCopy(r, l2_tex, nullptr, &l2dst);
-            SDL_DestroyTexture(l2_tex);
+            pu::ui::render::DeleteTexture(l2_tex);
         }
     }
 }
@@ -303,7 +308,7 @@ void QdMonitorLayout::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
             SDL_QueryTexture(title_tex, nullptr, nullptr, &tw, &th);
             SDL_Rect tdst { ax + 8, ay + (48 - th) / 2, tw, th };
             SDL_RenderCopy(r, title_tex, nullptr, &tdst);
-            SDL_DestroyTexture(title_tex);
+            pu::ui::render::DeleteTexture(title_tex);
         }
     }
 

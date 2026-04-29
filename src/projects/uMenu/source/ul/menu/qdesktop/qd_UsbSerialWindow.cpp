@@ -54,7 +54,7 @@ void QdUsbSerialWindow::SetPos(s32 x, s32 y) {
 
 void QdUsbSerialWindow::FreeTextures() {
     auto destroy = [](SDL_Texture *&t) {
-        if (t != nullptr) { SDL_DestroyTexture(t); t = nullptr; }
+        pu::ui::render::DeleteTexture(t);
     };
     destroy(tex_title_);
     destroy(tex_state_active_);
@@ -174,7 +174,7 @@ void QdUsbSerialWindow::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // Invalidate button label textures when state crosses Active/non-Active boundary.
     if (cur_state != last_state_) {
         auto destroy = [](SDL_Texture *&t) {
-            if (t != nullptr) { SDL_DestroyTexture(t); t = nullptr; }
+            pu::ui::render::DeleteTexture(t);
         };
         // State textures are all three built at once; only blow them if not yet built.
         destroy(tex_btn_enable_);

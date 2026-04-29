@@ -72,12 +72,10 @@ QdAboutElement::~QdAboutElement() {
 void QdAboutElement::FreeRowTextures() {
     for (size_t i = 0; i < ABOUT_ROW_COUNT; ++i) {
         if (rows_[i].label_tex) {
-            SDL_DestroyTexture(rows_[i].label_tex);
-            rows_[i].label_tex = nullptr;
+            pu::ui::render::DeleteTexture(rows_[i].label_tex);
         }
         if (rows_[i].value_tex) {
-            SDL_DestroyTexture(rows_[i].value_tex);
-            rows_[i].value_tex = nullptr;
+            pu::ui::render::DeleteTexture(rows_[i].value_tex);
         }
     }
 }
@@ -85,17 +83,14 @@ void QdAboutElement::FreeRowTextures() {
 void QdAboutElement::FreeStaticTextures() {
     for (size_t i = 0; i < SECTION_COUNT; ++i) {
         if (section_tex_[i]) {
-            SDL_DestroyTexture(section_tex_[i]);
-            section_tex_[i] = nullptr;
+            pu::ui::render::DeleteTexture(section_tex_[i]);
         }
     }
     if (logo_tex_) {
-        SDL_DestroyTexture(logo_tex_);
-        logo_tex_ = nullptr;
+        pu::ui::render::DeleteTexture(logo_tex_);
     }
     if (footer_tex_) {
-        SDL_DestroyTexture(footer_tex_);
-        footer_tex_ = nullptr;
+        pu::ui::render::DeleteTexture(footer_tex_);
     }
 }
 
@@ -128,7 +123,7 @@ void QdAboutElement::Refresh() {
 
     // ── Row 2: Firmware version ────────────────────────────────────────────
     snprintf(rows_[2].label, sizeof(rows_[2].label), "Firmware");
-    if (rows_[2].value[0] == '\0' || true) {
+    {
         // fw_version.display_version is a null-terminated char[0x10] string.
         const char *fwstr = g_GlobalSettings.fw_version.display_version;
         if (fwstr[0] != '\0') {
@@ -222,17 +217,64 @@ void QdAboutElement::Refresh() {
     // ── Row 8: Console nickname ────────────────────────────────────────────
     snprintf(rows_[8].label, sizeof(rows_[8].label), "Console name");
     {
-        // SetSysDeviceNickName.nickname is a 0x80-byte UTF-16LE buffer.
-        // Convert naively: copy ASCII-range bytes, skip high byte of each u16.
-        char nick[64] = {};
-        const u16 *u16src = reinterpret_cast<const u16 *>(
+        // SetSysDeviceNickName.nickname is a 0x80-byte (64 u16) UTF-16LE buffer.
+        // Decode to UTF-8.  The output buffer (rows_[8].value = char[128]) is
+        // large enough: 64 UTF-16 code units produce at most 192 UTF-8 bytes in
+        // the worst case, but the nickname field is documented as max 32
+        // characters (i.e. ≤ 32 code units before the null), so worst-case
+        // UTF-8 output is 32 × 4 = 128 bytes including the null terminator.
+        // Use a local 128-byte buffer and write at most 127 bytes + '\0'.
+        char nick[128] = {};
+        const u16 *src = reinterpret_cast<const u16 *>(
             g_GlobalSettings.nickname.nickname);
         size_t out = 0;
-        for (size_t i = 0; i < 32 && out < 63; ++i) {
-            const u16 ch = u16src[i];
-            if (ch == 0) break;
-            nick[out++] = (ch < 128) ? static_cast<char>(ch) : '?';
+        // Iterate over at most 32 code units (the documented field width).
+        for (size_t i = 0; i < 32; ++i) {
+            const u16 w0 = src[i];
+            if (w0 == 0) break;
+
+            u32 cp;
+            if (w0 >= 0xD800u && w0 <= 0xDBFFu) {
+                // High surrogate — consume the paired low surrogate.
+                const u16 w1 = src[i + 1];
+                if (w1 >= 0xDC00u && w1 <= 0xDFFFu) {
+                    cp = 0x10000u
+                         + (static_cast<u32>(w0 - 0xD800u) << 10)
+                         + static_cast<u32>(w1 - 0xDC00u);
+                    ++i; // skip the low surrogate on the next iteration
+                } else {
+                    // Unpaired high surrogate — emit U+FFFD replacement.
+                    cp = 0xFFFDu;
+                }
+            } else if (w0 >= 0xDC00u && w0 <= 0xDFFFu) {
+                // Lone low surrogate — emit U+FFFD replacement.
+                cp = 0xFFFDu;
+            } else {
+                cp = static_cast<u32>(w0);
+            }
+
+            // Encode cp as UTF-8; stop if the remaining buffer is too small.
+            if (cp < 0x80u) {
+                if (out + 1 > 127) break;
+                nick[out++] = static_cast<char>(cp);
+            } else if (cp < 0x800u) {
+                if (out + 2 > 127) break;
+                nick[out++] = static_cast<char>(0xC0u | (cp >> 6));
+                nick[out++] = static_cast<char>(0x80u | (cp & 0x3Fu));
+            } else if (cp < 0x10000u) {
+                if (out + 3 > 127) break;
+                nick[out++] = static_cast<char>(0xE0u | (cp >> 12));
+                nick[out++] = static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu));
+                nick[out++] = static_cast<char>(0x80u | (cp & 0x3Fu));
+            } else {
+                if (out + 4 > 127) break;
+                nick[out++] = static_cast<char>(0xF0u | (cp >> 18));
+                nick[out++] = static_cast<char>(0x80u | ((cp >> 12) & 0x3Fu));
+                nick[out++] = static_cast<char>(0x80u | ((cp >> 6) & 0x3Fu));
+                nick[out++] = static_cast<char>(0x80u | (cp & 0x3Fu));
+            }
         }
+        // nick[] is zero-initialised; out bytes written, nick[out] == '\0'.
         if (out == 0) {
             snprintf(rows_[8].value, sizeof(rows_[8].value), "n/a");
         } else {

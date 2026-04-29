@@ -37,8 +37,9 @@ namespace ul::menu::ui {
 
     // Cycle J-fix (system-wide text auto-fit, NO ELLIPSIS):
     // Renders text shrinking the font size progressively so the rasterised
-    // width fits within max_w pixels. Returns an owned SDL_Texture* (caller
-    // must SDL_DestroyTexture) or nullptr.
+    // width fits within max_w pixels. Returns a cache-owned SDL_Texture*
+    // (caller must release via pu::ui::render::DeleteTexture, NOT
+    // SDL_DestroyTexture directly) or nullptr.
     //
     // Size chain (largest -> smallest), skips entries larger than start_size:
     //   Built-in: Large(45) -> MediumLarge(37) -> Medium(30) -> Small(27)
@@ -86,10 +87,8 @@ namespace ul::menu::ui {
             int w = 0, h = 0;
             SDL_QueryTexture(tex, nullptr, nullptr, &w, &h);
             if (static_cast<u32>(w) <= max_w) {
-                if (last != nullptr) { SDL_DestroyTexture(last); }
                 return tex;
             }
-            if (last != nullptr) { SDL_DestroyTexture(last); }
             last = tex;
         }
         // Built-in chain exhausted — try the extra small sizes.
@@ -102,10 +101,8 @@ namespace ul::menu::ui {
             int w = 0, h = 0;
             SDL_QueryTexture(tex, nullptr, nullptr, &w, &h);
             if (static_cast<u32>(w) <= max_w) {
-                if (last != nullptr) { SDL_DestroyTexture(last); }
                 return tex;
             }
-            if (last != nullptr) { SDL_DestroyTexture(last); }
             last = tex;
         }
         // Even the smallest extra (14 px) overflowed. Return it anyway; small
@@ -226,6 +223,11 @@ namespace ul::menu::ui {
     }
 
     struct GlobalSettings {
+        // v1.8.10: system theme colour preference (Default/White vs Black/Dark).
+        // Pulled once at init via appletGetThemeColorType; render paths may read
+        // this in v1.8.11+ to auto-tint procedural elements.
+        AppletThemeColorType theme_color_type;
+
         SetSysFirmwareVersion fw_version;
         SetSysSerialNumber serial_no;
         SetSysSleepSettings sleep_settings;

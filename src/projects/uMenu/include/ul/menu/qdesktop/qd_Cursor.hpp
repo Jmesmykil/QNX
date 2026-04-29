@@ -18,8 +18,7 @@
 // API surface is identical to v1.0.0 (same public method signatures) so
 // qd_Input.cpp and ui_MainMenuLayout.cpp require zero changes.
 //
-// romfs:/ui/Main/OverIcon/Cursor.png is no longer loaded; do not delete that
-// file (it is out of scope for this element).
+// Cursor is drawn procedurally via SDL_RenderFillRect; no PNG asset is loaded.
 #pragma once
 #include <pu/Plutonium>
 #include <pu/sdl2/sdl2_Types.hpp>

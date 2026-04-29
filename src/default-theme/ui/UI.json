@@ -96,6 +96,16 @@
         "users_menu": {
             "y": 180,
             "h_align": "center"
+        },
+        "time_text": {
+            "x": 1508,
+            "y": 32,
+            "font_size": "medium"
+        },
+        "date_text": {
+            "x": 1284,
+            "y": 32,
+            "font_size": "medium"
         }
     },
     "themes_menu": {

@@ -154,12 +154,12 @@ QdSettingsElement::~QdSettingsElement() {
 
 void QdSettingsElement::FreeAllTextures() {
     for (auto &t : sidebar_tex_) {
-        if (t) { SDL_DestroyTexture(t); t = nullptr; }
+        if (t) { pu::ui::render::DeleteTexture(t); }
     }
     for (auto &t : detail_tex_) {
-        if (t) { SDL_DestroyTexture(t); t = nullptr; }
+        if (t) { pu::ui::render::DeleteTexture(t); }
     }
-    if (title_tex_) { SDL_DestroyTexture(title_tex_); title_tex_ = nullptr; }
+    if (title_tex_) { pu::ui::render::DeleteTexture(title_tex_); }
 }
 
 // ── Refresh: poll all live system data ────────────────────────────────────────
@@ -912,8 +912,8 @@ void QdSettingsElement::DoUserSwitch() {
             for (size_t i = 0; i < n; ++i) {
                 SDL_Texture *&lt = detail_tex_[base + i * 2 + 0];
                 SDL_Texture *&vt = detail_tex_[base + i * 2 + 1];
-                if (lt) { SDL_DestroyTexture(lt); lt = nullptr; }
-                if (vt) { SDL_DestroyTexture(vt); vt = nullptr; }
+                if (lt) { pu::ui::render::DeleteTexture(lt); }
+                if (vt) { pu::ui::render::DeleteTexture(vt); }
                 if (rows[i].label) {
                     lt = MakeText(rows[i].label, theme_.text_secondary);
                 }

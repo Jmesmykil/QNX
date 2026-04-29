@@ -2,6 +2,7 @@
 
 #include <ul/menu/qdesktop/qd_LaunchpadHostLayout.hpp>
 #include <ul/menu/ui/ui_MenuApplication.hpp>
+#include <ul/menu/ui/ui_IMenuLayout.hpp>
 #include <ul/ul_Result.hpp>
 #include <switch.h>  // HidNpadButton_B / HidNpadButton_Plus
 
@@ -29,8 +30,22 @@ namespace ul::menu::qdesktop {
         (void)keys_up;
         (void)keys_held;
         (void)touch_pos;
+
+        // First-frame open SFX: fires once per Launchpad session.  The flag is
+        // reset to false in every close path so the next Open() plays it again.
+        if(!this->sfx_open_played_) {
+            this->sfx_open_played_ = true;
+            if(this->launchpad_open_sfx) {
+                pu::audio::PlaySfx(this->launchpad_open_sfx);
+            }
+        }
+
         if((keys_down & HidNpadButton_B) || (keys_down & HidNpadButton_Plus)) {
             UL_LOG_INFO("launchpad: B/Plus -> returning to MainMenu");
+            if(this->launchpad_close_sfx) {
+                pu::audio::PlaySfx(this->launchpad_close_sfx);
+            }
+            this->sfx_open_played_ = false;
             if(this->launchpad_element_) {
                 this->launchpad_element_->Close();
                 // Re-enable visibility so the next Launchpad open shows up.
@@ -48,6 +63,9 @@ namespace ul::menu::qdesktop {
         if(this->launchpad_element_ && this->launchpad_element_->IsPendingLaunch()) {
             const size_t desktop_idx = this->launchpad_element_->FocusedDesktopIdx();
             UL_LOG_INFO("launchpad: pending launch dispatch desktop_idx=%zu", desktop_idx);
+            if(this->tile_launch_sfx) {
+                pu::audio::PlaySfx(this->tile_launch_sfx);
+            }
             this->launchpad_element_->DispatchPendingLaunch();
             this->launchpad_element_->Close();
             this->launchpad_element_->SetVisible(true);
@@ -56,6 +74,10 @@ namespace ul::menu::qdesktop {
 
     bool QdLaunchpadHostLayout::OnHomeButtonPress() {
         UL_LOG_INFO("launchpad: OnHomeButtonPress -> returning to MainMenu");
+        if(this->launchpad_close_sfx) {
+            pu::audio::PlaySfx(this->launchpad_close_sfx);
+        }
+        this->sfx_open_played_ = false;
         // Free per-slot SDL textures + clear is_open_ so the next entry
         // through MenuType::Launchpad starts clean.  Open() also calls
         // FreeAllTextures() at its top, but doing it here keeps the
@@ -68,11 +90,33 @@ namespace ul::menu::qdesktop {
     }
 
     void QdLaunchpadHostLayout::LoadSfx() {
-        // Launchpad has no per-layout sfx today.  When sfx are added, load them here.
+        this->launchpad_open_sfx   = pu::audio::LoadSfx(ul::menu::ui::TryGetActiveThemeResource("sound/Launchpad/Open.wav"));
+        this->launchpad_close_sfx  = pu::audio::LoadSfx(ul::menu::ui::TryGetActiveThemeResource("sound/Launchpad/Close.wav"));
+        this->tile_launch_sfx      = pu::audio::LoadSfx(ul::menu::ui::TryGetActiveThemeResource("sound/Launchpad/TileLaunch.wav"));
+        this->folder_filter_sfx    = pu::audio::LoadSfx(ul::menu::ui::TryGetActiveThemeResource("sound/Launchpad/FolderFilter.wav"));
+        this->page_turn_sfx        = pu::audio::LoadSfx(ul::menu::ui::TryGetActiveThemeResource("sound/Launchpad/PageTurn.wav"));
+        this->favorite_on_sfx      = pu::audio::LoadSfx(ul::menu::ui::TryGetActiveThemeResource("sound/Launchpad/FavoriteOn.wav"));
+        this->favorite_off_sfx     = pu::audio::LoadSfx(ul::menu::ui::TryGetActiveThemeResource("sound/Launchpad/FavoriteOff.wav"));
+        this->error_tone_sfx       = pu::audio::LoadSfx(ul::menu::ui::TryGetActiveThemeResource("sound/Launchpad/ErrorTone.wav"));
     }
 
     void QdLaunchpadHostLayout::DisposeSfx() {
-        // Mirrors LoadSfx; kept symmetric for future sfx work.
+        pu::audio::DestroySfx(this->launchpad_open_sfx);
+        pu::audio::DestroySfx(this->launchpad_close_sfx);
+        pu::audio::DestroySfx(this->tile_launch_sfx);
+        pu::audio::DestroySfx(this->folder_filter_sfx);
+        pu::audio::DestroySfx(this->page_turn_sfx);
+        pu::audio::DestroySfx(this->favorite_on_sfx);
+        pu::audio::DestroySfx(this->favorite_off_sfx);
+        pu::audio::DestroySfx(this->error_tone_sfx);
+        this->launchpad_open_sfx   = nullptr;
+        this->launchpad_close_sfx  = nullptr;
+        this->tile_launch_sfx      = nullptr;
+        this->folder_filter_sfx    = nullptr;
+        this->page_turn_sfx        = nullptr;
+        this->favorite_on_sfx      = nullptr;
+        this->favorite_off_sfx     = nullptr;
+        this->error_tone_sfx       = nullptr;
     }
 
 }

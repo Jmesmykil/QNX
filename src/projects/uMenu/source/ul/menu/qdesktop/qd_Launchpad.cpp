@@ -17,6 +17,7 @@
 
 #include <ul/menu/qdesktop/qd_Launchpad.hpp>
 #include <ul/menu/qdesktop/qd_AutoFolders.hpp>      // Fix D (v1.6.12): LookupFolderIdx, kTopLevelFolders
+#include <ul/menu/qdesktop/qd_LaunchpadHostLayout.hpp> // v1.8.1: SFX dispatch via LP_PLAY_SFX
 #include <ul/menu/ui/ui_MenuApplication.hpp>         // F3 (stabilize-4): g_MenuApplication + MenuType
 #include <ul/menu/ui/ui_Common.hpp>                  // F9 (stabilize-5): TryFindLoadImage for Builtin icons
 #include <ul/ul_Result.hpp>                         // UL_LOG_INFO
@@ -27,6 +28,7 @@
 #include <cstring>
 #include <cstdio>
 #include <algorithm>
+#include <mutex>  // v1.8.18: std::lock_guard for GetSharedIconCacheMutex() in PaintCell
 #include <cctype>
 
 // libnx HID constants.
@@ -34,6 +36,19 @@
 
 // F3 (stabilize-4): MenuApplication global — defined in ui_MenuApplication.cpp.
 extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
+
+// v1.8.1 Task D: SFX dispatch helper.
+// NOTE: codebase compiles with -fno-rtti, so dynamic_pointer_cast is rejected.
+// We use static_pointer_cast — this call path (qd_Launchpad OnInput) only
+// executes when QdLaunchpadHostLayout is the active layout, so the static cast
+// is safe. Each method guard-checks its handle before calling pu::audio::PlaySfx,
+// so a NULL handle (asset absent / LoadSfx not yet called) produces no crash.
+#define LP_PLAY_SFX(method_name) \
+    do { \
+        auto _lp_base = g_MenuApplication->GetLayout<ul::menu::ui::IMenuLayout>(); \
+        auto _lp_host = std::static_pointer_cast<ul::menu::qdesktop::QdLaunchpadHostLayout>(_lp_base); \
+        if(_lp_host) { _lp_host->method_name(); } \
+    } while(0)
 
 namespace ul::menu::qdesktop {
 
@@ -59,9 +74,14 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
       frame_tick_(0),
       active_folder_(AutoFolderIdx::None),
       lp_was_touch_active_last_frame_(false),
-      page_index_(0),    // F10 (stabilize-5): pagination — declared before icon_cache_ in header
+      // v1.8 Input-source latch: Launchpad opens in DPAD mode on Switch (the
+      // user triggers Open via hot-corner tap or Plus — both are controller/touch
+      // actions; D-pad or touch-tile navigation follows immediately).
+      active_input_source_(InputSource::DPAD),
+      page_index_(0),    // F10 (stabilize-5): pagination
       page_count_(1),    // F10 (stabilize-5): pagination
-      icon_cache_(nullptr)
+      // v1.8.18: icon_cache_ removed; using GetSharedIconCache() singleton.
+      folder_bucket_count_{}  // A-4 (v1.7.2): zero-init; populated in RebuildFilter()
 {
     // items_, filtered_idxs_, query_ default-initialise to empty.
     // Texture vectors start empty; slots are pushed in Open().
@@ -70,6 +90,12 @@ QdLaunchpadElement::QdLaunchpadElement(const QdTheme &theme)
 // ── Destructor ────────────────────────────────────────────────────────────────
 
 QdLaunchpadElement::~QdLaunchpadElement() {
+    // v1.8.23 Option C: stop+join the background prewarm thread BEFORE any
+    // member destruction.  Mirrors ~QdDesktopIconsElement (qd_DesktopIcons.cpp
+    // ~1362) — the thread holds `this` and reads items_/icon_tex_ via
+    // PrewarmLaunchpadIcons(), so it must release before those vectors are
+    // freed below.  StopLpPrewarmThread is idempotent (joinable() guard).
+    StopLpPrewarmThread();
     FreeAllTextures();
 }
 
@@ -77,6 +103,164 @@ QdLaunchpadElement::~QdLaunchpadElement() {
 
 void QdLaunchpadElement::AdvanceTick() {
     ++frame_tick_;
+}
+
+// ── v1.8.23 Option C: PrewarmLaunchpadIcons ──────────────────────────────────
+//
+// Background-thread body for the Launchpad icon-cache prewarm.  Replaces the
+// synchronous loop that previously ran inside Open() (qd_Launchpad.cpp ~247-329
+// in v1.8.22).  Mirrors qd_DesktopIcons.cpp::PrewarmAllIcons threading
+// contract:
+//
+//   - Reads items_ and desktop_icons_ptr_, both populated by Open() before
+//     this thread is spawned (SpawnLpPrewarmThread runs after RebuildFilter).
+//   - Polls lp_prewarm_stop_ at the top of each iteration so Close()/dtor
+//     join() completes promptly when the user navigates away mid-prewarm.
+//   - Cache writes inside the load helpers are serialised by
+//     GetSharedIconCacheMutex() (the same mutex the desktop prewarm thread
+//     uses), so concurrent prewarm threads do not race on cache state.
+//   - Does NOT mutate g_has_no_asset_ (the negative-cache memoization
+//     remains owned exclusively by qd_DesktopIcons.cpp::PrewarmAllIcons).
+//
+// First-page prewarm window (LP_PREWARM_ITEMS = 60) chosen for Switch's slow
+// SD-card I/O budget; entries beyond the first page load lazily in PaintCell
+// once the user scrolls.
+void QdLaunchpadElement::PrewarmLaunchpadIcons() {
+    QdDesktopIconsElement *desktop_icons = desktop_icons_ptr_;
+    if (!desktop_icons) {
+        return;
+    }
+
+    static constexpr size_t LP_PREWARM_ITEMS = 60u;
+    const size_t prewarm_limit = (items_.size() < LP_PREWARM_ITEMS)
+                                 ? items_.size()
+                                 : LP_PREWARM_ITEMS;
+
+    size_t prewarm_hit = 0u;
+    for (size_t i = 0u; i < prewarm_limit; ++i) {
+        // v1.8.23 Option C: per-iteration stop poll (mirrors qd_DesktopIcons.cpp
+        // PrewarmAllIcons :2619-2623) so Close()/dtor join() returns promptly.
+        if (lp_prewarm_stop_.load(std::memory_order_relaxed)) {
+            UL_LOG_INFO("qdesktop: Launchpad prewarm: stopped early at entry %zu/%zu",
+                        i, prewarm_limit);
+            return;
+        }
+
+        const LpItem &it = items_[i];
+
+        // NRO-backed entries: load from ASET section.
+        if (it.nro_path[0] != '\0') {
+            // Cache key mirrors what PaintCell() computes for IconKind::Nro.
+            bool loaded = desktop_icons->LoadNroIconToCache(it.nro_path,
+                                                            it.nro_path);
+            if (loaded) {
+                ++prewarm_hit;
+            }
+            continue;
+        }
+
+        // Application entries with a custom icon_path (JPEG on SD):
+        // route through LoadJpegIconToCache exactly as OnRender does.
+        // F2b (stabilize-6 / O-C): if icon_path is a pre-written NS cache key
+        // ("app:%016llx" — written by SetApplicationEntries per F5), the
+        // disk-read path expects a real file, so route through the
+        // shipped-icon dual-fallback first; on miss, leave the slot empty
+        // and let the OnRender path retry.
+        if (it.icon_path[0] != '\0') {
+            // v1.8.22d B66: mirror v1.8.21 desktop romfs:/ skip — Launchpad's
+            // parallel prewarm path was missed by v1.8.21. LoadJpegIconToCache
+            // opens fsdevGetDeviceFileSystem("sdmc") and fails rc=0x2EEA02
+            // (FS module 2 / desc 6004 = path-not-found) for romfs:/... paths,
+            // then writes a gray-fallback BGRA into the shared cache keyed by
+            // the romfs path. PaintCell later reads the gray instead of the
+            // themed PNG. Skip prewarm entirely; PaintCell's section 2a-romfs
+            // branch (added below) does the real load via LoadImageFromFile.
+            if (it.icon_path[0] == 'r' && it.icon_path[1] == 'o' &&
+                it.icon_path[2] == 'm' && it.icon_path[3] == 'f' &&
+                it.icon_path[4] == 's' && it.icon_path[5] == ':') {
+                continue;
+            }
+            const bool has_ns_key =
+                (it.icon_path[0] == 'a' &&
+                 it.icon_path[1] == 'p' &&
+                 it.icon_path[2] == 'p' &&
+                 it.icon_path[3] == ':');
+            if (has_ns_key && it.app_id != 0) {
+                bool loaded = desktop_icons->LoadAppIconFromUSystemCache(
+                    it.app_id, it.icon_path);
+                if (loaded) {
+                    ++prewarm_hit;
+                }
+                // No NS fallback in prewarm — NS calls are deferred to
+                // OnRender lazy-load to avoid blocking the main thread on
+                // sysmodule IPC (matches the empty-icon_path branch below).
+                continue;
+            }
+            bool loaded = desktop_icons->LoadJpegIconToCache(it.icon_path,
+                                                              it.icon_path);
+            if (loaded) {
+                ++prewarm_hit;
+            }
+            continue;
+        }
+
+        // Application entries with empty icon_path: try the shipped-icon
+        // dual-fallback first (stat-based, fast), then defer to OnRender
+        // lazy-load if both disk paths miss.
+        // F2b (stabilize-6 / O-C): same dual-fallback as the icon_path
+        // branch above; we synthesise the "app:%016llx" cache key here so
+        // PaintCell's lookup matches.
+        if (it.app_id != 0) {
+            char app_cache_key[32];
+            snprintf(app_cache_key, sizeof(app_cache_key),
+                     "app:%016llx",
+                     static_cast<unsigned long long>(it.app_id));
+            bool loaded = desktop_icons->LoadAppIconFromUSystemCache(
+                it.app_id, app_cache_key);
+            if (loaded) {
+                ++prewarm_hit;
+            }
+            // NS calls remain deferred to OnRender (do not block the prewarm
+            // thread on sysmodule IPC).
+        }
+    }
+
+    UL_LOG_INFO("qdesktop: Launchpad prewarm (bg thread): checked=%zu hit=%zu",
+                prewarm_limit, prewarm_hit);
+}
+
+// ── v1.8.23 Option C: SpawnLpPrewarmThread ───────────────────────────────────
+//
+// Launches PrewarmLaunchpadIcons() on a dedicated std::thread.  Mirrors
+// qd_DesktopIcons.cpp::SpawnPrewarmThread (~2736).  Idempotent — duplicate
+// calls return immediately via the joinable() guard.  Resets the stop flag to
+// false before launching so a prior Open()/Close() cycle's stop signal does
+// not poison the new thread.
+void QdLaunchpadElement::SpawnLpPrewarmThread() {
+    if (lp_prewarm_thread_.joinable()) {
+        return;
+    }
+    lp_prewarm_stop_.store(false, std::memory_order_relaxed);
+    lp_prewarm_thread_ = std::thread([this]() {
+        PrewarmLaunchpadIcons();
+    });
+}
+
+// ── v1.8.23 Option C: StopLpPrewarmThread ────────────────────────────────────
+//
+// Sets the stop flag and joins the prewarm thread.  Idempotent — joinable()
+// guard makes this a no-op if no thread is running.  Mirrors
+// QdDesktopIconsElement::StopPrewarmThread (qd_DesktopIcons.hpp inline ~317).
+//
+// The atomic write uses release ordering so the prewarm body's relaxed
+// reads observe the flag in a finite number of iterations; combined with
+// join(), this guarantees the thread has released `this` before any caller
+// proceeds to free items_, icon_tex_, or desktop_icons_ptr_.
+void QdLaunchpadElement::StopLpPrewarmThread() {
+    lp_prewarm_stop_.store(true, std::memory_order_release);
+    if (lp_prewarm_thread_.joinable()) {
+        lp_prewarm_thread_.join();
+    }
 }
 
 // ── Open ─────────────────────────────────────────────────────────────────────
@@ -90,6 +274,13 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     if (!desktop_icons) {
         return;
     }
+
+    // v1.8.23 Option C: reap any background prewarm thread from a prior
+    // Open()/Close() cycle BEFORE we mutate items_ / icon_tex_ / icon_loaded_.
+    // The background lambda captures `this` and reads items_; if a previous
+    // thread is still alive when we clear() below, it would see torn data.
+    // StopLpPrewarmThread is idempotent (joinable() guard).
+    StopLpPrewarmThread();
 
     // Free textures from any previous open cycle before overwriting items_.
     FreeAllTextures();
@@ -125,7 +316,7 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     // is sliding off the corner, then drop to false when the finger lifts.
     lp_was_touch_active_last_frame_ = true;
     desktop_icons_ptr_         = desktop_icons;
-    icon_cache_                = &desktop_icons->cache_;
+    // v1.8.18: icon_cache_ pointer removed; PaintCell uses GetSharedIconCache() directly.
 
     // Deep-copy every icon entry into items_.
     // Uses the friend-declared access to icons_[] and icon_count_.
@@ -157,11 +348,11 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
         it.icon_category = src.icon_category;
 
         // Map IconCategory to LpSortKind for the grid ordering pass.
+        // v1.8.10: Payloads removed from IconCategory; payloads now enter as Extras.
         switch (src.icon_category) {
             case IconCategory::Nintendo:  it.sort_kind = LpSortKind::Nintendo;  break;
             case IconCategory::Homebrew:  it.sort_kind = LpSortKind::Homebrew;  break;
             case IconCategory::Extras:    it.sort_kind = LpSortKind::Extras;    break;
-            case IconCategory::Payloads:  it.sort_kind = LpSortKind::Extras;    break;
             case IconCategory::Builtin:   it.sort_kind = LpSortKind::Builtin;   break;
         }
 
@@ -198,106 +389,25 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
         }
     );
 
-    // Pre-size per-slot texture vectors to items_.size() with nullptr / false.
+    // Pre-size per-slot icon texture vectors to items_.size() with nullptr / false.
+    // Text textures are rendered per-frame locally (not cached in vectors).
     const size_t sz = items_.size();
-    name_tex_.assign(sz, nullptr);
-    glyph_tex_.assign(sz, nullptr);
     icon_tex_.assign(sz, nullptr);
     icon_loaded_.assign(sz, false);
+    // v1.8.23 Option C: paint_logged_ removed (diagnostic served its purpose).
 
     // Build the initial (unfiltered) filtered index list.
     RebuildFilter();
 
-    // v1.6.11 Fix 1: pre-warm the icon cache for first-page items before the
-    // first frame renders.  Without this, PaintCell() calls icon_cache_->Get()
-    // on the very first OnRender tick; the cache is empty so Get() returns
-    // nullptr; a neutral-gray tile is drawn permanently because the lazy-load
-    // path in QdDesktopIconsElement::OnRender does NOT run while the Launchpad
-    // overlay is active (the desktop element is suppressed).
-    //
-    // Limit to the first page (LP_COLS x visible rows = approximately 40 items
-    // for a 1920x1080 layout) so the Open() call does not block noticeably on
-    // slow SD cards.  Items beyond the first page are loaded lazily by the
-    // Launchpad's own OnRender once the user scrolls.
-    //
-    // The number of visible rows is derived from the Launchpad geometry:
-    //   LP_GRID_Y=144, LP_CELL_H=150, LP_GAP_Y=12; cull threshold ~1032px.
-    //   Visible rows = ceil((1032 - LP_GRID_Y) / (LP_CELL_H + LP_GAP_Y)) = 6.
-    // First-page item count = LP_COLS * visible_rows = 10 * 6 = 60.
-    static constexpr size_t LP_PREWARM_ITEMS = 60u;
-    const size_t prewarm_limit = (items_.size() < LP_PREWARM_ITEMS)
-                                 ? items_.size()
-                                 : LP_PREWARM_ITEMS;
-
-    size_t prewarm_hit = 0u;
-    for (size_t i = 0u; i < prewarm_limit; ++i) {
-        const LpItem &it = items_[i];
-
-        // NRO-backed entries: load from ASET section.
-        if (it.nro_path[0] != '\0') {
-            // Cache key mirrors what PaintCell() computes for IconKind::Nro.
-            bool loaded = desktop_icons->LoadNroIconToCache(it.nro_path,
-                                                            it.nro_path);
-            if (loaded) {
-                ++prewarm_hit;
-            }
-            continue;
-        }
-
-        // Application entries with a custom icon_path (JPEG on SD):
-        // route through LoadJpegIconToCache exactly as OnRender does.
-        // F2b (stabilize-6 / O-C): if icon_path is a pre-written NS cache key
-        // ("app:%016llx" — written by SetApplicationEntries per F5), the
-        // disk-read path expects a real file, so route through the
-        // shipped-icon dual-fallback first; on miss, leave the slot empty
-        // and let the OnRender path retry.
-        if (it.icon_path[0] != '\0') {
-            const bool has_ns_key =
-                (it.icon_path[0] == 'a' &&
-                 it.icon_path[1] == 'p' &&
-                 it.icon_path[2] == 'p' &&
-                 it.icon_path[3] == ':');
-            if (has_ns_key && it.app_id != 0) {
-                bool loaded = desktop_icons->LoadAppIconFromUSystemCache(
-                    it.app_id, it.icon_path);
-                if (loaded) {
-                    ++prewarm_hit;
-                }
-                // No NS fallback in prewarm — NS calls are deferred to
-                // OnRender lazy-load to avoid blocking Open() (matches the
-                // empty-icon_path branch below).
-                continue;
-            }
-            bool loaded = desktop_icons->LoadJpegIconToCache(it.icon_path,
-                                                              it.icon_path);
-            if (loaded) {
-                ++prewarm_hit;
-            }
-            continue;
-        }
-
-        // Application entries with empty icon_path: try the shipped-icon
-        // dual-fallback first (stat-based, fast), then defer to OnRender
-        // lazy-load if both disk paths miss.
-        // F2b (stabilize-6 / O-C): same dual-fallback as the icon_path
-        // branch above; we synthesise the "app:%016llx" cache key here so
-        // PaintCell's lookup matches.
-        if (it.app_id != 0) {
-            char app_cache_key[32];
-            snprintf(app_cache_key, sizeof(app_cache_key),
-                     "app:%016llx",
-                     static_cast<unsigned long long>(it.app_id));
-            bool loaded = desktop_icons->LoadAppIconFromUSystemCache(
-                it.app_id, app_cache_key);
-            if (loaded) {
-                ++prewarm_hit;
-            }
-            // NS calls remain deferred to OnRender (do not block Open()).
-        }
-    }
-
-    UL_LOG_INFO("qdesktop: Launchpad prewarm: checked=%zu hit=%zu",
-                prewarm_limit, prewarm_hit);
+    // v1.8.23 Option C: pre-warm the icon cache for first-page items on a
+    // background thread instead of synchronously in Open().  The synchronous
+    // loop blocked Open() for ~2000 ms wall-clock (HW evidence) — the user
+    // saw a frozen menu.  The thread now runs concurrently with the first
+    // frames; PaintCell sees gray fallbacks for at most a few frames before
+    // the cache is populated, instead of a frozen window.  See
+    // PrewarmLaunchpadIcons (this file) for the relocated body and
+    // SpawnLpPrewarmThread for the spawn site (called below after
+    // RebuildFilter).
 
     is_open_ = true;
 
@@ -314,11 +424,26 @@ void QdLaunchpadElement::Open(QdDesktopIconsElement *desktop_icons) {
     }
     UL_LOG_INFO("qdesktop: Launchpad opened -- nintendo=%zu homebrew=%zu extras=%zu builtins=%zu total=%zu",
                 nintendo_count, homebrew_count, extras_count, builtin_count, sz);
+
+    // v1.8.23 Option C: spawn the background prewarm thread AFTER items_,
+    // icon_tex_, icon_loaded_, and filtered_idxs_ are fully built (and after
+    // is_open_ flips true).  The thread reads items_ + desktop_icons_ptr_ and
+    // calls into the desktop's load helpers; cache writes are guarded by
+    // GetSharedIconCacheMutex() inside those helpers.  Idempotency: the prior
+    // cycle's thread (if any) was already reaped at the top of this Open().
+    SpawnLpPrewarmThread();
 }
 
 // ── Close ─────────────────────────────────────────────────────────────────────
 
 void QdLaunchpadElement::Close() {
+    // v1.8.23 Option C: reap the background prewarm thread BEFORE
+    // FreeAllTextures() / items_.clear() — the thread reads icon_tex_ and
+    // items_, so destroying those out from under it would be UB.
+    // StopLpPrewarmThread is idempotent (joinable() guard) and a no-op if
+    // the thread already exited normally.
+    StopLpPrewarmThread();
+
     // Free every cached SDL texture before clearing items_; the vectors must
     // still be alive while FreeAllTextures walks them.
     FreeAllTextures();
@@ -336,7 +461,7 @@ void QdLaunchpadElement::Close() {
     // starts from a known state. The latch is reset to true again at Open()
     // so the still-down finger does not retrigger the close handler.
     lp_was_touch_active_last_frame_ = false;
-    icon_cache_                = nullptr;
+    // v1.8.18: icon_cache_ removed; no reset needed (using GetSharedIconCache() singleton).
     desktop_icons_ptr_         = nullptr;
     is_open_                   = false;
 
@@ -460,6 +585,12 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         return;
     }
 
+    // A-8 (v1.7.2): capture the previous-frame touch latch BEFORE the
+    // hot-corner block updates lp_was_touch_active_last_frame_.  Used below
+    // to edge-trigger the folder tile strip so it fires only on touch-down,
+    // not every frame the finger is held (level-trigger bug).
+    const bool lp_was_touch_prev = lp_was_touch_active_last_frame_;
+
     // ── v1.7.0-stabilize-2: edge-triggered hot-corner CLOSE ──────────────────
     // The hot-corner widget is a 96x72 box at the top-left of the screen
     // (LP_HOTCORNER_W x LP_HOTCORNER_H, defined in qd_Launchpad.hpp). Tapping
@@ -537,9 +668,17 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         // the Plutonium touch-tap flag. Use the x/y fields when the point is
         // non-zero (the framework sets {0,0} when there is no active touch).
         const bool has_touch = !touch_pos.IsEmpty();  // F1 (stabilize-5): RC-A sentinel fix
-        if (has_touch) {
+        // A-8 (v1.7.2): edge-trigger — only process folder strip on the
+        // FIRST frame of a touch-down (touch active now AND not active last
+        // frame).  Prevents the active_folder_ / filter_dirty_ flip from
+        // re-firing every frame while the user holds a finger on a tile.
+        const bool is_touch_edge = has_touch && !lp_was_touch_prev;
+        if (is_touch_edge) {
             const s32 tx = static_cast<s32>(touch_pos.x);
             const s32 ty = static_cast<s32>(touch_pos.y);
+
+            // v1.8 Input-source latch: any touch-down is MOUSE/touch mode.
+            active_input_source_ = InputSource::MOUSE;
 
             // Tile strip geometry (mirrors OnRender step 3.5).
             static constexpr s32 FTILE_W       = 200;
@@ -555,6 +694,7 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
                     if (active_folder_ != AutoFolderIdx::None) {
                         active_folder_ = AutoFolderIdx::None;
                         filter_dirty_  = true;
+                        LP_PLAY_SFX(PlayFolderFilterSfx);  // v1.8.1 Task D
                     }
                 } else {
                     // Walk the spec tiles in the same order as OnRender.
@@ -562,17 +702,9 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
                     // rendered and thus have no hit area).
                     s32 spec_tile_x = LP_SEARCH_BAR_X;
                     for (size_t fi = 0u; fi < kTopLevelFolderCount; ++fi) {
-                        // Count items in this bucket (same walk as OnRender 3.5).
-                        size_t bucket_count = 0u;
-                        for (const LpItem &it : items_) {
-                            const std::string sid = StableIdForItem(it);
-                            const AutoFolderIdx fidx = LookupFolderIdx(sid);
-                            if (fidx == kTopLevelFolders[fi].idx) {
-                                ++bucket_count;
-                            }
-                        }
-
-                        if (bucket_count == 0u) {
+                        // A-5 (v1.7.2): use pre-computed bucket count from
+                        // folder_bucket_count_[] instead of re-walking items_.
+                        if (folder_bucket_count_[fi] == 0u) {
                             continue;  // Empty bucket: tile not rendered, skip.
                         }
 
@@ -584,6 +716,7 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
                                 filter_dirty_  = true;
                                 // Clamp D-pad focus to the new filtered set.
                                 dpad_focus_index_ = 0u;
+                                LP_PLAY_SFX(PlayFolderFilterSfx);  // v1.8.1 Task D
                             }
                             break;
                         }
@@ -598,7 +731,72 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
         return;  // Nothing to navigate.
     }
 
+    // ── A-9 (v1.7.2.1): Touch tap on a Launchpad grid tile ───────────────────
+    // Provides MNR §6 / §33 single-fire touch-launch on the tile grid. Prior
+    // to v1.7.2.1 the grid was D-pad+A or ZR+mouse only; touch was wired only
+    // for hot-corner close (above) and folder-strip filter (above). Inside an
+    // active folder filter (active_folder_ != None) the existing dispatch path
+    // already uses filtered_idxs_[dpad_focus_index_] via FocusedDesktopIdx(),
+    // so setting dpad_focus_index_ to the touched cell + raising
+    // pending_launch_ launches the correct item under any filter.
+    //
+    // Hit-test inverts CellXY: (tx, ty) → (col, row) → vpos. Edge-trigger via
+    // lp_was_touch_prev (captured at the top of OnInput before the hot-corner
+    // block updates the latch) prevents tap-and-hold from firing every frame.
+    // Gap rejection prevents fingers landing in the inter-cell space from
+    // launching a neighbouring tile.
+    {
+        const bool has_touch_tile     = !touch_pos.IsEmpty();
+        const bool is_touch_tile_edge = has_touch_tile && !lp_was_touch_prev;
+        if (is_touch_tile_edge) {
+            const s32 tx     = static_cast<s32>(touch_pos.x);
+            const s32 ty     = static_cast<s32>(touch_pos.y);
+            const s32 grid_w = LP_COLS * (LP_CELL_W + LP_GAP_X);
+            const s32 grid_h = LP_ROWS * (LP_CELL_H + LP_GAP_Y);
+            if (tx >= LP_GRID_X && tx < LP_GRID_X + grid_w &&
+                ty >= LP_GRID_Y && ty < LP_GRID_Y + grid_h) {
+                const s32 dx           = tx - LP_GRID_X;
+                const s32 dy           = ty - LP_GRID_Y;
+                const s32 col          = dx / (LP_CELL_W + LP_GAP_X);
+                const s32 row          = dy / (LP_CELL_H + LP_GAP_Y);
+                const s32 cell_local_x = dx - col * (LP_CELL_W + LP_GAP_X);
+                const s32 cell_local_y = dy - row * (LP_CELL_H + LP_GAP_Y);
+                if (cell_local_x < LP_CELL_W && cell_local_y < LP_CELL_H &&
+                    col < LP_COLS && row < LP_ROWS) {
+                    const size_t cell_pos = static_cast<size_t>(row) * static_cast<size_t>(LP_COLS)
+                                          + static_cast<size_t>(col);
+                    const size_t vpos     = page_index_ * LP_ITEMS_PER_PAGE + cell_pos;
+                    if (vpos < n) {
+                        UL_LOG_INFO("qdesktop: Launchpad tile touch-launch tx=%d ty=%d vpos=%zu",
+                                    tx, ty, vpos);
+                        // v1.8 Input-source latch: touch tap is unambiguously
+                        // MOUSE/touch mode.  Use pending_launch_from_mouse_=true
+                        // so DispatchPendingLaunch picks mouse_hover_index_.
+                        // We also set mouse_hover_index_ to the touched vpos so
+                        // DispatchPendingLaunch resolves correctly (the cursor
+                        // may not be hovering over the tapped cell on Switch
+                        // because cursor position is updated by QdCursorElement
+                        // which follows touch, but may lag one frame).
+                        active_input_source_       = InputSource::MOUSE;
+                        mouse_hover_index_         = vpos;
+                        dpad_focus_index_          = vpos;
+                        pending_launch_            = true;
+                        pending_launch_from_mouse_ = true;
+                    }
+                }
+            }
+        }
+    }
+
     // D-pad navigation: clamp at edges, no wrapping, per spec. ──────────────
+    // v1.8 Input-source latch: any directional D-pad key switches to DPAD mode.
+    // We check the directional mask before individual keys so the source flip
+    // happens once, before any nav side-effect.
+    if (keys_down & (HidNpadButton_Up | HidNpadButton_Down
+                    | HidNpadButton_Left | HidNpadButton_Right)) {
+        active_input_source_ = InputSource::DPAD;
+    }
+
     if (keys_down & HidNpadButton_Up) {
         if (dpad_focus_index_ >= static_cast<size_t>(LP_COLS)) {
             dpad_focus_index_ -= static_cast<size_t>(LP_COLS);
@@ -625,16 +823,25 @@ void QdLaunchpadElement::OnInput(u64 keys_down, u64 /*keys_up*/, u64 /*keys_held
     // A launches the D-pad focused item; ZR launches the mouse-hovered item.
     // pending_launch_from_mouse_ tells DispatchPendingLaunch() which index to use.
 
-    // ── A: launch D-pad focused item ─────────────────────────────────────────
+    // ── A: launch based on current input source ──────────────────────────────
+    // v1.8 Input-source latch: in DPAD mode, A launches the D-pad focused tile
+    // (pending_launch_from_mouse_=false → DispatchPendingLaunch uses
+    // dpad_focus_index_).  In MOUSE mode, A launches the cursor-hovered tile
+    // (pending_launch_from_mouse_=true → uses mouse_hover_index_).
+    // A does NOT change the active_input_source_ itself (spec requirement).
     if (keys_down & HidNpadButton_A) {
         if (dpad_focus_index_ < n) {
             pending_launch_            = true;
-            pending_launch_from_mouse_ = false;
+            pending_launch_from_mouse_ = (active_input_source_ == InputSource::MOUSE);
         }
     }
 
     // ── ZR: launch mouse-hovered item ────────────────────────────────────────
+    // v1.8 Input-source latch: ZR is a mouse/controller button that switches
+    // source to MOUSE and launches the cursor-hovered tile.
     if (keys_down & HidNpadButton_ZR) {
+        // ZR → MOUSE mode
+        active_input_source_ = InputSource::MOUSE;
         if (mouse_hover_index_ < n) {
             pending_launch_            = true;
             pending_launch_from_mouse_ = true;
@@ -732,14 +939,12 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // Previously wrapped in #if 0 (stabilize-4) due to Plutonium RenderText crash
     // on Erista.  Re-enabled for stabilize-5; if a crash recurs on HW the
     // root cause is in Plutonium font metrics, not this call site.
+    // v1.8.2: render per-frame into local (LRU TextCacheClear invalidates stored ptrs).
     {
-        static SDL_Texture *hc_tex = nullptr;
-        if (!hc_tex) {
-            const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-            hc_tex = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-                "Q", wh);
-        }
+        const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+        SDL_Texture *hc_tex = pu::ui::render::RenderText(
+            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+            "Q", wh);
         if (hc_tex) {
             int tw = 0, th = 0;
             SDL_QueryTexture(hc_tex, nullptr, nullptr, &tw, &th);
@@ -833,16 +1038,9 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // Each tile: 200 px wide, 36 px tall, 8 px horizontal gap between tiles.
     // The strip is left-aligned at LP_SEARCH_BAR_X so it aligns with the search bar.
     {
-        // Count items per AutoFolderIdx bucket (walk all items, not filtered).
-        size_t bucket_count[kTopLevelFolderCount] = {};
-        for (const LpItem &it : items_) {
-            const std::string sid = StableIdForItem(it);
-            const AutoFolderIdx fidx = LookupFolderIdx(sid);
-            const u8 raw = static_cast<u8>(fidx);
-            if (raw >= 1u && raw <= static_cast<u8>(kTopLevelFolderCount)) {
-                bucket_count[raw - 1u] += 1u;  // kTopLevelFolders[0] = NxGames (idx=1)
-            }
-        }
+        // A-4 (v1.7.2): bucket counts are now pre-computed in RebuildFilter()
+        // into folder_bucket_count_[].  No per-frame items_ walk needed here.
+        const size_t (&bucket_count)[kTopLevelFolderCount] = folder_bucket_count_;
 
         static constexpr s32 FTILE_W       = 200;
         static constexpr s32 FTILE_H       = 36;
@@ -878,54 +1076,12 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         }
     }
 
-#if 0
-    // F1 (stabilize-4): Section headers deferred — RenderText is called once
-    // per visible section per frame (un-cached, re-allocates a new SDL_Texture
-    // every frame), causing progressive GPU pool exhaustion on Switch.  Headers
-    // also require 28 px of dead space above every section's first row, which
-    // clips the bottom row on the current grid layout.  Defer until a static
-    // cached label strategy is in place.
-    // ── 4. Section headers ────────────────────────────────────────────────────
-    // Walk the filtered list and emit a section label wherever LpSortKind
-    // transitions.  The first row header sits at y = LP_GRID_Y - 24 above the
-    // first cell row; subsequent headers are emitted inline (painted in empty
-    // band above each new section row).
-    //
-    // We collect the unique set of kinds present in the filtered list, then
-    // render a header label 24 px above the top of the first cell for that
-    // kind.  The section header for the first kind is always at LP_GRID_Y - 24.
-    {
-        LpSortKind last_section = static_cast<LpSortKind>(0xFFu); // sentinel
-        const size_t nf = filtered_idxs_.size();
-        for (size_t vpos = 0u; vpos < nf; ++vpos) {
-            const size_t item_idx = filtered_idxs_[vpos];
-            if (item_idx >= items_.size()) continue;
-            const LpItem &it = items_[item_idx];
-            if (it.sort_kind == last_section) continue;
-
-            last_section = it.sort_kind;
-
-            // Compute the cell row for this visual position.
-            s32 cx = 0, cy = 0;
-            CellXY(vpos, cx, cy);
-            const s32 header_y = cy - 28; // 28 px above the cell top
-
-            const char *label = SectionLabel(it.sort_kind);
-            const pu::ui::Color sc { theme_.text_secondary.r, theme_.text_secondary.g,
-                                     theme_.text_secondary.b, 0xFFu };
-            SDL_Texture *st = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-                label, sc);
-            if (st) {
-                int sw = 0, sh = 0;
-                SDL_QueryTexture(st, nullptr, nullptr, &sw, &sh);
-                SDL_Rect sd { LP_GRID_X, header_y, sw, sh };
-                SDL_RenderCopy(r, st, nullptr, &sd);
-                SDL_DestroyTexture(st);
-            }
-        }
-    }
-#endif  // F1 deferred
+    // v1.8.23 Option C: F1 section-headers deferred-block removed.  The
+    // original code (RenderText per visible section per frame, uncached)
+    // was permanently disabled via #if 0 in stabilize-4 due to GPU pool
+    // exhaustion on Switch; the static-cached label strategy referenced in
+    // the original comment was never implemented and there is no plan to
+    // resurrect this code path.  Auditor R2 flagged it as pure dead code.
 
     // ── 5. Icon grid (F10: sliced to current page) ───────────────────────────
     const size_t nf         = filtered_idxs_.size();
@@ -946,9 +1102,16 @@ void QdLaunchpadElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         if (cy + LP_CELL_H > 1032) { continue; }
 
         // Fix B (v1.6.12): highlight if D-pad focused OR mouse-hovered.
+        // v1.8 Input-source latch: only one highlight source is active at a time.
+        //   DPAD mode → dpad_focus_index_ wins; mouse_hover_index_ is suppressed
+        //               (cursor is hidden in DPAD mode, so no hover confusion).
+        //   MOUSE mode → mouse_hover_index_ wins; dpad_focus_index_ is suppressed
+        //               (D-pad focus ring would be misleading while cursor drives).
         // dpad_focus_index_ and mouse_hover_index_ are global filtered indices.
-        const bool cell_highlighted = (vpos == dpad_focus_index_)
-                                   || (vpos == mouse_hover_index_);
+        const bool dpad_active  = (active_input_source_ == InputSource::DPAD);
+        const bool cell_highlighted = dpad_active
+            ? (vpos == dpad_focus_index_)
+            : (vpos == mouse_hover_index_);
         PaintCell(r, items_[item_idx], item_idx, cx, cy, cell_highlighted);
     }
 
@@ -1006,11 +1169,17 @@ std::string QdLaunchpadElement::StableIdForItem(const LpItem &item)
         return sid;
     }
 
-    // Payload entries have icon_category == IconCategory::Payloads.
-    // The stable ID uses the basename of nro_path (the .bin filename).
-    if (item.icon_category == IconCategory::Payloads) {
-        // Find the last '/' in nro_path to extract the basename.
-        const char *p = item.nro_path;
+    // v1.8.10: IconCategory::Payloads removed from the enum.  Payload entries
+    // are now IconCategory::Extras but are distinguished by having an empty
+    // nro_path (ScanPayloads sets e.nro_path[0] = '\0') combined with a
+    // non-empty icon_path that carries the resolved payload filename.
+    // The stable ID is "payload:<basename-of-icon_path>" which aligns with the
+    // "payload:<fname>" form registered in qd_DesktopIcons.cpp ScanPayloads.
+    if (item.nro_path[0] == '\0' && !item.is_builtin && item.app_id == 0u) {
+        // Extract basename from icon_path (may be empty if no icon was resolved;
+        // that yields "payload:" which is still the same degenerate stable ID the
+        // previous Payloads branch produced when nro_path was empty).
+        const char *p = item.icon_path;
         const char *slash = nullptr;
         for (const char *q = p; *q != '\0'; ++q) {
             if (*q == '/') {
@@ -1019,7 +1188,7 @@ std::string QdLaunchpadElement::StableIdForItem(const LpItem &item)
         }
         const char *base = (slash != nullptr) ? (slash + 1) : p;
         std::string sid;
-        sid.reserve(8u + strnlen(base, sizeof(item.nro_path)));
+        sid.reserve(8u + strnlen(base, sizeof(item.icon_path)));
         sid = "payload:";
         sid += base;
         return sid;
@@ -1111,7 +1280,7 @@ void QdLaunchpadElement::PaintFolderTile(SDL_Renderer *r,
         const s32 ly = ty + (tile_h - lh) / 2;
         SDL_Rect ldst { lx, ly, lw, lh };
         SDL_RenderCopy(r, lt, nullptr, &ldst);
-        SDL_DestroyTexture(lt);
+        pu::ui::render::DeleteTexture(lt);  // B61: lt is cache-owned (RenderText); DeleteTexture no-ops the free, sets nullptr
     }
 }
 
@@ -1119,6 +1288,19 @@ void QdLaunchpadElement::PaintFolderTile(SDL_Renderer *r,
 
 void QdLaunchpadElement::RebuildFilter() {
     filtered_idxs_.clear();
+
+    // A-4 (v1.7.2): populate per-bucket counts FIRST (before any early return)
+    // so the folder tile strip always reflects the full items_ list regardless
+    // of which filter path runs below.
+    std::fill(std::begin(folder_bucket_count_), std::end(folder_bucket_count_), 0u);
+    for (const LpItem &it : items_) {
+        const std::string sid = StableIdForItem(it);
+        const AutoFolderIdx fidx = LookupFolderIdx(sid);
+        const u8 raw = static_cast<u8>(fidx);
+        if (raw >= 1u && raw <= static_cast<u8>(kTopLevelFolderCount)) {
+            folder_bucket_count_[raw - 1u] += 1u;  // kTopLevelFolders[0] = NxGames (idx=1)
+        }
+    }
 
     // Fix D (v1.6.12): build the query-lowercased string once, used below.
     // If query is empty AND no folder filter is active, fast-path all items.
@@ -1129,6 +1311,20 @@ void QdLaunchpadElement::RebuildFilter() {
         filtered_idxs_.reserve(items_.size());
         for (size_t i = 0u; i < items_.size(); ++i) {
             filtered_idxs_.push_back(i);
+        }
+        // Fix T7 (v1.7.2.3): recalculate page_count_ in the fast-path.
+        // Previously this block returned early without updating page_count_,
+        // leaving it at 1 (set by Open()). Effect: only the first 40 items
+        // were ever rendered in the "All" view, and page-nav dots never showed.
+        // Mirror the same formula used in the slow-path at lines 1243-1252.
+        const size_t nf_all = filtered_idxs_.size();
+        if (nf_all == 0u) {
+            page_count_ = 1u;
+        } else {
+            page_count_ = (nf_all + LP_ITEMS_PER_PAGE - 1u) / LP_ITEMS_PER_PAGE;
+        }
+        if (page_index_ >= page_count_) {
+            page_index_ = page_count_ - 1u;
         }
         filter_dirty_ = false;
         return;
@@ -1233,6 +1429,10 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
                                     s32 cx, s32 cy,
                                     bool is_focused)
 {
+    // v1.8.23 Option C: v1.8.22f per-slot diagnostic removed.  The cumulative
+    // HW logs proved the v1.8.22d 2a-romfs branch state, so the once-per-slot
+    // log line + paint_logged_ vector are no longer needed.
+
     // Centre the icon art horizontally within the cell.
     const s32 icon_x = cx + (LP_CELL_W - LP_ICON_W) / 2;
     const s32 icon_y = cy;
@@ -1263,8 +1463,12 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
     }
 
     const u8 *bgra = nullptr;
-    if (cache_key && icon_cache_) {
-        bgra = icon_cache_->Get(cache_key);
+    if (cache_key) {
+        // v1.8.18: shared singleton + shared mutex.  Both Desktop's background prewarm
+        // thread and this render-thread PaintCell now share the same QdIconCache and
+        // the same std::mutex, eliminating the duplicate-extraction on Launchpad open.
+        std::lock_guard<std::mutex> lock(GetSharedIconCacheMutex());
+        bgra = GetSharedIconCache().Get(cache_key);
     }
 
     if (bgra != nullptr && item_idx < icon_tex_.size()) {
@@ -1284,6 +1488,40 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
                                   static_cast<int>(CACHE_ICON_W) * 4);
             }
             icon_loaded_[item_idx] = true;
+        }
+        if (icon_tex_[item_idx] != nullptr) {
+            SDL_Rect dst { icon_x, icon_y, LP_ICON_W, LP_ICON_H };
+            SDL_RenderCopy(r, icon_tex_[item_idx], nullptr, &dst);
+        }
+    }
+
+    // ── 2a-romfs. v1.8.22d B66: payload entries with romfs-backed icon_path ──
+    // ResolvePayloadIcon returns "romfs:/default/ui/Main/PayloadIcon/<name>.png"
+    // for matched payload stems. These cannot route through the BGRA shared
+    // cache because LoadJpegIconToCache opens fsdevGetDeviceFileSystem("sdmc")
+    // and fails rc=0x2EEA02 for romfs paths, then writes a gray fallback BGRA
+    // into the cache keyed by the romfs path. Load via LoadImageFromFile here
+    // so IMG_Load can route through libnx fsdev to the romfs mount. Mirrors
+    // the qd_DesktopIcons.cpp 2a-romfs branch (qd_DesktopIcons.cpp:2184-2217).
+    if (bgra == nullptr
+            && item.icon_path[0] == 'r' && item.icon_path[1] == 'o'
+            && item.icon_path[2] == 'm' && item.icon_path[3] == 'f'
+            && item.icon_path[4] == 's' && item.icon_path[5] == ':'
+            && item_idx < icon_tex_.size()) {
+        if (icon_tex_[item_idx] == nullptr) {
+            icon_tex_[item_idx] =
+                ::pu::ui::render::LoadImageFromFile(item.icon_path);
+            icon_loaded_[item_idx] = (icon_tex_[item_idx] != nullptr);
+            // v1.8.22e B66 proof-of-fire: log first-load result so HW logs
+            // confirm the 2a-romfs branch is reachable + working.
+            if (icon_tex_[item_idx] != nullptr) {
+                UL_LOG_INFO("launchpad: 2a-romfs payload icon loaded path=%s",
+                            item.icon_path);
+            } else {
+                UL_LOG_WARN("launchpad: 2a-romfs LoadImageFromFile FAILED "
+                            "path=%s (romfs not mounted or asset missing?)",
+                            item.icon_path);
+            }
         }
         if (icon_tex_[item_idx] != nullptr) {
             SDL_Rect dst { icon_x, icon_y, LP_ICON_W, LP_ICON_H };
@@ -1314,58 +1552,64 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
 
     // ── 3. Glyph fallback (when no icon art) ─────────────────────────────────
     // Only render glyph if BOTH the bgra cache and the Builtin tex are absent.
+    // v1.8.2: render per-frame into local (LRU TextCacheClear invalidates stored ptrs).
+    // v1.8.22d: also suppress glyph when the 2a-romfs path loaded a payload PNG.
     const bool has_builtin_tex = (item.sort_kind == LpSortKind::Builtin
                                   && item_idx < icon_tex_.size()
                                   && icon_tex_[item_idx] != nullptr);
-    if (bgra == nullptr && !has_builtin_tex && item.glyph != '\0' && item_idx < glyph_tex_.size()) {
-        if (glyph_tex_[item_idx] == nullptr) {
-            const std::string gs(1, item.glyph);
-            const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-            glyph_tex_[item_idx] = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Medium),
-                gs, wh);
-        }
-        if (glyph_tex_[item_idx] != nullptr) {
+    const bool has_romfs_tex = (item.icon_path[0] == 'r' && item.icon_path[1] == 'o'
+                                && item.icon_path[2] == 'm' && item.icon_path[3] == 'f'
+                                && item.icon_path[4] == 's' && item.icon_path[5] == ':'
+                                && item_idx < icon_tex_.size()
+                                && icon_tex_[item_idx] != nullptr);
+    if (bgra == nullptr && !has_builtin_tex && !has_romfs_tex && item.glyph != '\0') {
+        const std::string gs(1, item.glyph);
+        const pu::ui::Color wh { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+        SDL_Texture *glyph_tex = pu::ui::render::RenderText(
+            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Medium),
+            gs, wh);
+        if (glyph_tex != nullptr) {
             int gw = 0, gh = 0;
-            SDL_QueryTexture(glyph_tex_[item_idx], nullptr, nullptr, &gw, &gh);
+            SDL_QueryTexture(glyph_tex, nullptr, nullptr, &gw, &gh);
             SDL_Rect gdst {
                 icon_x + (LP_ICON_W - gw) / 2,
                 icon_y + (LP_ICON_H - gh) / 2,
                 gw, gh
             };
-            SDL_RenderCopy(r, glyph_tex_[item_idx], nullptr, &gdst);
+            SDL_RenderCopy(r, glyph_tex, nullptr, &gdst);
+            pu::ui::render::DeleteTexture(glyph_tex);  // B57: free per-frame local
         }
     }
 
     // ── 4. Name label ─────────────────────────────────────────────────────────
-    if (item.name[0] != '\0' && item_idx < name_tex_.size()) {
-        if (name_tex_[item_idx] == nullptr) {
-            // Truncate long names with ellipsis (max 14 chars visible).
-            char display[20];
-            const size_t name_len = strnlen(item.name, sizeof(item.name));
-            if (name_len > 14u) {
-                memcpy(display, item.name, 11u);
-                display[11] = '.'; display[12] = '.'; display[13] = '.';
-                display[14] = '\0';
-            } else {
-                memcpy(display, item.name, name_len);
-                display[name_len] = '\0';
-            }
-            const pu::ui::Color nc { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
-            name_tex_[item_idx] = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-                std::string(display), nc,
-                static_cast<u32>(LP_CELL_W));
+    // v1.8.2: render per-frame into local (LRU TextCacheClear invalidates stored ptrs).
+    if (item.name[0] != '\0') {
+        // Truncate long names with ellipsis (max 14 chars visible).
+        char display[20];
+        const size_t name_len = strnlen(item.name, sizeof(item.name));
+        if (name_len > 14u) {
+            memcpy(display, item.name, 11u);
+            display[11] = '.'; display[12] = '.'; display[13] = '.';
+            display[14] = '\0';
+        } else {
+            memcpy(display, item.name, name_len);
+            display[name_len] = '\0';
         }
-        if (name_tex_[item_idx] != nullptr) {
+        const pu::ui::Color nc { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+        SDL_Texture *name_tex = pu::ui::render::RenderText(
+            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+            std::string(display), nc,
+            static_cast<u32>(LP_CELL_W));
+        if (name_tex != nullptr) {
             int nw = 0, nh = 0;
-            SDL_QueryTexture(name_tex_[item_idx], nullptr, nullptr, &nw, &nh);
+            SDL_QueryTexture(name_tex, nullptr, nullptr, &nw, &nh);
             SDL_Rect ndst {
                 cx + (LP_CELL_W - nw) / 2,
                 icon_y + LP_ICON_H + 4,
                 nw, nh
             };
-            SDL_RenderCopy(r, name_tex_[item_idx], nullptr, &ndst);
+            SDL_RenderCopy(r, name_tex, nullptr, &ndst);
+            pu::ui::render::DeleteTexture(name_tex);  // B57: free per-frame local
         }
     }
 
@@ -1381,16 +1625,13 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
     }
 
     // ── v1.7.0-stabilize-7 Slice 5 (O-F Patch 2): star overlay ────────────────
-    // ASCII '*' rendered top-right of the icon when this entry is favorited.
-    // Cached statically so RenderText runs at most once per process.
+    // U+2605 BLACK STAR ★ rendered top-right of the icon when favorited.
+    // v1.8.2: render per-frame into local (LRU TextCacheClear invalidates stored ptrs).
     if (IsFavoriteByLpItem(item)) {
-        static SDL_Texture *star_tex = nullptr;
-        if (star_tex == nullptr) {
-            const pu::ui::Color amber { 0xFBu, 0xBFu, 0x24u, 0xFFu };
-            star_tex = pu::ui::render::RenderText(
-                pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
-                "*", amber);
-        }
+        const pu::ui::Color white { 0xFFu, 0xFFu, 0xFFu, 0xFFu };
+        SDL_Texture *star_tex = pu::ui::render::RenderText(
+            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+            "\xe2\x98\x85", white);  // U+2605 BLACK STAR ★
         if (star_tex != nullptr) {
             int sw = 0, sh = 0;
             SDL_QueryTexture(star_tex, nullptr, nullptr, &sw, &sh);
@@ -1400,6 +1641,7 @@ void QdLaunchpadElement::PaintCell(SDL_Renderer *r,
                 sw, sh
             };
             SDL_RenderCopy(r, star_tex, nullptr, &sdst);
+            pu::ui::render::DeleteTexture(star_tex);  // B57: free per-frame local
         }
     }
 }
@@ -1413,8 +1655,7 @@ void QdLaunchpadElement::FreeSlotTextures(size_t item_idx) {
             t = nullptr;
         }
     };
-    if (item_idx < name_tex_.size())   { free_if(name_tex_[item_idx]);  }
-    if (item_idx < glyph_tex_.size())  { free_if(glyph_tex_[item_idx]); }
+    // name_tex_ and glyph_tex_ removed in v1.8.2 (rendered per-frame locally).
     if (item_idx < icon_tex_.size())   { free_if(icon_tex_[item_idx]);  }
     if (item_idx < icon_loaded_.size()) { icon_loaded_[item_idx] = false; }
 }
@@ -1422,17 +1663,12 @@ void QdLaunchpadElement::FreeSlotTextures(size_t item_idx) {
 // ── FreeAllTextures ───────────────────────────────────────────────────────────
 
 void QdLaunchpadElement::FreeAllTextures() {
-    for (size_t i = 0u; i < name_tex_.size(); ++i)  {
-        if (name_tex_[i])  { SDL_DestroyTexture(name_tex_[i]);  name_tex_[i]  = nullptr; }
-    }
-    for (size_t i = 0u; i < glyph_tex_.size(); ++i) {
-        if (glyph_tex_[i]) { SDL_DestroyTexture(glyph_tex_[i]); glyph_tex_[i] = nullptr; }
-    }
+    // name_tex_ and glyph_tex_ removed in v1.8.2 (rendered per-frame locally;
+    // cache owns those pointers — no DestroyTexture from caller side).
+    // hc_tex_ and star_tex_ also removed for the same reason.
     for (size_t i = 0u; i < icon_tex_.size(); ++i)  {
         if (icon_tex_[i])  { SDL_DestroyTexture(icon_tex_[i]);  icon_tex_[i]  = nullptr; }
     }
-    name_tex_.clear();
-    glyph_tex_.clear();
     icon_tex_.clear();
     icon_loaded_.clear();
 }
@@ -1489,13 +1725,13 @@ void QdLaunchpadElement::PaintStatusLine(SDL_Renderer *r,
 // Inactive page dots: text_secondary colour, full alpha.
 // Only called when page_count_ > 1.
 void QdLaunchpadElement::PaintPageDots(SDL_Renderer *r) const {
-    static constexpr s32 DOT_SIZE = 8;
-    static constexpr s32 DOT_GAP  = 4;
+    static constexpr s32 DOT_SIZE = 12;  // Bug #1: was 8, too small
+    static constexpr s32 DOT_GAP  = 8;   // Bug #1: was 4, too tight
 
     const s32 n = static_cast<s32>(page_count_);
     const s32 total_w = n * DOT_SIZE + (n - 1) * DOT_GAP;
     s32 dot_x = (1920 - total_w) / 2;
-    static constexpr s32 DOT_Y = 1040;
+    static constexpr s32 DOT_Y = 1015;  // Bug #1: was 1040, overlapped "1/2" text
 
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     for (size_t i = 0u; i < page_count_; ++i) {

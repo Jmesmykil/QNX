@@ -53,7 +53,7 @@ void QdNxlinkWindow::SetPos(s32 x, s32 y) {
 
 void QdNxlinkWindow::FreeTextures() {
     auto destroy = [](SDL_Texture *&t) {
-        if (t != nullptr) { SDL_DestroyTexture(t); t = nullptr; }
+        pu::ui::render::DeleteTexture(t);
     };
     destroy(tex_title_);
     destroy(tex_state_active_);
@@ -180,7 +180,7 @@ void QdNxlinkWindow::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // Invalidate state-sensitive textures when nxlink state has changed.
     if (active != last_active_) {
         auto destroy = [](SDL_Texture *&t) {
-            if (t != nullptr) { SDL_DestroyTexture(t); t = nullptr; }
+            pu::ui::render::DeleteTexture(t);
         };
         destroy(tex_state_active_);
         destroy(tex_state_inactive_);

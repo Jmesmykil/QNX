@@ -76,12 +76,6 @@ private:
     // nullptr when decode failed — falls back to initial-letter glyph.
     SDL_Texture *avatar_tex_ = nullptr;
 
-    // Cached text textures (lazy, freed in destructor).
-    SDL_Texture *name_tex_  = nullptr;   // account display name
-    SDL_Texture *hint_tex_  = nullptr;   // "Tap to log in"
-    // Fallback glyph texture (first letter of name, used when avatar_tex_ == nullptr).
-    SDL_Texture *glyph_tex_ = nullptr;
-
     // First-letter fallback background colour (hash-derived from uid).
     u8 fallback_r_ = 0x4A;
     u8 fallback_g_ = 0x9E;
@@ -98,6 +92,9 @@ private:
     s32  down_y_                    = 0;
     s32  last_touch_x_              = 0;
     s32  last_touch_y_              = 0;
+    // v1.8.23: timestamp of TouchDown, in raw 19.2 MHz armGetSystemTick ticks.
+    // Used to gate TouchUp on a "tap" duration window (≤ 250 ms).
+    u64  down_tick_                 = 0;
 
     OnSelectFn on_select_;
 
@@ -114,8 +111,6 @@ private:
     // Render the fallback filled circle + initial-letter glyph.
     void RenderFallbackAvatar(SDL_Renderer *r, s32 cx, s32 cy, s32 radius);
 
-    // Ensure name_tex_ and hint_tex_ are rasterised.
-    void EnsureTextTextures(SDL_Renderer *r);
 };
 
 } // namespace ul::menu::qdesktop

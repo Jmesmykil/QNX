@@ -55,7 +55,7 @@ void QdLogFlushWindow::SetPos(s32 x, s32 y) {
 
 void QdLogFlushWindow::FreeTextures() {
     auto destroy = [](SDL_Texture *&t) {
-        if (t != nullptr) { SDL_DestroyTexture(t); t = nullptr; }
+        pu::ui::render::DeleteTexture(t);
     };
     destroy(tex_title_);
     destroy(tex_desc_);
@@ -91,8 +91,7 @@ void QdLogFlushWindow::EnsureBtnTexture() {
 void QdLogFlushWindow::RebuildLastFlushTexture() {
     // Free the old texture unconditionally before rebuilding.
     if (tex_last_flush_ != nullptr) {
-        SDL_DestroyTexture(tex_last_flush_);
-        tex_last_flush_ = nullptr;
+        pu::ui::render::DeleteTexture(tex_last_flush_);
     }
 
     char buf[48];

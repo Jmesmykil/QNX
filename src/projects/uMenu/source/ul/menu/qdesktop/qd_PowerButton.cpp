@@ -85,8 +85,7 @@ void QdPowerButtonElement::FreeTextures() {
     // the inner SDL_Texture via the wrapper's destructor.
     glyph_tex_handle_.reset();
     if (label_tex_ != nullptr) {
-        SDL_DestroyTexture(label_tex_);
-        label_tex_ = nullptr;
+        pu::ui::render::DeleteTexture(label_tex_);
     }
 }
 
@@ -238,7 +237,7 @@ void QdPowerButtonElement::OnInput(const u64 keys_down,
     }
 
     // ── Touch handling ─────────────────────────────────────────────────────────
-    const bool is_active = (touch_pos.x != 0 || touch_pos.y != 0);
+    const bool is_active = (!touch_pos.IsEmpty());
 
     if (is_active) {
         const bool inside = (touch_pos.x >= x_ && touch_pos.x < x_ + BTN_W &&

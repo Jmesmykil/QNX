@@ -32,17 +32,11 @@ namespace ul::menu::ui {
             // ── qdesktop login screen elements ─────────────────────────────
             qdesktop::QdWallpaperElement::Ref qd_wallpaper;
 
-            // "Q OS" brand title — programmatic SDL_Texture*, replaces the old
-            // romfs:/Logo.png Image element that showed the uLaunch upstream logo.
-            // Rendered once in the constructor (lazy on first OnRender), freed in
-            // the destructor.  Positioned centred horizontally at y=200 (same
-            // band the old logo image occupied).
-            SDL_Texture *qd_brand_tex_ = nullptr;
-            s32          qd_brand_x_   = 0;   // left edge (computed after rasterise)
-            s32          qd_brand_y_   = 220;  // baseline offset from top
+            // "Q OS" brand title — rendered per-frame into a local SDL_Texture*
+            // (v1.8.2 LRU fix: cache-owned ptrs cannot be stored across frames).
+            // Centred horizontally at y=220.
 
             // Branding text
-            pu::ui::elm::TextBlock::Ref qd_wordmark;   // "Q OS" (text-block subtitle, kept below)
             pu::ui::elm::TextBlock::Ref qd_version;    // UL_VERSION string
 
             // Clock / date (top-right)
@@ -72,18 +66,14 @@ namespace ul::menu::ui {
             pu::ui::elm::TextBlock::Ref qd_lbl_nxlink;
             pu::ui::elm::TextBlock::Ref qd_lbl_usbserial;
 
-            // Bottom-of-screen controller-hints bar texture (rendered once, freed in dtor).
+            // Bottom-of-screen controller-hints bar — rendered per-frame into a
+            // local SDL_Texture* (v1.8.2 LRU fix).
             // Centred horizontally at y=1020 (60 px from bottom).
-            SDL_Texture *qd_hints_tex_ = nullptr;
-            s32          qd_hints_x_   = 0;
             static constexpr s32 QD_HINTS_Y = 1020;
 
             // ── qdesktop helpers ────────────────────────────────────────────
             void onUserSelected(const AccountUid uid);
             void RefreshDevToolLabels();
-            // Rasterise qd_brand_tex_ and qd_hints_tex_ once the renderer is up.
-            // Called from the first OnRender frame (textures are nullptr until then).
-            void EnsureBrandingTextures();
 #endif
 
         public:

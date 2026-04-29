@@ -77,7 +77,19 @@ private:
     static constexpr size_t MAX_ENTRIES = 128;
     static constexpr size_t MAX_PATH    = 256;
 
-    enum class EntryKind : u8 { Folder, Nro, OtherFile };
+    enum class EntryKind : u8 {
+        Folder,      ///< directory
+        Nro,         ///< .nro homebrew (ASET icon path)
+        NcaNspXci,   ///< .nca / .nsp / .xci archive
+        TextFile,    ///< .txt / .log / .md config prose
+        ImageFile,   ///< .png / .jpg / .bmp / .gif
+        AudioFile,   ///< .mp3 / .wav / .ogg / .flac
+        ConfigFile,  ///< .json / .toml / .ini / .cfg
+        OtherFile,   ///< anything else
+    };
+
+    // Task D: sort mode
+    enum class SortMode : u8 { ByName, ByKind };
 
     struct Entry {
         char       name[64];
@@ -116,6 +128,19 @@ private:
     u32    dpad_held_frames_down_  = 0u;
     u32    dpad_held_frames_left_  = 0u;
     u32    dpad_held_frames_right_ = 0u;
+
+    // ── Task B: ZL context menu state ──────────────────────────────────────
+    // ctx_menu_active_: true while the popup is on screen
+    // ctx_menu_entry_: index of the entry ZL was pressed on
+    // ctx_menu_opt_:   currently highlighted menu option (0-based)
+    bool   ctx_menu_active_  = false;
+    size_t ctx_menu_entry_   = 0u;
+    s32    ctx_menu_opt_     = 0;
+    static constexpr s32 CTX_MENU_OPT_COUNT = 3; // Open, Properties, Close
+
+    // ── Task D: sort mode and dotfile toggle ────────────────────────────────
+    SortMode sort_mode_      = SortMode::ByName;
+    bool     show_dotfiles_  = false;
 
     // Cached SDL text textures for sidebar labels.
     // 6 sidebar entries, rendered once and reused.
@@ -166,6 +191,17 @@ private:
     /// Compute the pixel rect of entry slot i in the main pane.
     /// Returns false if i is outside the visible window.
     bool EntryRect(size_t i, s32 &out_x, s32 &out_y, s32 origin_x, s32 origin_y) const;
+
+    /// Draw the ZL context-menu popup for ctx_menu_entry_.
+    /// Must only be called when ctx_menu_active_ == true.
+    void RenderContextMenu(SDL_Renderer *r) const;
+
+    /// Execute the highlighted context menu option.
+    void DispatchContextMenuOption();
+
+    /// Classify a non-.nro file by its extension into the appropriate EntryKind.
+    /// ext must point to the first char AFTER the dot (already lower-cased, null-terminated).
+    static EntryKind ClassifyByExtension(const char *ext);
 };
 
 } // namespace ul::menu::qdesktop

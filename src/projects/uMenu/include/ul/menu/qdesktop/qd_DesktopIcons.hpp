@@ -12,10 +12,16 @@
 #include <ul/menu/qdesktop/qd_IconCategory.hpp>
 #include <ul/menu/qdesktop/qd_Anim.hpp>
 #include <ul/menu/qdesktop/qd_Cursor.hpp>
+#include <ul/menu/qdesktop/qd_NxlinkWindow.hpp>
+#include <ul/menu/qdesktop/qd_UsbSerialWindow.hpp>
+#include <ul/menu/qdesktop/qd_LogFlushWindow.hpp>
 #include <ul/menu/menu_Entries.hpp>
 #include <string>
 #include <array>
 #include <vector>
+#include <mutex>
+#include <thread>
+#include <atomic>
 
 namespace ul::menu::qdesktop {
 
@@ -39,17 +45,17 @@ enum class IconKind : u8 {
 // Groups entries for Launchpad section headers.  Distinct from NroCategory
 // (the 7-value glyph/colour classifier); this 5-value enum drives grouping.
 // K+1 Phase 1: used by LpSortKind mapping in qd_Launchpad.cpp.
-// K+1 Phase 2+ (deferred): Folders, Payloads scanner.
+// v1.8.10: removed Payloads (was value 3, unused dead enum value); ScanPayloads
+// now assigns IconCategory::Extras directly.  Builtin renumbered 4→3.
 enum class IconCategory : u8 {
     Nintendo  = 0,  // Installed application whose title-id high byte falls in
                     // 0x01 (Nintendo first-party range, e.g. 0x0100XXXXXXXXXXXX).
                     // Result is cached at sdmc:/ulaunch/cache/nintendo-classify.bin.
     Homebrew  = 1,  // Any IconKind::Nro from sdmc:/switch/.
     Extras    = 2,  // Third-party installed applications, IconKind::Special (Album etc.),
-                    // and any application whose title-id does not match the Nintendo range.
-    Payloads  = 3,  // Reserved for future Hekate-payload integration. No entries match
-                    // this value in Phase 1; the enum value exists so the mapping is complete.
-    Builtin   = 4,  // Q OS dock built-ins (Vault, Monitor, Control, About, AllPrograms).
+                    // payload stubs, and any application whose title-id does not match
+                    // the Nintendo range.
+    Builtin   = 3,  // Q OS dock built-ins (Vault, Monitor, Control, About, AllPrograms).
                     // Always rendered last in the Launchpad; never in the desktop grid alone.
 };
 
@@ -181,6 +187,55 @@ enum class ClassifyKind : u8 {
     Builtin        = 7,
 };
 
+// ── Input-source latch ────────────────────────────────────────────────────
+//
+// Tracks whether the most recent meaningful input came from the D-pad or from
+// the mouse / touch surface.  Used to implement mutual exclusion between the
+// D-pad focus highlight and the cursor hover ring so only one selection
+// indicator is ever visible.
+//
+// Transition rules (see QdDesktopIconsElement::OnInput for implementation):
+//   DPAD  <- D-pad Up/Down/Left/Right pressed.
+//   MOUSE <- mouse cursor moved >4 px OR touch tap/down detected.
+//   A / B / X / Y / L / R / ZL / ZR do NOT change the source.
+//
+// Render semantics (OR semantics with Worker-Plutonium-Hekate auto-hide):
+//   DPAD  -> cursor_ref_->SetVisible(false); D-pad focus highlight rendered.
+//   MOUSE -> cursor_ref_->SetVisible(true);  D-pad focus highlight suppressed.
+//
+// Default is DPAD because uMenu boots with the Switch controllers active and
+// the user must make an explicit mouse/touch gesture to switch mode.
+enum class InputSource : u8 {
+    DPAD  = 0,
+    MOUSE = 1,
+};
+
+// ── CellRenderState (v1.8.19) ─────────────────────────────────────────────
+// Per-slot state enum that encodes exactly which render branch PaintIconCell
+// should take for slot [i].  Written on cache transitions; read as a switch
+// dispatch in PaintIconCell so the per-frame conditional chain is O(1) with
+// zero extra cache hits.
+//
+// Values:
+//   Unknown       — initial state; PaintIconCell must determine the branch
+//                   and update the slot on first paint.
+//   BgraReady     — BGRA pixel data is in QdIconCache and an SDL_Texture has
+//                   been built from it.  PaintIconCell blits icon_tex_[idx].
+//   SpecialPng    — icon_tex_[idx] was loaded from a Special PNG asset (via
+//                   TryFindLoadImage).  No cache lookup needed.
+//   DefaultFallback — icon_tex_[idx] holds the DefaultHomebrew/Application
+//                   PNG.  texture_replaceable_[idx] is true; next frame where
+//                   BGRA arrives flips to BgraReady.
+//   GlyphOnly     — no texture available; PaintIconCell renders the glyph
+//                   character + background colour block only.
+enum class CellRenderState : u8 {
+    Unknown         = 0,
+    BgraReady       = 1,
+    SpecialPng      = 2,
+    DefaultFallback = 3,
+    GlyphOnly       = 4,
+};
+
 // ── QdDesktopIconsElement ─────────────────────────────────────────────────
 
 // Pu Element that renders the full auto-grid of desktop icons.
@@ -250,11 +305,33 @@ public:
         cursor_ref_ = cursor_ref;
     }
 
+    // v1.8.22a RetroArch crash fix: stop the background prewarm thread and
+    // join it.  Called from MenuApplication::Finalize() before
+    // smi::TerminateMenu() terminates the process via IPC.  TerminateMenu does
+    // NOT unwind the C++ stack, so the element's destructor never fires; without
+    // this hook, the prewarm thread keeps running into uLoader_apl's process
+    // startup and triggers a Data Abort (0x4A8) on RetroArch launch.
+    //
+    // Idempotent: if the thread is already stopped or was never started, the
+    // joinable() guard makes this a no-op.
+    inline void StopPrewarmThread() {
+        prewarm_stop_.store(true, std::memory_order_release);
+        if (prewarm_thread_.joinable()) {
+            prewarm_thread_.join();
+        }
+    }
+
     // K+1 Phase 1: Delete the Nintendo-classify cache file and clear the
     // in-process map.  Called when MenuMessage::ApplicationRecordsChanged is
     // received so the next IsNintendoPublisher call recomputes results against
     // the updated catalog.
     static void InvalidateNintendoClassifyCache();
+
+    // Bug #2/#3 fix (v1.8): Reset the favorites in-process cache so the next
+    // EnsureFavoritesLoaded() call reloads from disk.  Called from
+    // SetApplicationEntries() to ensure favorites resolve correct icon indices
+    // after a game-resume reload (uMenu does not restart on resume; statics persist).
+    static void InvalidateFavoritesCache();
 
     // Fix D (v1.6.12): Look up the auto-folder ClassifyKind for an entry by its
     // stable ID string.  Returns ClassifyKind::Unknown if the ID is not in the
@@ -311,9 +388,16 @@ private:
     QdTheme theme_;
     std::array<NroEntry, MAX_ICONS> icons_;
     size_t icon_count_;
-    size_t dpad_focus_index_;   // D-pad focused icon (keyboard nav); mutated only by D-pad/stick
+    size_t dpad_focus_index_;       // D-pad focused icon (keyboard nav); mutated only by D-pad/stick
+    // Bug #4 fix (v1.8): D-pad focus index within the favorites strip.
+    // SIZE_MAX = "not in favorites strip mode".  Set to 0..FAV_STRIP_VISIBLE-1
+    // when Up is pressed from dpad_focus_index_==0 (folder row 0); set back to
+    // SIZE_MAX when Down is pressed from the strip (returns to folder row 0).
+    // Left/Right wrap within the visible strip slots.
+    size_t fav_strip_focus_index_;
     size_t mouse_hover_index_;  // Cursor-hover icon; mutated only by cursor hit-test (ZR path)
-    QdIconCache cache_;
+    // v1.8.18: cache_ removed — replaced by GetSharedIconCache() singleton so
+    // Desktop and Launchpad share one QdIconCache object.
 
     // SP2-F13: sentinel pattern — -1 means "no previous magnify center".
     int32_t prev_magnify_center_;   // previous frame's magnify center slot (-1 = none)
@@ -338,6 +422,14 @@ private:
     size_t down_idx_;                 // HitTest result at TouchDown (MAX_ICONS = no hit)
     bool   was_touch_active_last_frame_; // previous frame's touch-active flag
 
+    // v1.8.23: coyote-timing state (per a93c4636 research)
+    struct InputCoyoteState {
+        u64 down_tick        = 0;          // armGetSystemTick at TouchDown / button-down
+        u64 last_launch_tick = 0;          // armGetSystemTick at last successful Launch
+        u32 dpad_held_frames[4] = {0,0,0,0};   // up/down/left/right
+    };
+    InputCoyoteState coyote_;
+
     // v1.7.0-stabilize-2 (REC-02 corrected): tracks which input modality
     // produced the most recent meaningful event.
     //   true  = last meaningful input was a D-pad direction or A button press;
@@ -356,6 +448,14 @@ private:
     // "D-pad active".
     bool   last_input_was_dpad_;
 
+    // v1.8 Input-source latch: formalises last_input_was_dpad_ into a
+    // two-value enum for mutual-exclusion D-pad ⇄ mouse/touch mode switching.
+    // Drives both cursor visibility (via cursor_ref_->SetVisible()) and whether
+    // the D-pad focus highlight is rendered.  Set on every meaningful input
+    // frame; A/B/X/Y/L/R/ZL/ZR do NOT change it.
+    // last_input_was_dpad_ is derived from this: DPAD→true, MOUSE→false.
+    InputSource active_input_source_;
+
     // v1.7.0-stabilize-2 (REC-02 helper): cached previous-frame cursor X/Y so
     // the OnInput delta check can detect motion without polling cursor_ref_
     // every cell. -1 sentinel = "no previous sample yet" (first frame).
@@ -364,6 +464,15 @@ private:
 
     // Optional cursor reference for A-button-as-click (injected by layout).
     QdCursorElement::Ref cursor_ref_;
+
+    // Task 9 (v1.8): dev-window panel instances — shown in a stacked popup when
+    // the ZL hot-zone (top-right corner [1890,1920)×[0,30)) is tapped.
+    // Created once in the constructor; shown/hidden by the ZL input handler.
+    QdNxlinkWindow::Ref    nxlink_win_;
+    QdUsbSerialWindow::Ref usb_win_;
+    QdLogFlushWindow::Ref  log_win_;
+    // True while the dev-popup is visible (ZL toggle).
+    bool dev_popup_open_;
 
     // Dock-slot hit-test rects, refreshed every OnRender so HitTest matches the
     // dock's current magnify state.  Visual at lines 882-888 of the .cpp uses
@@ -429,6 +538,14 @@ private:
     //   - Reset to false when the slot is reused (FreeCachedText path) or
     //     when SetApplicationEntries truncates icon_count_.
     std::array<bool, MAX_ICONS> texture_replaceable_;
+
+    // v1.8.19: per-slot CellRenderState.  Written by PaintIconCell on first paint
+    // and on every cache-state transition (BGRA arriving, fallback installed, etc.).
+    // Read at the top of PaintIconCell's icon-section as a switch dispatch so the
+    // per-frame multi-branch conditional chain becomes O(1) once the state is known.
+    // Initialised to CellRenderState::Unknown in the constructor; reset to Unknown
+    // by FreeCachedText() when a slot is recycled by SetApplicationEntries.
+    std::array<CellRenderState, MAX_ICONS> slot_render_state_;
 
     // Cycle I (boot speed): cached white rounded-rect mask texture rendered ONCE
     // per Element. PaintIconCell uses SDL_SetTextureColorMod + SDL_RenderCopy
@@ -532,10 +649,44 @@ private:
     // Invalidated (file deleted) by InvalidateNintendoClassifyCache().
     static bool IsNintendoPublisher(u64 app_id);
 
-    // Cycle K-TrackD: QdLaunchpadElement reads icons_[], icon_count_, and
-    // cache_ directly when building its snapshot in Open().  Grant friend
-    // access here so no public accessors (which would widen the API surface
-    // for all callers) are needed.
+    // v1.8.13 (UnifiedDesktopPrewarm): Walk every entry in icons_[0..icon_count_)
+    // and populate the BGRA cache via the same three load functions that the
+    // Launchpad's Open() prewarm uses.
+    //
+    // v1.8.15 (PrewarmThread): promoted to background thread.  Called from
+    // OnRender's first-call branch via SpawnPrewarmThread().  Returns immediately;
+    // the thread runs PrewarmAllIcons() concurrently with the render loop.
+    // Thread safety: all cache_.Get/Put calls are protected by cache_mutex_.
+    void PrewarmAllIcons();
+
+    // v1.8.15: Spawn the background prewarm thread.  Called exactly once from
+    // OnRender's first-call branch.  Detaches or joins in destructor via
+    // prewarm_stop_ flag; see destructor for join strategy.
+    void SpawnPrewarmThread();
+
+    // ── v1.8.15 threading members ─────────────────────────────────────────────
+    // v1.8.18: cache_mutex_ removed — replaced by GetSharedIconCacheMutex()
+    // so Desktop and Launchpad synchronise on the same std::mutex.
+    // All cache Get/Put callers continue to use std::lock_guard; they now call
+    // GetSharedIconCacheMutex() instead of cache_mutex_.
+
+    // Stop flag: set to true by destructor to signal the background thread to
+    // exit after its current loop iteration.  The thread polls this flag between
+    // entries.  Declared atomic so the write from the main thread is visible to
+    // the background thread without requiring the shared mutex for the poll.
+    std::atomic<bool> prewarm_stop_;
+
+    // Background prewarm thread.  Default-constructed (not joinable) until
+    // SpawnPrewarmThread() assigns it.  Joined in the destructor after
+    // prewarm_stop_ is set, guaranteeing the thread exits before the process
+    // shuts down.  Strategy: join (not detach) so the destructor never returns
+    // while the thread holds a `this` pointer to freed memory.
+    std::thread prewarm_thread_;
+
+    // Cycle K-TrackD: QdLaunchpadElement reads icons_[] and icon_count_
+    // directly when building its snapshot in Open().  Grant friend access here
+    // so no public accessors (which would widen the API surface for all callers)
+    // are needed.
     friend class QdLaunchpadElement;
 };
 

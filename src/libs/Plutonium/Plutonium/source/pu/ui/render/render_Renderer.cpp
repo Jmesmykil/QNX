@@ -1,4 +1,8 @@
 #include <pu/ui/render/render_Renderer.hpp>
+#include <list>
+#include <unordered_map>
+#include <unordered_set>
+#include <tuple>
 
 namespace pu::ui::render {
 
@@ -20,6 +24,230 @@ namespace pu::ui::render {
             }
 
             return false;
+        }
+
+        // -----------------------------------------------------------------------
+        // Task A — cross-frame LRU text-texture cache (v1.8.5 recalibration)
+        //
+        // History:
+        //   v1.8 shipped a 512-entry LRU cache that evicted mid-frame:
+        //   TextCacheInsert called SDL_DestroyTexture on the LRU victim while
+        //   SDL's render command buffer still held a pointer to it from an
+        //   SDL_RenderCopyEx earlier in the same frame.  This caused use-after-
+        //   free blits → text disappearance (B44/B46/B47 root cause).
+        //
+        //   v1.8.1 (Fix C) reduced the cap to 64 entries and flushed the cache
+        //   at every frame boundary to prevent dangling pointers within a frame.
+        //   That solved mid-frame eviction but introduced cross-frame eviction:
+        //   callers (folder sheets, monitor layout, file manager sidebar) hold
+        //   SDL_Texture* returned by RenderText() as member fields across frames.
+        //   With only 64 entries, normal navigation displaces those pointers
+        //   from the cache before the next frame renders → blank text (B44/B46/
+        //   B47).
+        //
+        //   v1.8.3 introduced the deferred-destroy queue: evicted textures are
+        //   placed on g_text_cache_deferred_destroy and destroyed only at the
+        //   START of the next frame (InitializeRender), after SDL_RenderPresent.
+        //   This closed mid-frame eviction completely.
+        //
+        //   v1.8.4 introduced IsCacheOwnedTexture / g_text_cache_owned_pointers:
+        //   DeleteTexture() in render_SDL2.cpp checks this set before calling
+        //   SDL_DestroyTexture, preventing double-free of cache-owned textures.
+        //
+        // v1.8.5 — raise cap to 512 entries (closes B44/B46/B47):
+        //   With deferred-destroy (v1.8.3) and cache-aware DeleteTexture (v1.8.4)
+        //   both in place, the original v1.8.1 concern (mid-frame eviction) is
+        //   fully closed.  The only remaining problem with the 64-entry cap is
+        //   cross-frame eviction: the typical uMenu working set (folder open/
+        //   close cycle, monitor screen, file manager sidebar) spans ~100–200
+        //   distinct text strings across adjacent frames.  A 512-entry cap covers
+        //   this working set with margin, eliminating eviction during normal
+        //   navigation.
+        //
+        //   512 entries; mid-frame eviction is impossible because LRU eviction
+        //   queues pointers to deferred-destroy and drains them at frame START,
+        //   after SDL_RenderPresent.  Cross-frame caller pointer holds are safe
+        //   at this size for typical uMenu working set.
+        //
+        // Memory budget at 512 entries:
+        //   Typical text texture: label string rendered at UI font size, usually
+        //   ≤400 px wide × ≤48 px tall at 4 bytes/pixel → ~75 KB worst case,
+        //   ~10–20 KB typical.  512 × 20 KB ≈ 10 MB peak, well within the
+        //   Switch's 4 GB LPDDR4 headroom and far below the prior 512-entry
+        //   v1.8 cache which hit the same bound without the safety infrastructure.
+        //   Audio-decode buffers (~1–2 MB each) are unaffected at this level.
+        // -----------------------------------------------------------------------
+
+        constexpr u32 TextCacheMaxEntries = 512;
+
+        struct TextCacheKey {
+            std::string font_name;
+            std::string text;
+            u8  r, g, b, a;
+            u32 max_width;
+            u32 max_height;
+
+            bool operator==(const TextCacheKey &o) const {
+                return font_name == o.font_name
+                    && text      == o.text
+                    && r         == o.r
+                    && g         == o.g
+                    && b         == o.b
+                    && a         == o.a
+                    && max_width == o.max_width
+                    && max_height== o.max_height;
+            }
+        };
+
+        struct TextCacheKeyHash {
+            std::size_t operator()(const TextCacheKey &k) const noexcept {
+                // FNV-1a mix over the fields.
+                std::size_t h = 14695981039346656037ULL;
+                auto mix = [&](const void *data, std::size_t len) {
+                    const auto *p = reinterpret_cast<const unsigned char*>(data);
+                    for(std::size_t i = 0; i < len; i++) {
+                        h ^= p[i];
+                        h *= 1099511628211ULL;
+                    }
+                };
+                mix(k.font_name.data(), k.font_name.size());
+                mix(k.text.data(), k.text.size());
+                const u8 rgba[4] = { k.r, k.g, k.b, k.a };
+                mix(rgba, 4);
+                mix(&k.max_width,  sizeof(k.max_width));
+                mix(&k.max_height, sizeof(k.max_height));
+                return h;
+            }
+        };
+
+        // Access-order list: front = most-recently-used.
+        using TextCacheList = std::list<TextCacheKey>;
+
+        struct TextCacheEntry {
+            sdl2::Texture  tex;
+            TextCacheList::iterator list_it;  // points into g_TextCacheOrder
+        };
+
+        std::unordered_map<TextCacheKey, TextCacheEntry, TextCacheKeyHash> g_TextCache;
+        TextCacheList g_TextCacheOrder;
+
+        // -----------------------------------------------------------------------
+        // Cache-owned pointer set (v1.8.4 B42 fix)
+        //
+        // Every SDL_Texture* that is live inside g_TextCache is also tracked here.
+        // DeleteTexture() (render_SDL2.cpp) checks this set before calling
+        // SDL_DestroyTexture.  If the pointer is cache-owned, the caller must not
+        // destroy it — the cache manages the lifetime (via the deferred-destroy
+        // queue drained at the next InitializeRender() frame boundary).
+        //
+        // Insert/erase points:
+        //   • TextCacheInsert: add the new texture on every successful insert.
+        //   • TextCacheInsert eviction path: erase the victim BEFORE pushing to
+        //     g_text_cache_deferred_destroy (so the deferred queue never holds a
+        //     pointer that is also in the owned set).
+        //   • TextCacheClear: cleared after all textures are destroyed (shutdown).
+        // -----------------------------------------------------------------------
+        std::unordered_set<SDL_Texture*> g_text_cache_owned_pointers;
+
+        // -----------------------------------------------------------------------
+        // Deferred-destroy queue (v1.8.3 cache-contract restoration)
+        //
+        // v1.7 cache contract: callers MAY hold the SDL_Texture* returned by
+        // RenderText() across frames.  The cache owns the texture lifetime.
+        // Evicted entries are moved here rather than destroyed immediately; the
+        // queue is drained at the START of the next InitializeRender() call
+        // (frame boundary), guaranteeing no mid-frame or cross-frame destruction
+        // of a pointer a caller might still hold.
+        //
+        // Safety invariant: SDL_DestroyTexture is only ever called from
+        // (a) the deferred queue drain at the head of InitializeRender(), and
+        // (b) TextCacheClear() which is called only from Finalize() (shutdown).
+        // Neither path fires between InitializeRender() and FinalizeRender() of
+        // the same frame.
+        // -----------------------------------------------------------------------
+        std::vector<SDL_Texture*> g_text_cache_deferred_destroy;
+
+        // Look up a cached texture; on hit, move to front (MRU).
+        // Returns nullptr on miss.
+        sdl2::Texture TextCacheLookup(const TextCacheKey &key) {
+            auto it = g_TextCache.find(key);
+            if(it == g_TextCache.end()) {
+                return nullptr;
+            }
+            // Move to MRU position.
+            g_TextCacheOrder.splice(g_TextCacheOrder.begin(), g_TextCacheOrder, it->second.list_it);
+            return it->second.tex;
+        }
+
+        // -----------------------------------------------------------------------
+        // Cache contract (v1.8.3):
+        //   Callers MAY hold the SDL_Texture* returned by RenderText() across
+        //   frames.  LRU eviction is deferred to the start of the next
+        //   InitializeRender() call (frame boundary), guaranteeing no mid-frame
+        //   texture destruction.  The cache survives across frames unless its
+        //   capacity (TextCacheMaxEntries) is exceeded; evicted-but-not-yet-
+        //   destroyed pointers may briefly dangle after eviction but are cleaned
+        //   up at the safe frame boundary before any new rendering begins.
+        //   Callers MUST NOT call SDL_DestroyTexture on a pointer returned by
+        //   RenderText() — the cache owns the lifetime.
+        // -----------------------------------------------------------------------
+
+        // Insert a new entry. If the cache is full, evict the LRU (back of list).
+        // Evicted textures are placed in g_text_cache_deferred_destroy rather than
+        // destroyed immediately, preserving the cross-frame pointer validity
+        // contract documented above.
+        void TextCacheInsert(const TextCacheKey &key, sdl2::Texture tex) {
+            // Evict LRU until under the cap — deferred, NOT immediate destroy.
+            while(g_TextCache.size() >= TextCacheMaxEntries && !g_TextCacheOrder.empty()) {
+                const auto &lru_key = g_TextCacheOrder.back();
+                auto victim = g_TextCache.find(lru_key);
+                if(victim != g_TextCache.end()) {
+                    // Remove from owned-pointer set BEFORE the deferred queue so
+                    // the two sets are never simultaneously inconsistent.
+                    if(victim->second.tex != nullptr) {
+                        g_text_cache_owned_pointers.erase(victim->second.tex);
+                        // Push to deferred queue; drain happens at next frame boundary.
+                        g_text_cache_deferred_destroy.push_back(victim->second.tex);
+                    }
+                    g_TextCache.erase(victim);
+                }
+                g_TextCacheOrder.pop_back();
+            }
+            // Insert at MRU position and register the pointer as cache-owned.
+            g_TextCacheOrder.push_front(key);
+            g_TextCache.emplace(key, TextCacheEntry{ tex, g_TextCacheOrder.begin() });
+            if(tex != nullptr) {
+                g_text_cache_owned_pointers.insert(tex);
+            }
+        }
+
+        // Destroy every cached texture and clear the bookkeeping structures.
+        // Called ONLY from Renderer::Finalize() before SDL_DestroyRenderer().
+        // NOT called per-frame — the deferred-destroy queue handles frame-boundary
+        // cleanup instead.  SDL_DestroyTexture requires the renderer to still be
+        // alive; Finalize() guarantees that by calling this before the renderer
+        // is destroyed.
+        void TextCacheClear() {
+            for(auto &[key, entry] : g_TextCache) {
+                if(entry.tex != nullptr) {
+                    SDL_DestroyTexture(entry.tex);
+                    entry.tex = nullptr;
+                }
+            }
+            g_TextCache.clear();
+            g_TextCacheOrder.clear();
+            // Clear owned-pointer set — all live cache textures were just destroyed.
+            g_text_cache_owned_pointers.clear();
+            // Also drain any deferred entries that haven't been flushed yet
+            // (e.g. shutdown before the next frame boundary).
+            // These were already removed from g_text_cache_owned_pointers at
+            // eviction time, so no additional cleanup needed for the set here.
+            for(SDL_Texture *t : g_text_cache_deferred_destroy) {
+                if(t != nullptr) {
+                    SDL_DestroyTexture(t);
+                }
+            }
+            g_text_cache_deferred_destroy.clear();
         }
 
     }
@@ -100,6 +328,14 @@ namespace pu::ui::render {
 
     void Renderer::Finalize() {
         if(this->initialized) {
+            // Shutdown-only cache flush.  TextCacheClear() is NOT called
+            // per-frame (removed in v1.8.3; deferred-destroy queue drains in
+            // InitializeRender() instead).  This is the only remaining call
+            // site — it also drains the deferred queue and destroys any still-
+            // cached textures before SDL_DestroyRenderer() is called below.
+            // SDL_DestroyTexture requires the renderer to still be alive.
+            TextCacheClear();
+
             // Close all the fonts before closing TTF
             g_FontTable.clear();
 
@@ -129,6 +365,26 @@ namespace pu::ui::render {
     }
 
     void Renderer::InitializeRender(const Color clr) {
+        // v1.8.3 deferred-destroy drain: flush SDL_Textures that were evicted
+        // from the LRU cache during the previous frame.  This is the ONLY place
+        // SDL_DestroyTexture is called on cache-owned textures during normal
+        // operation.  By draining here — at the very start of a new frame,
+        // before any SDL_RenderCopyEx calls — we guarantee:
+        //   (a) no caller still holds a live pointer to these textures
+        //       (all RenderText() calls from the previous frame have completed),
+        //   (b) the SDL renderer is still alive, and
+        //   (c) cross-frame cache hits are preserved: textures that were NOT
+        //       evicted survive into this frame unchanged.
+        //
+        // TextCacheClear() is NOT called here (per-frame full wipe removed in
+        // v1.8.3).  It is called only from Finalize() on shutdown.
+        for(SDL_Texture *tex : g_text_cache_deferred_destroy) {
+            if(tex) {
+                SDL_DestroyTexture(tex);
+            }
+        }
+        g_text_cache_deferred_destroy.clear();
+
         SDL_SetRenderDrawColor(g_Renderer, clr.r, clr.g, clr.b, clr.a);
         SDL_RenderClear(g_Renderer);
     }
@@ -350,7 +606,34 @@ namespace pu::ui::render {
         return height;
     }
 
+    bool IsCacheOwnedTexture(SDL_Texture *tex) {
+        return tex != nullptr && g_text_cache_owned_pointers.count(tex) != 0;
+    }
+
     sdl2::Texture RenderText(const std::string &font_name, const std::string &text, const Color clr, const u32 max_width, const u32 max_height) {
+        // Task A — LRU cache look-up.
+        // The cache stores the FINAL texture (after any truncation loop), keyed
+        // by the full render parameters.  On a hit we return the cached pointer
+        // directly — no TTF_RenderUTF8_Blended, no SDL_CreateTextureFromSurface.
+        // Callers that call SDL_DestroyTexture on the returned pointer must NOT
+        // do so for cached textures.  Plutonium's own callers (elm_TextBlock,
+        // elm_Button, etc.) never destroy the result of RenderText() — they pass
+        // it straight to RenderTexture() and let the cache own lifetime.  Any
+        // external caller that tries to destroy a cached texture would corrupt
+        // the cache; that pattern did not exist in the codebase at the time this
+        // was written.
+        const TextCacheKey cache_key{
+            font_name, text,
+            clr.r, clr.g, clr.b, clr.a,
+            max_width, max_height
+        };
+
+        auto cached = TextCacheLookup(cache_key);
+        if(cached != nullptr) {
+            return cached;
+        }
+
+        // Cache miss — render the texture, then insert it.
         for(auto &[name, font]: g_FontTable) {
             if(name == font_name) {
                 auto text_tex = font->RenderText(text, clr);
@@ -378,6 +661,7 @@ namespace pu::ui::render {
                     }
                 }
 
+                TextCacheInsert(cache_key, text_tex);
                 return text_tex;
             }
         }

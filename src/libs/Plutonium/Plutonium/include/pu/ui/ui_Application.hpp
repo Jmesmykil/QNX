@@ -70,6 +70,12 @@ namespace pu::ui {
             OnInputCallback on_ipt_cb;
             render::Renderer::Ref renderer;
             RMutex render_lock;
+            // Task A/B — USB mouse + keyboard state (zeroed in ctor, polled in accessors)
+            HidMouseState usb_mouse_state_;
+            HidKeyboardState usb_kbd_state_;
+            // Accumulated fractional cursor position for sub-pixel delta accumulation
+            s32 usb_mouse_cursor_x_;
+            s32 usb_mouse_cursor_y_;
         
         public:
             /**
@@ -349,6 +355,107 @@ namespace pu::ui {
                 hidGetTouchScreenStates(&state, 1);
                 return state;
             }
+
+            /**
+             * @brief Task A — Poll one USB mouse sample and cache it in usb_mouse_state_.
+             * @note Callers should check IsUsbMouseConnected() before trusting delta/button fields.
+             * @return The polled HidMouseState (also written to usb_mouse_state_).
+             */
+            inline HidMouseState PollUsbMouse() {
+                hidGetMouseStates(&this->usb_mouse_state_, 1);
+                return this->usb_mouse_state_;
+            }
+
+            /**
+             * @brief Task A — Returns true when a USB mouse reports HidMouseAttribute_IsConnected.
+             * @note Reads the cached usb_mouse_state_ — call PollUsbMouse() first each frame.
+             */
+            inline bool IsUsbMouseConnected() const {
+                return (this->usb_mouse_state_.attributes & HidMouseAttribute_IsConnected) != 0;
+            }
+
+            /**
+             * @brief Task A — Update the logical cursor position from USB mouse delta.
+             *
+             * Clamps to [0, screen_w) x [0, screen_h).  Returns the updated TouchPoint so
+             * callers can feed it into the same pipeline as joystick-synthesized cursor.
+             *
+             * @param screen_w  Logical screen width in pixels (e.g. render::ScreenWidth).
+             * @param screen_h  Logical screen height in pixels (e.g. render::ScreenHeight).
+             * @return The new cursor position clamped to screen bounds.
+             */
+            inline TouchPoint ApplyUsbMouseDelta(const s32 screen_w, const s32 screen_h) {
+                this->usb_mouse_cursor_x_ += this->usb_mouse_state_.delta_x;
+                this->usb_mouse_cursor_y_ += this->usb_mouse_state_.delta_y;
+                // Clamp to logical screen bounds
+                if(this->usb_mouse_cursor_x_ < 0) { this->usb_mouse_cursor_x_ = 0; }
+                if(this->usb_mouse_cursor_y_ < 0) { this->usb_mouse_cursor_y_ = 0; }
+                if(this->usb_mouse_cursor_x_ >= screen_w) { this->usb_mouse_cursor_x_ = screen_w - 1; }
+                if(this->usb_mouse_cursor_y_ >= screen_h) { this->usb_mouse_cursor_y_ = screen_h - 1; }
+                return { static_cast<u32>(this->usb_mouse_cursor_x_), static_cast<u32>(this->usb_mouse_cursor_y_) };
+            }
+
+            /**
+             * @brief Task A — Returns the raw USB mouse button bitfield from the last PollUsbMouse() call.
+             * @note Bits: Left=BIT(0), Right=BIT(1), Middle=BIT(2), Forward=BIT(3), Back=BIT(4).
+             */
+            inline u32 GetUsbMouseButtons() const {
+                return static_cast<u32>(this->usb_mouse_state_.buttons);
+            }
+
+            /**
+             * @brief Task B — Poll one USB keyboard sample and cache it in usb_kbd_state_.
+             * @return The polled HidKeyboardState (also written to usb_kbd_state_).
+             */
+            inline HidKeyboardState PollUsbKeyboard() {
+                hidGetKeyboardStates(&this->usb_kbd_state_, 1);
+                return this->usb_kbd_state_;
+            }
+
+            /**
+             * @brief Task B — Translate held USB keyboard navigation/action keys into
+             *        HidNpadButton-compatible bit flags so callers can OR them into keys_down.
+             *
+             * Mapping:
+             *  Return (40)    → HidNpadButton_A       (BIT(0))
+             *  Escape (41)    → HidNpadButton_B       (BIT(1))
+             *  LeftArrow (80) → HidNpadButton_StickLLeft  (BIT(12))
+             *  UpArrow (82)   → HidNpadButton_StickLUp    (BIT(13))
+             *  RightArrow(79) → HidNpadButton_StickLRight (BIT(14))
+             *  DownArrow (81) → HidNpadButton_StickLDown  (BIT(15))
+             *  Home (74)      → HidNpadButton_L        (BIT(6))
+             *  End (77)       → HidNpadButton_R        (BIT(7))
+             *  PageUp (75)    → HidNpadButton_ZL       (BIT(8))
+             *  PageDown (78)  → HidNpadButton_ZR       (BIT(9))
+             *
+             * @note Call PollUsbKeyboard() first each frame before calling this.
+             * @return u64 bitmask compatible with keys_down / keys_held HidNpadButton values.
+             */
+            inline u64 GetKeyboardKeysDown() const {
+                u64 bits = 0;
+                const HidKeyboardState *ks = &this->usb_kbd_state_;
+                if(hidKeyboardStateGetKey(ks, static_cast<HidKeyboardKey>(40)))  { bits |= HidNpadButton_A; }           // Return → A
+                if(hidKeyboardStateGetKey(ks, static_cast<HidKeyboardKey>(41)))  { bits |= HidNpadButton_B; }           // Escape → B
+                if(hidKeyboardStateGetKey(ks, static_cast<HidKeyboardKey>(80)))  { bits |= HidNpadButton_StickLLeft; }  // LeftArrow
+                if(hidKeyboardStateGetKey(ks, static_cast<HidKeyboardKey>(82)))  { bits |= HidNpadButton_StickLUp; }    // UpArrow
+                if(hidKeyboardStateGetKey(ks, static_cast<HidKeyboardKey>(79)))  { bits |= HidNpadButton_StickLRight; } // RightArrow
+                if(hidKeyboardStateGetKey(ks, static_cast<HidKeyboardKey>(81)))  { bits |= HidNpadButton_StickLDown; }  // DownArrow
+                if(hidKeyboardStateGetKey(ks, static_cast<HidKeyboardKey>(74)))  { bits |= HidNpadButton_L; }           // Home
+                if(hidKeyboardStateGetKey(ks, static_cast<HidKeyboardKey>(77)))  { bits |= HidNpadButton_R; }           // End
+                if(hidKeyboardStateGetKey(ks, static_cast<HidKeyboardKey>(75)))  { bits |= HidNpadButton_ZL; }          // PageUp
+                if(hidKeyboardStateGetKey(ks, static_cast<HidKeyboardKey>(78)))  { bits |= HidNpadButton_ZR; }          // PageDown
+                return bits;
+            }
+
+            /**
+             * @brief Task A — Returns the current cached USB mouse cursor X position.
+             */
+            inline s32 GetUsbMouseCursorX() const { return this->usb_mouse_cursor_x_; }
+
+            /**
+             * @brief Task A — Returns the current cached USB mouse cursor Y position.
+             */
+            inline s32 GetUsbMouseCursorY() const { return this->usb_mouse_cursor_y_; }
     };
 
 }

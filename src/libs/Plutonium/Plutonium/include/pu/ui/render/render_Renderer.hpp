@@ -11,6 +11,7 @@
 #include <pu/ui/render/render_SDL2.hpp>
 #include <pu/ttf/ttf_Font.hpp>
 #include <vector>
+#include <switch.h>   // armGetSystemTick, armTicksToNs, HidAnalogStickState
 
 namespace pu::ui::render {
 
@@ -192,6 +193,34 @@ namespace pu::ui::render {
         constexpr TextureRenderOptions() : alpha_mod(NoAlpha), width(NoWidth), height(NoHeight), rot_angle(NoRotation), src_x(NoSourceX), src_y(NoSourceY) {}
     };
 
+    // -----------------------------------------------------------------------
+    // Task B — per-controller analog-stick calibration state (Hekate pattern 3)
+    //
+    // Hekate's gui.c latches cx_min/cx_max/cy_min/cy_max around the actual
+    // resting position reported on the first centered reading.  We replicate
+    // the same approach: on the first padUpdate() call where the raw stick
+    // position is within [0x400, 0xC00] on both axes (i.e. roughly centred),
+    // we snap ±0x96 around that value as the dead-zone.  On controller
+    // disconnect/reconnect the latch resets to uncalibrated.
+    //
+    // The state is stored per HidNpadIdType (0–7 + HANDHELD) to support
+    // multi-controller setups.  Index 8 is reserved for HidNpadIdType_Handheld.
+    // -----------------------------------------------------------------------
+
+    constexpr u32 StickCalibMaxControllers = 9;  // 0-7 + Handheld
+    constexpr s32 StickCalibCenterLow  = 0x400;
+    constexpr s32 StickCalibCenterHigh = 0xC00;
+    constexpr s32 StickCalibDeadBand   = 0x96;
+    constexpr u64 CursorHideIdleMs     = 3000;   // Task D — 3 s matches Hekate gui.c:584
+
+    struct StickCalibState {
+        s32  origin_x;
+        s32  origin_y;
+        bool calibrated;
+
+        constexpr StickCalibState() : origin_x(0), origin_y(0), calibrated(false) {}
+    };
+
     /**
      * @brief The main class dealing with rendering.
      */
@@ -204,6 +233,13 @@ namespace pu::ui::render {
             s32 base_a;
             PadState input_pad;
 
+            // Task B — per-controller calibration state.
+            StickCalibState stick_calib[StickCalibMaxControllers];
+
+            // Task D — monotonic tick of the last detected input event.
+            // Initialised to 0; first UpdateInput() sets it.
+            u64 last_input_tick;
+
             inline u8 GetActualAlpha(const u8 input_a) {
                 if(this->base_a >= 0) {
                     return static_cast<u8>(this->base_a);
@@ -213,12 +249,20 @@ namespace pu::ui::render {
                 }
             }
 
+            // Return the index into stick_calib[] for a given player number.
+            // Player numbers 0-7 map directly; Handheld (HidNpadIdType_Handheld)
+            // maps to index 8.
+            static constexpr u32 StickCalibIndex(const HidNpadIdType id) {
+                if(id == HidNpadIdType_Handheld) return 8;
+                return static_cast<u32>(id);
+            }
+
         public:
             /**
              * @brief Creates a new Renderer with the specified initialization options.
              * @param init_opts The options to use for initializing the Renderer.
              */
-            Renderer(const RendererInitOptions init_opts) : init_opts(init_opts), initialized(false), base_x(0), base_y(0), base_a(0), input_pad() {}
+            Renderer(const RendererInitOptions init_opts) : init_opts(init_opts), initialized(false), base_x(0), base_y(0), base_a(0), input_pad(), stick_calib{}, last_input_tick(0) {}
             PU_SMART_CTOR(Renderer)
 
             /**
@@ -394,9 +438,58 @@ namespace pu::ui::render {
             /**
              * @brief Updates the input state.
              * @note This function is internally called by the Application using this Renderer.
+             *
+             * Task D — also refreshes the last-input tick so GetInputIdleMs()
+             * can drive cursor auto-hide.  Any non-zero button/touch activity
+             * resets the idle counter.
              */
             inline void UpdateInput() {
                 padUpdate(&this->input_pad);
+
+                // Refresh idle timestamp when any button is pressed, any button
+                // is released, or any button is held.  Touch is handled by
+                // NotifyTouchActivity() called from ui_Application.
+                const auto any_buttons =
+                    padGetButtonsDown(&this->input_pad) |
+                    padGetButtonsUp(&this->input_pad)   |
+                    padGetButtons(&this->input_pad);
+                if(any_buttons != 0) {
+                    this->last_input_tick = armGetSystemTick();
+                }
+                if(this->last_input_tick == 0) {
+                    // First call — initialise so we don't show as idle immediately.
+                    this->last_input_tick = armGetSystemTick();
+                }
+            }
+
+            /**
+             * @brief Notify the renderer that a touch event was detected.
+             * @note Call this from the Application render loop when tch_state.count > 0.
+             *       Resets the cursor-hide idle timer (Task D).
+             */
+            inline void NotifyTouchActivity() {
+                this->last_input_tick = armGetSystemTick();
+            }
+
+            /**
+             * @brief Returns milliseconds elapsed since the last detected input.
+             * @return Elapsed idle time in milliseconds (Task D).
+             */
+            inline u64 GetInputIdleMs() const {
+                if(this->last_input_tick == 0) {
+                    return 0;
+                }
+                const u64 now  = armGetSystemTick();
+                const u64 diff = now - this->last_input_tick;
+                return armTicksToNs(diff) / 1'000'000ULL;
+            }
+
+            /**
+             * @brief Returns true when the cursor should be hidden due to inactivity.
+             * @note Mirrors Hekate gui.c:584-613 — suppress after CursorHideIdleMs.
+             */
+            inline bool IsCursorHidden() const {
+                return GetInputIdleMs() >= CursorHideIdleMs;
             }
 
             /**
@@ -421,6 +514,63 @@ namespace pu::ui::render {
              */
             inline u64 GetButtonsHeld() {
                 return padGetButtons(&this->input_pad);
+            }
+
+            /**
+             * @brief Returns a calibrated analog stick reading for the specified
+             *        player/controller (Task B — Hekate pattern 3).
+             *
+             * On the first call where the raw stick position is within the
+             * neutral band [StickCalibCenterLow, StickCalibCenterHigh] on both
+             * axes, the actual resting position is latched as origin_x/y and
+             * dead-zone StickCalibDeadBand is applied around it.
+             * Subsequent calls return zero when inside the dead-zone and the
+             * raw delta otherwise.
+             *
+             * @param id   The player number (HidNpadIdType_No1..No8 or Handheld).
+             * @param left True for left stick, false for right stick.
+             * @param out_x Calibrated X output (±0x7FFF range, clamped).
+             * @param out_y Calibrated Y output (±0x7FFF range, clamped).
+             */
+            inline void GetCalibratedStick(const HidNpadIdType id, const bool left,
+                                           s32 &out_x, s32 &out_y) {
+                const u32 idx = StickCalibIndex(id);
+                auto &cs = this->stick_calib[idx];
+
+                HidAnalogStickState raw = {};
+                if(left) {
+                    raw = padGetStickPos(&this->input_pad, 0);
+                }
+                else {
+                    raw = padGetStickPos(&this->input_pad, 1);
+                }
+
+                if(!cs.calibrated) {
+                    // Latch if the raw position is within the neutral band.
+                    if(raw.x >= StickCalibCenterLow && raw.x <= StickCalibCenterHigh &&
+                       raw.y >= StickCalibCenterLow && raw.y <= StickCalibCenterHigh) {
+                        cs.origin_x   = raw.x;
+                        cs.origin_y   = raw.y;
+                        cs.calibrated = true;
+                    }
+                    // Before calibration, treat stick as centered.
+                    out_x = 0;
+                    out_y = 0;
+                    return;
+                }
+
+                const s32 dx = raw.x - cs.origin_x;
+                const s32 dy = raw.y - cs.origin_y;
+                out_x = (dx > -StickCalibDeadBand && dx < StickCalibDeadBand) ? 0 : dx;
+                out_y = (dy > -StickCalibDeadBand && dy < StickCalibDeadBand) ? 0 : dy;
+            }
+
+            /**
+             * @brief Resets the per-controller calibration for the given player.
+             * @note Call this on controller disconnect / reconnect events.
+             */
+            inline void ResetStickCalibration(const HidNpadIdType id) {
+                this->stick_calib[StickCalibIndex(id)] = StickCalibState{};
             }
     };
 
@@ -518,5 +668,20 @@ namespace pu::ui::render {
      * @return The rendered text texture. If the font is not available, nullptr will be returned.
      */
     sdl2::Texture RenderText(const std::string &font_name, const std::string &text, const Color clr, const u32 max_width = 0, const u32 max_height = 0);
+
+    /**
+     * @brief Returns true if the texture pointer is owned by the text-render cache.
+     *
+     * Cache-owned textures must not be passed to SDL_DestroyTexture by callers —
+     * their lifetime is managed by the LRU cache and the deferred-destroy queue
+     * drained at each InitializeRender() frame boundary.  DeleteTexture() uses
+     * this predicate to guard against B42-class use-after-free bugs where callers
+     * holding a RenderText() result call DeleteTexture on it.
+     *
+     * @param tex The SDL texture pointer to test.
+     * @return true if tex is live in g_TextCache (i.e. was returned by RenderText()
+     *         and has not yet been evicted), false otherwise.
+     */
+    bool IsCacheOwnedTexture(SDL_Texture *tex);
 
 }

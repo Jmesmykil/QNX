@@ -26,6 +26,18 @@
 #include <unordered_map>
 #include <unordered_set>      // v1.7.0-stabilize-7 Slice 5: g_favorites_set_
 #include <vector>
+#include <mutex>              // v1.8.15: background prewarm thread; v1.8.18: shared mutex via GetSharedIconCacheMutex()
+#include <thread>             // v1.8.15: prewarm_thread_
+#include <atomic>             // v1.8.15: prewarm_stop_
+
+// v1.8.20 (Change 2): kernel-direct file I/O for LoadJpegIconToCache.
+//   Uses fsdevGetDeviceFileSystem + fsFsOpenFile + fsFileRead instead of IMG_Load.
+//   BMP images decoded without SDL (direct pixel memcpy from BITMAPFILEHEADER).
+//   JPEG images decoded with SDL_RWFromMem + IMG_Load_RW (no disk I/O from SDL).
+#include <switch/runtime/devices/fs_dev.h>  // fsdevGetDeviceFileSystem
+
+// v1.8.23: coyote-timing tick source (a93c4636 research; tick rate = 19.2 MHz).
+#include <switch/arm/counter.h>  // armGetSystemTick()
 
 // Pull in SDL2 directly (sdl2_Types.hpp aliases Renderer = SDL_Renderer*).
 #include <SDL2/SDL.h>
@@ -125,6 +137,11 @@ void QdDesktopIconsElement::InvalidateNintendoClassifyCache() {
     remove(CLASSIFY_CACHE_PATH);
     UL_LOG_INFO("qdesktop: nintendo-classify cache invalidated");
 }
+
+// Note: InvalidateFavoritesCache() is defined later in this file,
+// after the file-scope static globals it touches (g_favorites_loaded_,
+// g_favorites_list_, g_favorites_set_) are declared.  See the definition
+// near the favorites-management block.
 
 // static
 bool QdDesktopIconsElement::IsNintendoPublisher(u64 app_id) {
@@ -362,9 +379,13 @@ static size_t       g_desktop_folder_last_count[kDesktopFolderCount] = {
 // tapped/launched; LoadMenu(Launchpad) follows.
 static AutoFolderIdx g_pending_lp_folder = AutoFolderIdx::None;
 
-// Layout — 3×2 grid above the dock, tuned to coexist with the favorites strip
-// at y=622..762 (Slice 5 / O-F). Folders end at y = 110 + 2*(200+40) - 40 = 550,
-// favorites strip begins at y=622: 72 px gap. Dock at y=932.
+// Layout — 3×2 grid above the dock.
+// v1.8.23: favorites strip relocated from y=58 (was above this grid) to y=726
+// (between this grid and the dock). The 22 px buffer above DF_GRID_Y previously
+// reserved for the strip is no longer required, but DF_GRID_Y is left at 210 to
+// preserve the v1.7.0-stable folder rect baseline.
+// Folders span y=210..650 (top + 2*200 + 40 = 650). Strip at y=726..856.
+// Dock starts at y=932; gap from folder bottom to dock top = 282 px.
 static constexpr s32 DF_TILE_W = 400;
 static constexpr s32 DF_TILE_H = 200;
 static constexpr s32 DF_GAP_X  = 60;
@@ -374,8 +395,10 @@ static constexpr s32 DF_ROWS   = 2;
 // Centred horizontally: (1920 - (3*400 + 2*60)) / 2 = (1920 - 1320) / 2 = 300.
 static constexpr s32 DF_GRID_X = (1920 - (DF_COLS * DF_TILE_W
                                           + (DF_COLS - 1) * DF_GAP_X)) / 2;
-// 110 px from screen top — leaves room for the 96×72 hot corner widget at (0,0).
-static constexpr s32 DF_GRID_Y = 110;
+// 210 px from screen top. Folder bottom = 210 + 2*200 + 40 = 650.
+// Hot corner widget at (0,0) still clear (folder grid starts well below y=48
+// topbar). v1.8.23: strip is now BELOW this grid (FAV_STRIP_TOP=726).
+static constexpr s32 DF_GRID_Y = 210;
 
 // Compute the screen-relative rect for folder index fi (0..5), without any
 // layout (x,y) translation. Caller adds (x,y) before drawing or hit-testing.
@@ -466,6 +489,37 @@ struct FavoriteEntry {
 static std::vector<FavoriteEntry>           g_favorites_list_;
 static std::unordered_set<std::string>      g_favorites_set_;
 static bool                                 g_favorites_loaded_ = false;
+
+// v1.8.19: Negative-load memoization for icon_path entries.
+// Keyed by icon_path (or "app:<hex16>" for NS-cache paths).
+// Once LoadJpegIconToCache() or LoadAppIconFromUSystemCache() returns false
+// for a given path, that path is inserted here so PrewarmAllIcons() skips it
+// on every subsequent prewarm pass without issuing a disk read or NS call.
+// Lifetime: static storage duration; cleared implicitly when the process exits.
+static std::unordered_set<std::string>      g_has_no_asset_;
+
+// static
+// Bug #2/#3 fix (v1.8): clear the in-process favorites cache so that the next
+// EnsureFavoritesLoaded() call re-reads from disk.  This is called from
+// SetApplicationEntries() every time the icon set is rebuilt (e.g. on game-
+// resume) because uMenu does NOT restart after a guest title exits — the
+// process is merely suspended and then resumed, so g_favorites_loaded_ stays
+// true and EnsureFavoritesLoaded() returns early, leaving g_favorites_list_
+// populated with stale icon indices that no longer correspond to the freshly
+// rebuilt icons_[] array (Bug #2 symptom: only 1 favorite visible after
+// resume).  Clearing the loaded flag forces a full reload on the next access,
+// which rebuilds the strip against the current icons_[] layout (Bug #3
+// symptom: black-square textures also disappear because the icon_tex_[] slots
+// are all freed and re-created by PaintFavoritesStrip's lazy init path).
+//
+// Defined here (post-globals) so the static-storage references resolve.
+void QdDesktopIconsElement::InvalidateFavoritesCache() {
+    g_favorites_loaded_ = false;
+    g_favorites_list_.clear();
+    g_favorites_set_.clear();
+    UL_LOG_INFO("qdesktop: favorites cache invalidated (will reload from disk)");
+}
+
 // Toast-pending state for the next OnRender frame (g_MenuApplication is
 // available there but using ShowNotification synchronously inside OnInput
 // during a touch-up is fine; we do the latter).
@@ -563,6 +617,7 @@ static void EnsureFavoritesLoaded() {
 // rename closes the window where a power loss would leave the .tmp readable
 // and the canonical file truncated.
 static bool SaveFavorites() {
+    mkdir("sdmc:/ulaunch", 0777);   // B62: ensure parent dir exists; idempotent (no-op if already present)
     FILE *f = fopen(FAVORITES_TMP_PATH, "wb");
     if (f == nullptr) {
         UL_LOG_WARN("qdesktop: SaveFavorites: fopen(tmp) failed errno=%d", errno);
@@ -584,10 +639,27 @@ static bool SaveFavorites() {
     }
     fflush(f);
     fclose(f);
-    // POSIX rename is atomic on FAT32/exFAT and overwrites the destination.
+    // v1.8.12 B62-deeper: Switch's Horizon FsService RenameFile IPC returns
+    // errno=17 (EEXIST) when destination exists — POSIX overwrite semantics
+    // do NOT hold on Switch. Remove canonical first; ENOENT (no canonical
+    // yet on first-write) is the expected non-error case.
+    if (remove(FAVORITES_PATH) != 0 && errno != ENOENT) {
+        UL_LOG_WARN("qdesktop: SaveFavorites: remove(canonical) failed errno=%d", errno);
+        // continue — rename may still succeed via overwrite path on some FS
+    }
+    // POSIX rename on FAT32/exFAT after the destination has been unlinked.
     if (rename(FAVORITES_TMP_PATH, FAVORITES_PATH) != 0) {
         UL_LOG_WARN("qdesktop: SaveFavorites: rename failed errno=%d", errno);
         return false;
+    }
+    // v1.8.11 B62-deep: explicitly commit Horizon FsService write-back cache
+    // to physical SD media. Without this, fflush+fclose+rename only push the
+    // bytes into Horizon's per-FS write-back; a reboot before Horizon's own
+    // periodic flush silently discards the file. Best-effort: log on failure
+    // but do not fail the save (Horizon may have already flushed).
+    const Result commit_rc = fsdevCommitDevice("sdmc");
+    if (R_FAILED(commit_rc)) {
+        UL_LOG_WARN("qdesktop: SaveFavorites: fsdevCommitDevice rc=0x%x", commit_rc);
     }
     UL_LOG_INFO("qdesktop: SaveFavorites: %zu favorites flushed to %s",
                 g_favorites_list_.size(), FAVORITES_PATH);
@@ -934,12 +1006,12 @@ void QdDesktopIconsElement::PaintDesktopFolders(SDL_Renderer *r, s32 x, s32 y) {
         }
 
         // ── 3. Cached count texture (rebuild on count change) ────────────
+        // v1.8.2 LRU fix: g_desktop_folder_count_tex[] is assigned via RenderText
+        // (LRU cache-owned).  Do NOT call SDL_DestroyTexture on cache-owned ptrs.
+        // Simply null the pointer to trigger re-render; the LRU evicts the old entry.
         const size_t cur_count = g_desktop_folder_counts[fi];
         if (cur_count != g_desktop_folder_last_count[fi]) {
-            if (g_desktop_folder_count_tex[fi] != nullptr) {
-                SDL_DestroyTexture(g_desktop_folder_count_tex[fi]);
-                g_desktop_folder_count_tex[fi] = nullptr;
-            }
+            g_desktop_folder_count_tex[fi] = nullptr;  // LRU-owned; do NOT destroy
             g_desktop_folder_last_count[fi] = cur_count;
         }
         if (g_desktop_folder_count_tex[fi] == nullptr) {
@@ -981,7 +1053,7 @@ void QdDesktopIconsElement::PaintDesktopFolders(SDL_Renderer *r, s32 x, s32 y) {
                     gw, gh
                 };
                 SDL_RenderCopy(r, gtex, nullptr, &gdst);
-                SDL_DestroyTexture(gtex);
+                pu::ui::render::DeleteTexture(gtex);
             }
         }
 
@@ -989,8 +1061,12 @@ void QdDesktopIconsElement::PaintDesktopFolders(SDL_Renderer *r, s32 x, s32 y) {
         // Focus highlights the currently dpad-focused folder (indices 0..5
         // of the unified focus ring). Mouse hover provides a softer ring
         // when cursor_ref_ is over the cell.
-        const bool focused = (dpad_focus_index_ == fi);
-        const bool hovered = (mouse_hover_index_ == fi);
+        // v1.8 Input-source latch: D-pad focus ring only shown in DPAD mode;
+        // mouse hover ring only shown in MOUSE mode.
+        const bool focused = (active_input_source_ == InputSource::DPAD)
+                          && (dpad_focus_index_ == fi);
+        const bool hovered = (active_input_source_ == InputSource::MOUSE)
+                          && (mouse_hover_index_ == fi);
         if (focused) {
             SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(r, 0xFFu, 0xFFu, 0xFFu, 0xFFu);
@@ -1021,16 +1097,26 @@ void QdDesktopIconsElement::PaintDesktopFolders(SDL_Renderer *r, s32 x, s32 y) {
 
 // ── v1.7.0-stabilize-7 Slice 5 (O-F): favorites-strip render ─────────────────
 
-// Geometry — coexists with the Slice 4 folder grid (which ends at y=550) and
-// the dock (which begins at y=932). Strip lives at y=622..762.
+// Geometry — coexists with the Slice 4 folder grid and the dock.
+// v1.8.23: relocated favorites strip from y=58 (under topbar) to BETWEEN the
+// folder grid (ends at y=650) and the dock (top at y=932). Strip is 130 px
+// tall (ICON_BG_H), lives at y=726..856 -> 76 px clearance above the dock and
+// 76 px clearance below the folder grid (centred in the 282 px gap).
 static constexpr s32 FAV_STRIP_VISIBLE = 6;
 // FAV_STRIP_W = 6 * ICON_BG_W + 5 * ICON_GRID_GAP_X = 6*140 + 5*28 = 980
 static constexpr s32 FAV_STRIP_W = FAV_STRIP_VISIBLE * ICON_BG_W
     + (FAV_STRIP_VISIBLE - 1) * ICON_GRID_GAP_X;
 static constexpr s32 FAV_STRIP_LEFT = (1920 - FAV_STRIP_W) / 2;  // 470
-static constexpr s32 FAV_STRIP_TOP  = 622;
+static constexpr s32 FAV_STRIP_TOP  = 726;  // v1.8.23: between folders (y=210..650) and dock (y=932..1080).
 // Per-tile spacing on the strip (icon width + horizontal gap).
 static constexpr s32 FAV_TILE_SPACING = ICON_BG_W + ICON_GRID_GAP_X;  // 168
+
+// v1.8.23: coyote-timing constants (a93c4636 research; tick rate = 19.2 MHz)
+static constexpr u64 TAP_MAX_TICKS          = 4'800'000ULL;   // 250 ms — tap-vs-hold ceiling
+static constexpr u64 RELAUNCH_LOCKOUT_TICKS = 5'760'000ULL;   // 300 ms — double-launch suppression
+static constexpr u32 DPAD_REPEAT_DELAY_F    = 18u;            // 300 ms — initial dpad-held delay
+static constexpr u32 DPAD_REPEAT_INTERVAL_F = 9u;             // 150 ms — dpad-held repeat interval
+// CLICK_TOLERANCE_PX=24 already exists at qd_DesktopIcons.cpp:~1220 — reused; no duplicate.
 
 // Resolve a FavoriteEntry to an icons_[] index, or SIZE_MAX if the favorite
 // no longer matches any entry (auto-prune candidate). Caller is expected to
@@ -1057,9 +1143,10 @@ void QdDesktopIconsElement::PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y) {
     if (g_favorites_list_.empty()) {
         return;
     }
-    // Direct cursor query for hover detection — favorites strip is OUTSIDE
-    // the unified dpad/mouse focus ring (Slice 5 deliberately defers strip
-    // d-pad nav to v1.7.2 per O-F §"Open questions" #5).
+    // Direct cursor query for hover detection — favorites strip uses its own
+    // fav_strip_focus_index_ (Bug #4 / v1.8) for D-pad and mouse hover, distinct
+    // from dpad_focus_index_ which covers folders + dock.  v1.8.23 made the
+    // strip a full peer in the dpad cycle (Folders <-> Favorites <-> Dock).
     s32 cursor_x = -1, cursor_y = -1;
     if (cursor_ref_ != nullptr) {
         cursor_x = cursor_ref_->GetCursorX();
@@ -1083,7 +1170,13 @@ void QdDesktopIconsElement::PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y) {
             + static_cast<s32>(painted) * FAV_TILE_SPACING + x;
         const s32 cell_y = FAV_STRIP_TOP + y;
         NroEntry &entry = icons_[idx];
-        const bool dpad_focused  = false;  // strip not in unified focus ring
+        // Bug #4 (v1.8): highlight the D-pad focused strip slot.
+        // `painted` is the paint-position index (0..FAV_STRIP_VISIBLE-1) which
+        // corresponds 1:1 with fav_strip_focus_index_ when the strip is active.
+        // v1.8 Input-source latch: D-pad focus ring only shown in DPAD mode.
+        const bool dpad_focused  = (active_input_source_ == InputSource::DPAD)
+                                && (fav_strip_focus_index_ != SIZE_MAX)
+                                && (fav_strip_focus_index_ == painted);
         const bool mouse_hovered =
             (cursor_x >= cell_x && cursor_x < cell_x + ICON_BG_W
              && cursor_y >= cell_y && cursor_y < cell_y + ICON_BG_H);
@@ -1094,8 +1187,10 @@ void QdDesktopIconsElement::PaintFavoritesStrip(SDL_Renderer *r, s32 x, s32 y) {
 }
 
 size_t QdDesktopIconsElement::HitTestFavorites(s32 tx, s32 ty) const {
-    // Vertical bounds on the strip (ICON_CELL_H high, anchored at FAV_STRIP_TOP).
-    if (ty < FAV_STRIP_TOP || ty >= FAV_STRIP_TOP + ICON_CELL_H) {
+    // Vertical bounds: ICON_BG_H (130 px) not ICON_CELL_H (168 px).
+    // ICON_CELL_H includes 38 px of under-label space; touch on that gap was
+    // mis-routing to HitTestFavorites instead of falling through.  v1.8.2 fix.
+    if (ty < FAV_STRIP_TOP || ty >= FAV_STRIP_TOP + ICON_BG_H) {
         return SIZE_MAX;
     }
     // Horizontal bounds on the strip overall.
@@ -1158,7 +1253,10 @@ static constexpr BuiltinIconDef BUILTIN_ICON_DEFS[BUILTIN_ICON_COUNT] = {
 // ── Constructor / Destructor ──────────────────────────────────────────────────
 
 QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
-    : theme_(theme), icon_count_(0), dpad_focus_index_(0), mouse_hover_index_(SIZE_MAX),
+    : theme_(theme), icon_count_(0), dpad_focus_index_(0),
+      // Bug #4 fix (v1.8): not in favorites strip mode at construction.
+      fav_strip_focus_index_(SIZE_MAX),
+      mouse_hover_index_(SIZE_MAX),
       prev_magnify_center_(-1), magnify_center_(-1), frame_tick_(0),
       app_entry_start_idx_(0),
       pressed_(false), down_x_(0), down_y_(0),
@@ -1168,9 +1266,23 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
       // is positioned at screen centre on entry; D-pad has not been pressed.
       // Hover ring is enabled until the first D-pad/A press flips the flag.
       last_input_was_dpad_(false),
+      // v1.8 Input-source latch: DPAD is the natural boot default on Switch,
+      // but we set MOUSE (same as last_input_was_dpad_=false above) so the
+      // hover ring is shown immediately and cursor is visible at first render.
+      // First D-pad press will flip it to DPAD and hide the cursor.
+      active_input_source_(InputSource::MOUSE),
       prev_cursor_x_(-1),
       prev_cursor_y_(-1),
-      cursor_ref_(nullptr)
+      cursor_ref_(nullptr),
+      // Task 9 (v1.8): dev windows start null; constructed below.
+      nxlink_win_(nullptr),
+      usb_win_(nullptr),
+      log_win_(nullptr),
+      // Task 9 (v1.8): popup hidden at boot.
+      dev_popup_open_(false),
+      // v1.8.15 Fix B: prewarm thread starts stopped; thread is not joinable
+      // until SpawnPrewarmThread() assigns it from OnRender's first-call branch.
+      prewarm_stop_(false)
 {
     UL_LOG_INFO("qdesktop: QdDesktopIconsElement ctor entry");
 
@@ -1208,10 +1320,13 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
         // so nothing is replaceable at boot. The flag flips to true the first
         // time PaintIconCell installs a Default*.png fallback.
         texture_replaceable_[i] = false;
+        // v1.8.19: initial render state is Unknown; PaintIconCell will classify
+        // on first paint and set the correct state for future O(1) dispatch.
+        slot_render_state_[i] = CellRenderState::Unknown;
     }
 
-    // Ensure icon cache dir exists before any icon I/O.
-    const bool cache_dir_ok = cache_.EnsureDir();
+    // Ensure icon cache dir exists before any icon I/O (shared singleton).
+    const bool cache_dir_ok = GetSharedIconCache().EnsureDir();
     UL_LOG_INFO("qdesktop: icon cache dir ensure result = %d", cache_dir_ok ? 1 : 0);
 
     // Fix D (v1.6.12): clear the auto-folder side table before any scan so stale
@@ -1235,9 +1350,44 @@ QdDesktopIconsElement::QdDesktopIconsElement(const QdTheme &theme)
     UL_LOG_INFO("qdesktop: builtins=%zu nros=%zu payloads=%zu app_slot_start=%zu total_static=%zu",
                 after_builtins, after_nros - after_builtins,
                 after_scan - after_nros, app_entry_start_idx_, after_scan);
+
+    // Task 9 (v1.8): create dev-popup panel instances.  Positions are set
+    // relative to the top-right corner; stacked vertically with 8 px gaps.
+    // NxlinkWindow: 480×260; UsbSerialWindow: 480×260; LogFlushWindow: 480×180.
+    // Panels are positioned so their RIGHT edge is at x=1912 (8 px inset from
+    // the right screen edge) and the TOP edge of the topmost panel is at y=40
+    // (just below the top-right hot-zone strip).
+    static constexpr s32 kDevPopupRightEdge = 1912;
+    static constexpr s32 kDevPopupTopY      = 40;
+    static constexpr s32 kDevPopupGap       = 8;
+    nxlink_win_ = QdNxlinkWindow::New(theme_);
+    usb_win_    = QdUsbSerialWindow::New(theme_);
+    log_win_    = QdLogFlushWindow::New(theme_);
+    {
+        const s32 nx_x  = kDevPopupRightEdge - QdNxlinkWindow::PANEL_W;
+        const s32 nx_y  = kDevPopupTopY;
+        const s32 usb_x = kDevPopupRightEdge - QdUsbSerialWindow::PANEL_W;
+        const s32 usb_y = nx_y + QdNxlinkWindow::PANEL_H + kDevPopupGap;
+        const s32 log_x = kDevPopupRightEdge - QdLogFlushWindow::PANEL_W;
+        const s32 log_y = usb_y + QdUsbSerialWindow::PANEL_H + kDevPopupGap;
+        nxlink_win_->SetPos(nx_x, nx_y);
+        usb_win_->SetPos(usb_x, usb_y);
+        log_win_->SetPos(log_x, log_y);
+    }
+    UL_LOG_INFO("qdesktop: dev popup windows created (nxlink/usb/logflush)");
 }
 
 QdDesktopIconsElement::~QdDesktopIconsElement() {
+    // v1.8.15 Fix B: Signal the background prewarm thread to stop, then join
+    // it before any member destruction.  The atomic write is visible to the
+    // thread immediately (no cache_mutex_ needed for the flag itself).
+    // Join guarantees the thread has released its `this` pointer before
+    // cache_ and icon_tex_[] are freed below.
+    prewarm_stop_ = true;
+    if (prewarm_thread_.joinable()) {
+        prewarm_thread_.join();
+    }
+
     // Free cached name/glyph text textures (created lazily in PaintIconCell).
     // SDL_DestroyTexture is null-safe, but we guard explicitly for clarity.
     for (size_t i = 0; i < MAX_ICONS; ++i) {
@@ -1248,27 +1398,44 @@ QdDesktopIconsElement::~QdDesktopIconsElement() {
         SDL_DestroyTexture(round_bg_tex_);
         round_bg_tex_ = nullptr;
     }
+    // A-2a (v1.7.2): free the process-lifetime folder-grid background texture.
+    // g_desktop_folder_bg_tex is a file-scope static lazy-loaded in
+    // PaintDesktopFolders; it is never freed elsewhere, so we own it here.
+    if (g_desktop_folder_bg_tex != nullptr) {
+        SDL_DestroyTexture(g_desktop_folder_bg_tex);
+        g_desktop_folder_bg_tex = nullptr;
+    }
+    // A-2b (v1.7.2): free the per-folder name-label text textures.
+    // g_desktop_folder_name_tex[kDesktopFolderCount] entries are lazily built
+    // in PaintDesktopFolders (one per folder slot) and never freed elsewhere.
+    // Dimension caches are zeroed alongside the pointer so a subsequent
+    // PaintDesktopFolders call (if any) rebuilds them from scratch.
+    for (size_t fi = 0; fi < kDesktopFolderCount; ++fi) {
+        if (g_desktop_folder_name_tex[fi] != nullptr) {
+            pu::ui::render::DeleteTexture(g_desktop_folder_name_tex[fi]);
+            g_desktop_folder_name_w[fi] = 0;
+            g_desktop_folder_name_h[fi] = 0;
+        }
+    }
 }
 
 // ── FreeCachedText ─────────────────────────────────────────────────────────────
-// Releases the cached name + glyph text textures for one icon slot and resets
-// the slot pointers to nullptr so a subsequent paint will re-rasterise.
+// Resets the cached name + glyph text slots for one icon so a subsequent paint
+// will re-rasterise.  v1.8.2 LRU fix: name_text_tex_ and glyph_text_tex_ are
+// LRU cache-owned pointers returned by RenderText/RenderTextAutoFit.  Calling
+// SDL_DestroyTexture on them is a double-free.  Just null the pointers so the
+// next paint triggers a re-render via the lazy-cache path.
 void QdDesktopIconsElement::FreeCachedText(size_t entry_idx) {
     if (entry_idx >= MAX_ICONS) {
         return;
     }
-    if (name_text_tex_[entry_idx] != nullptr) {
-        SDL_DestroyTexture(name_text_tex_[entry_idx]);
-        name_text_tex_[entry_idx] = nullptr;
-        name_text_w_[entry_idx]   = 0;
-        name_text_h_[entry_idx]   = 0;
-    }
-    if (glyph_text_tex_[entry_idx] != nullptr) {
-        SDL_DestroyTexture(glyph_text_tex_[entry_idx]);
-        glyph_text_tex_[entry_idx] = nullptr;
-        glyph_text_w_[entry_idx]   = 0;
-        glyph_text_h_[entry_idx]   = 0;
-    }
+    // LRU-owned — do NOT call SDL_DestroyTexture.  Null to force re-render.
+    name_text_tex_[entry_idx]  = nullptr;
+    name_text_w_[entry_idx]    = 0;
+    name_text_h_[entry_idx]    = 0;
+    glyph_text_tex_[entry_idx] = nullptr;
+    glyph_text_w_[entry_idx]   = 0;
+    glyph_text_h_[entry_idx]   = 0;
     // Also free the cached icon BGRA texture for this slot.
     // This is the texture that was previously allocated every frame; it is
     // now allocated once here (lazily in PaintIconCell) and freed here on slot
@@ -1286,6 +1453,9 @@ void QdDesktopIconsElement::FreeCachedText(size_t entry_idx) {
     //     state is recomputed from scratch.
     if (entry_idx < MAX_ICONS) {
         texture_replaceable_[entry_idx] = false;
+        // v1.8.19: reset CellRenderState so PaintIconCell re-classifies on
+        // the next paint after the slot is recycled for a new entry.
+        slot_render_state_[entry_idx] = CellRenderState::Unknown;
     }
 }
 
@@ -1297,7 +1467,7 @@ void QdDesktopIconsElement::AdvanceTick() {
         UL_LOG_INFO("qdesktop: AdvanceTick first call (F-06 tick site active)");
         logged_once = true;
     }
-    cache_.AdvanceTick();
+    GetSharedIconCache().AdvanceTick();
     ++frame_tick_;
 }
 
@@ -1318,11 +1488,14 @@ void QdDesktopIconsElement::AdvanceTick() {
 // auto-centering math) still sit comfortably inside the 148-px band, and
 // horizontal rebalancing is unaffected because it scales off ICON_BG_W.
 //
-// These file-local constants shadow the qd_WmConstants.hpp values (which
-// describe the *visual* dock band, 108 px) because this TU uses an expanded
-// hit / render band of 148 px.  They are prefixed kDock to avoid the ODR
-// conflict that occurs when qd_WmConstants.hpp is pulled in transitively
-// through ui_MenuApplication.hpp → qd_AboutLayout.hpp.
+// These file-local constants shadow the qd_WmConstants.hpp values to avoid the
+// ODR conflict when qd_WmConstants.hpp is pulled in transitively through
+// ui_MenuApplication.hpp → qd_AboutLayout.hpp.
+// v1.8.3 B35: revert kDockH from 108 back to 148.  The v1.8.2 shrink to 108
+// was intended to align the input dead zone with the visual dock band, but it
+// broke tap input — the 40 px gap between kDockNominalTop and the top of the
+// rendered dock pixels caused misses on the topmost dock icon row.  148 is the
+// original value that was HW-confirmed through v1.7.0-stable.
 static constexpr int32_t kDockH           = 148;
 static constexpr int32_t kDockNominalTop  = 1080 - kDockH;  // 932
 static constexpr int32_t kDockSlotSize    = 84;     // ×1.5 from Rust 56
@@ -1418,6 +1591,14 @@ void QdDesktopIconsElement::PopulateBuiltins() {
 // ── ScanNros ─────────────────────────────────────────────────────────────────
 
 void QdDesktopIconsElement::ScanNros() {
+    // A-3 (v1.7.2): clear the local NRO classification side table before each
+    // scan pass so entries for NRO files that have been deleted since the last
+    // scan do not accumulate as zombies.  Without this clear, a deleted NRO
+    // retains its ClassifyKind entry indefinitely, causing GetAutoFolderKind()
+    // to return a stale bucket for a stable_id that no longer maps to any
+    // live icon slot.
+    g_entry_classification_.clear();
+
     DIR *d = opendir("sdmc:/switch/");
     if (!d) {
         return; // SD not mounted or directory absent — silently skip.
@@ -1633,7 +1814,7 @@ void QdDesktopIconsElement::ScanPayloads() {
         e.is_builtin      = false;
         e.dock_slot       = 0xFF;             // not a dock item
         e.category        = NroCategory::QosApp; // best fit for sort
-        e.icon_category   = IconCategory::Payloads;
+        e.icon_category   = IconCategory::Extras;   // v1.8.10: Payloads removed from enum; payloads → Extras
         e.icon_loaded     = false;
         e.kind            = IconKind::Special; // no ASET, custom launch path
         e.app_id          = 0;
@@ -1941,6 +2122,40 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
         FillRoundRect(r, bg_rect, 12, fill_r, fill_g, fill_b, 0xFFu);
     }
 
+    // ── v1.8.19: Boolean dispatch — skip classification for stable states ───
+    // CellRenderState::BgraReady  — icon_tex_[entry_idx] holds real BGRA art;
+    //                               skip all classification, go directly to blit.
+    // CellRenderState::SpecialPng — icon_tex_[entry_idx] holds a loaded PNG;
+    //                               skip classification, go to blit.
+    // CellRenderState::GlyphOnly  — no texture; go straight to glyph section.
+    // CellRenderState::DefaultFallback — skip 2a/2c but recheck BGRA (2b/2b').
+    // CellRenderState::Unknown    — run full classification below.
+    const bool rs_stable_tex = (entry_idx < MAX_ICONS
+        && (slot_render_state_[entry_idx] == CellRenderState::BgraReady
+            || slot_render_state_[entry_idx] == CellRenderState::SpecialPng));
+    const bool rs_glyph_only = (entry_idx < MAX_ICONS
+        && slot_render_state_[entry_idx] == CellRenderState::GlyphOnly);
+    const bool rs_default_fallback = (entry_idx < MAX_ICONS
+        && slot_render_state_[entry_idx] == CellRenderState::DefaultFallback);
+
+    // Hoist bgra + special_tex_ready so that goto targets below do not jump
+    // over their initialisation (which would be ill-formed in C++).
+    // They are populated by the classification sections when the state is
+    // Unknown or DefaultFallback; for stable-tex fast paths they stay nullptr/false.
+    const u8 *bgra = nullptr;
+    bool special_tex_ready = false;
+
+    // For stable-texture states jump directly past classification.
+    // For glyph-only, skip ALL texture sections and jump to section 3.
+    // For default-fallback, skip 2a and 2c; only run 2b/2b' below.
+    if (rs_stable_tex) {
+        // icon_tex_[entry_idx] is already populated; fall through to render.
+        goto lbl_render_icon_tex;
+    }
+    if (rs_glyph_only) {
+        goto lbl_render_glyph;
+    }
+
     // ── 2a. Cycle J: Special-icon PNG lazy-load ──────────────────────────
     // The 8 SpecialEntry kinds (Settings/Album/Themes/Controllers/MiiEdit/
     // WebBrowser/UserPage/Amiibo) each have a PNG asset already shipped in
@@ -1949,7 +2164,9 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     // empty and PaintIconCell only loaded textures for Application/NRO kinds.
     // This branch runs BEFORE the BGRA cache lookup so the existing render
     // block (lines below) blits whichever icon_tex_ we populate.
-    if (entry.kind == IconKind::Special && entry_idx < MAX_ICONS
+    // v1.8.19: skipped when rs_default_fallback (2a already ran on a prior frame).
+    if (!rs_default_fallback
+            && entry.kind == IconKind::Special && entry_idx < MAX_ICONS
             && icon_tex_[entry_idx] == nullptr) {
         using ET = ::ul::menu::EntryType;
         const char *asset_path = nullptr;
@@ -1971,12 +2188,49 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
                 UL_LOG_INFO("qdesktop: Special icon loaded subtype=%u path=%s",
                             static_cast<unsigned>(entry.special_subtype),
                             asset_path);
+                // v1.8.19: transition to SpecialPng — stable; skip 2a next frame.
+                slot_render_state_[entry_idx] = CellRenderState::SpecialPng;
             } else {
                 UL_LOG_WARN("qdesktop: Special icon load FAILED subtype=%u path=%s"
                             " (active theme resource missing) — will fall back to glyph",
                             static_cast<unsigned>(entry.special_subtype),
                             asset_path);
             }
+        }
+    }
+
+    // ── 2a-romfs. v1.8.21: Payload entries with a romfs-backed icon_path ──
+    // ResolvePayloadIcon() returns "romfs:/default/ui/Main/PayloadIcon/<name>.png"
+    // when the Q OS themed bundle PNG matches the payload stem, and when no
+    // creator-supplied sdmc primary_path was found on the SD card.
+    //
+    // These romfs paths CANNOT go through LoadJpegIconToCache (sdmc-only IPC)
+    // or the BGRA cache (populated only by LoadJpegIconToCache / ExtractNroIcon).
+    // Load them here via pu::ui::render::LoadImageFromFile (POSIX IMG_Load,
+    // which works on any device with a mounted filesystem including romfs).
+    //
+    // Guard: entry.kind == Special (payload entries always have kind=Special);
+    //        icon_path starts with "romfs:/";
+    //        icon_tex_[entry_idx] == nullptr (not yet loaded this slot);
+    //        !rs_default_fallback (2a-romfs already ran on a prior frame → stable).
+    if (!rs_default_fallback
+            && entry.kind == IconKind::Special
+            && entry_idx < MAX_ICONS
+            && icon_tex_[entry_idx] == nullptr
+            && entry.icon_path[0] == 'r' && entry.icon_path[1] == 'o'
+            && entry.icon_path[2] == 'm' && entry.icon_path[3] == 'f'
+            && entry.icon_path[4] == 's' && entry.icon_path[5] == ':') {
+        icon_tex_[entry_idx] =
+            ::pu::ui::render::LoadImageFromFile(entry.icon_path);
+        if (icon_tex_[entry_idx] != nullptr) {
+            UL_LOG_INFO("qdesktop: romfs payload icon loaded path=%s",
+                        entry.icon_path);
+            // Mark slot stable — 2a-romfs will be skipped on subsequent frames.
+            slot_render_state_[entry_idx] = CellRenderState::SpecialPng;
+        } else {
+            UL_LOG_WARN("qdesktop: romfs payload icon FAILED path=%s"
+                        " (romfs mount missing or asset not in romfs.bin?)",
+                        entry.icon_path);
         }
     }
 
@@ -1991,24 +2245,31 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     //                      qd_HekateIni; populated into the cache by the
     //                      lazy-load branch in OnRender)
     //   - Builtin        → no icon (nro_path and icon_path are both empty)
-    const u8 *bgra = nullptr;
     if (entry.kind == IconKind::Application && entry.icon_path[0] != '\0') {
-        bgra = cache_.Get(entry.icon_path);
+        // v1.8.18: use shared singleton + shared mutex.
+        // Background prewarm thread may be writing to the cache concurrently.
+        std::lock_guard<std::mutex> lock(GetSharedIconCacheMutex());
+        bgra = GetSharedIconCache().Get(entry.icon_path);
     } else if (entry.kind == IconKind::Special && entry.icon_path[0] != '\0') {
         // v1.7.0-stabilize-2: Special entries with a JPEG icon_path go through
         // the BGRA cache, same as Applications. Without this branch ScanPayloads
         // and qd_HekateIni entries fell through to the gray-square fallback
         // because section 2a only handles romfs PNGs (special_subtype-keyed).
-        bgra = cache_.Get(entry.icon_path);
+        // v1.8.18: shared singleton + shared mutex.
+        std::lock_guard<std::mutex> lock(GetSharedIconCacheMutex());
+        bgra = GetSharedIconCache().Get(entry.icon_path);
     } else if (entry.nro_path[0] != '\0') {
-        bgra = cache_.Get(entry.nro_path);
+        // v1.8.18: shared singleton + shared mutex.
+        std::lock_guard<std::mutex> lock(GetSharedIconCacheMutex());
+        bgra = GetSharedIconCache().Get(entry.nro_path);
     }
 
     // Cycle J: also render when Special branch above populated icon_tex_
     // (bgra is nullptr for Special since they don't go through QdIconCache).
-    const bool special_tex_ready = (entry.kind == IconKind::Special
-                                    && entry_idx < MAX_ICONS
-                                    && icon_tex_[entry_idx] != nullptr);
+    // v1.8.19: special_tex_ready was hoisted before the goto dispatches; update it here.
+    special_tex_ready = (entry.kind == IconKind::Special
+                         && entry_idx < MAX_ICONS
+                         && icon_tex_[entry_idx] != nullptr);
 
     // ── 2b'. v1.7.0-stabilize-2 (REC-03 option B): frame-race replacement ──
     // If we have a fallback PNG installed in icon_tex_[entry_idx] (the cold-
@@ -2032,6 +2293,7 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
         texture_replaceable_[entry_idx] = false;
         // The streaming-texture rebuild in section 2b below sees the null
         // pointer and rebuilds from BGRA on the same frame.
+        // v1.8.19: state will be set to BgraReady below when the texture is built.
     }
 
     // ── 2c. Default-icon fallback (Cycle K-defaulticons) ──────────────────
@@ -2050,7 +2312,10 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     //   (a) no BGRA is in the icon cache for this slot, AND
     //   (b) no Special PNG was already loaded (Special is handled in 2a), AND
     //   (c) icon_tex_[entry_idx] has not yet been populated (lazy, runs once).
-    if (bgra == nullptr && !special_tex_ready
+    // v1.8.19: rs_default_fallback (state==DefaultFallback) means 2c already ran
+    // on a prior frame; skip it to avoid repeated TryFindLoadImage calls.
+    if (!rs_default_fallback
+            && bgra == nullptr && !special_tex_ready
             && entry_idx < MAX_ICONS
             && icon_tex_[entry_idx] == nullptr) {
         // Cycle K-iconsfix: Builtin entries get a per-name Dock<Name>.png lookup
@@ -2083,6 +2348,8 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
                     // Builtin Dock<Name>.png is the REAL icon for that slot --
                     // not a fallback waiting to be replaced. Leave the
                     // replaceable flag clear so 2b' does not destroy it.
+                    // v1.8.19: stable PNG — skip 2a/2c on every subsequent frame.
+                    slot_render_state_[entry_idx] = CellRenderState::SpecialPng;
                 } else {
                     UL_LOG_WARN("qdesktop: Dock%s.png missing — falling back"
                                 " to DefaultApplication.png", entry.name);
@@ -2110,6 +2377,9 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
                 // replaceable so section 2b' destroys this texture once real
                 // data arrives.
                 texture_replaceable_[entry_idx] = true;
+                // v1.8.19: transition to DefaultFallback — 2c is done; only 2b/2b'
+                // need to run on subsequent frames to check for BGRA promotion.
+                slot_render_state_[entry_idx] = CellRenderState::DefaultFallback;
             } else {
                 // No PNG asset on disk — colored-square fallback will fire below.
                 UL_LOG_WARN("qdesktop: default icon MISSING for '%s' kind=%u path=%s"
@@ -2123,11 +2393,19 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
 
     // Combine: either a BGRA cache entry, a Special PNG, or the default fallback
     // PNG loaded in 2c — all three paths populate icon_tex_[entry_idx].
-    const bool default_tex_ready = (bgra == nullptr && !special_tex_ready
-                                    && entry_idx < MAX_ICONS
-                                    && icon_tex_[entry_idx] != nullptr);
+    // v1.8.19: On the BgraReady/SpecialPng fast path bgra==nullptr and
+    // special_tex_ready==false, but icon_tex_[entry_idx] is already set.
+    // rs_stable_tex covers that case in the combined condition below.
 
-    if ((bgra != nullptr || special_tex_ready || default_tex_ready) && entry_idx < MAX_ICONS) {
+    // v1.8.19: lbl_render_icon_tex — entry point for BgraReady / SpecialPng
+    // fast paths that jump here directly without running classification.
+    lbl_render_icon_tex:
+    // All variables used here (bgra, special_tex_ready, rs_stable_tex,
+    // entry_idx) are declared before the goto dispatches above.
+    if ((bgra != nullptr || special_tex_ready
+                || (bgra == nullptr && !special_tex_ready
+                    && entry_idx < MAX_ICONS && icon_tex_[entry_idx] != nullptr)
+                || rs_stable_tex) && entry_idx < MAX_ICONS) {
         // Lazily build the per-slot icon texture on first paint; reuse every
         // subsequent frame.  Previously the code created and destroyed a new
         // SDL_Texture here each frame (~1 200 GPU allocs/sec at 20 icons × 60 fps),
@@ -2165,6 +2443,8 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
             if (icon_tex_[entry_idx] != nullptr) {
                 SDL_UpdateTexture(icon_tex_[entry_idx], nullptr, bgra,
                                   static_cast<int>(CACHE_ICON_W) * 4);
+                // v1.8.19: first BGRA→texture build → BgraReady from now on.
+                slot_render_state_[entry_idx] = CellRenderState::BgraReady;
             }
         }
         if (icon_tex_[entry_idx] != nullptr) {
@@ -2182,8 +2462,12 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
             };
             SDL_RenderCopy(r, icon_tex_[entry_idx], nullptr, &dst);
         }
+        // When jumping here from a stable state we must not fall into glyph.
+        goto lbl_after_glyph;
     }
 
+    // v1.8.19: lbl_render_glyph — entry point for GlyphOnly fast path.
+    lbl_render_glyph:
     // ── 3. Glyph (only when no JPEG art AND no Special/default PNG was blitted) ──
     // Lazy-render once per slot, then reuse the cached SDL_Texture every
     // frame.  Glyph uses Medium font for visibility on the colored block.
@@ -2191,7 +2475,15 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     // Cycle K-defaulticons: also skip if a default fallback PNG was loaded in 2c.
     // The glyph + colored-square path is now the absolute last resort for when
     // no PNG asset exists at all on disk — a UL_LOG_ERROR fires in 2c in that case.
-    if (bgra == nullptr && !special_tex_ready && !default_tex_ready && entry_idx < MAX_ICONS) {
+    // B63 Fix A (v1.8.14): replace the !default_tex_ready guard with the actual
+    // observable condition "nothing was rendered above" — i.e. icon_tex_[i]==nullptr.
+    // When BGRA is absent AND no texture survived the main render block (either
+    // default PNG load failed, or 2b' destroyed the replaceable default without a
+    // real icon to upload), route to the colored-block + glyph path so the cell is
+    // never left black/empty.  Cells that DO have icon_tex_ set skip section 3
+    // unchanged.
+    if (bgra == nullptr && !special_tex_ready && entry_idx < MAX_ICONS
+            && icon_tex_[entry_idx] == nullptr) {
         if (glyph_text_tex_[entry_idx] == nullptr && entry.glyph != '\0') {
             const std::string glyph_str(1, entry.glyph);
             // Render in white; the background block already provides contrast.
@@ -2214,8 +2506,13 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
                 gw, gh
             };
             SDL_RenderCopy(r, glyph_text_tex_[entry_idx], nullptr, &gdst);
+            // v1.8.19: glyph rendered → GlyphOnly state (skip all texture
+            // classification every subsequent frame for this slot).
+            slot_render_state_[entry_idx] = CellRenderState::GlyphOnly;
         }
     }
+    // v1.8.19: lbl_after_glyph — merge point for icon-texture fast path.
+    lbl_after_glyph:;
 
     // ── 4. Name label (below the icon block) ──────────────────────────────
     // Cycle I: auto-fit text via system-wide RenderTextAutoFit helper. Replaces
@@ -2312,6 +2609,159 @@ void QdDesktopIconsElement::PaintIconCell(SDL_Renderer *r,
     }
 }
 
+// ── PrewarmAllIcons ───────────────────────────────────────────────────────────
+//
+// v1.8.13 (UnifiedDesktopPrewarm): Boot-phase icon cache prewarm.
+//
+// Iterates icons_[0..icon_count_) and calls the same three load helpers that
+// Launchpad::Open()'s prewarm uses, with identical cache-key logic to
+// PaintIconCell's BGRA lookup (section 2b).  Running this once before the first
+// desktop frame ensures PaintFavoritesStrip → PaintIconCell finds real BGRA data
+// in the cache instead of returning nullptr (which triggers the fallback gray
+// colored block).
+//
+// Architecture choice: Option A (minimum surface area).
+//   - No changes to Launchpad::Open()'s prewarm — it stays in place.
+//   - Cache idempotency: QdIconCache::Get is a fast hash-table lookup; a second
+//     prewarm pass (if Launchpad opens after boot) costs only cache hits, no
+//     re-decoding.
+//   - Called from OnRender's first-call branch via a static bool guard so the
+//     prewarm runs exactly once per uMenu instance.
+void QdDesktopIconsElement::PrewarmAllIcons() {
+    size_t prewarm_hit = 0u;
+    const size_t total = icon_count_;
+
+    for (size_t i = 0u; i < total; ++i) {
+        // v1.8.15 Fix B: poll the stop flag between every entry so the
+        // destructor's join() completes promptly when uMenu shuts down.
+        if (prewarm_stop_.load(std::memory_order_relaxed)) {
+            UL_LOG_INFO("qdesktop: PrewarmAllIcons: stopped early at entry %zu/%zu",
+                        i, total);
+            return;
+        }
+
+        const NroEntry &e = icons_[i];
+
+        // NRO-backed entries: load via ASET extraction.
+        // Cache key = nro_path (mirrors PaintIconCell section 2b NRO branch).
+        if (e.nro_path[0] != '\0') {
+            if (LoadNroIconToCache(e.nro_path, e.nro_path)) {
+                ++prewarm_hit;
+            }
+            continue;
+        }
+
+        // Application and Special entries with an icon_path JPEG:
+        // distinguish "app:<hex>" NS-cache keys from literal SD paths and route
+        // accordingly (same logic as Launchpad::Open() prewarm F2b path).
+        if (e.icon_path[0] != '\0') {
+            // v1.8.19 Edit 3: skip paths that already failed a prior prewarm pass.
+            if (g_has_no_asset_.count(e.icon_path) != 0u) {
+                continue;
+            }
+            // v1.8.21: romfs: paths are compile-time PNG assets bundled in the
+            // uMenu romfs (set by ResolvePayloadIcon when a themed bundle icon
+            // matches the payload stem).  They are loaded lazily in PaintIconCell
+            // section 2a-romfs via pu::ui::render::LoadImageFromFile (POSIX
+            // IMG_Load, works on the romfs: device).  LoadJpegIconToCache is
+            // sdmc-only (fsFsOpenFile on "sdmc") and cannot load romfs paths;
+            // calling it here would silently write a gray fallback to the BGRA
+            // cache and block the real PNG from ever rendering.  Skip prewarm for
+            // these entries — they cost zero I/O until first paint.
+            if (e.icon_path[0] == 'r' && e.icon_path[1] == 'o' &&
+                e.icon_path[2] == 'm' && e.icon_path[3] == 'f' &&
+                e.icon_path[4] == 's' && e.icon_path[5] == ':') {
+                continue;  // lazy-loaded in PaintIconCell section 2a-romfs
+            }
+            const bool has_ns_key = (e.icon_path[0] == 'a' &&
+                                     e.icon_path[1] == 'p' &&
+                                     e.icon_path[2] == 'p' &&
+                                     e.icon_path[3] == ':');
+            if (has_ns_key && e.app_id != 0u) {
+                if (LoadAppIconFromUSystemCache(e.app_id, e.icon_path)) {
+                    ++prewarm_hit;
+                } else {
+                    // v1.8.22c Edit 1: the "deferred to OnRender" comment was
+                    // historical fiction — that path was deleted long ago and
+                    // never restored.  When the uSystem JPG drop is missing
+                    // (game never launched, or fork uSystem hasn't been
+                    // installed to flush the cache), fall through to a direct
+                    // NS storage/CacheOnly read here so prewarm produces a
+                    // real icon instead of poisoning the cache with gray.
+                    // Only memoize after BOTH paths fail.
+                    if (LoadNsIconToCache(e.app_id, e.icon_path)) {
+                        ++prewarm_hit;
+                    } else {
+                        g_has_no_asset_.insert(e.icon_path);
+                    }
+                }
+                continue;
+            }
+            if (LoadJpegIconToCache(e.icon_path, e.icon_path)) {
+                ++prewarm_hit;
+            } else {
+                // Memoize: JPEG load failed — do not retry on subsequent prewarm passes.
+                g_has_no_asset_.insert(e.icon_path);
+            }
+            continue;
+        }
+
+        // Application entries with empty icon_path: try the uSystem on-disk
+        // cache using the synthesised "app:<hex16>" cache key that PaintIconCell
+        // reads so the cache-key is consistent.
+        if (e.app_id != 0u) {
+            char app_cache_key[32];
+            snprintf(app_cache_key, sizeof(app_cache_key),
+                     "app:%016llx",
+                     static_cast<unsigned long long>(e.app_id));
+            // v1.8.19 Edit 3: skip app_cache_key paths that already failed.
+            if (g_has_no_asset_.count(app_cache_key) == 0u) {
+                if (LoadAppIconFromUSystemCache(e.app_id, app_cache_key)) {
+                    ++prewarm_hit;
+                } else {
+                    // v1.8.22c Edit 1 (mirror): try NS direct read before
+                    // marking blacklisted — see comment above for rationale.
+                    if (LoadNsIconToCache(e.app_id, app_cache_key)) {
+                        ++prewarm_hit;
+                    } else {
+                        g_has_no_asset_.insert(app_cache_key);
+                    }
+                }
+            }
+        }
+        // Builtin and Special-PNG entries have no BGRA path (Builtin uses
+        // DockXxx.png loaded lazily; Special PNG loaded in PaintIconCell section
+        // 2a via TryFindLoadImage — not the BGRA cache). Nothing to prewarm.
+    }
+
+    UL_LOG_INFO("qdesktop: PrewarmAllIcons: total=%zu hit=%zu", total, prewarm_hit);
+}
+
+// ── SpawnPrewarmThread ────────────────────────────────────────────────────────
+//
+// v1.8.15 Fix B: Launches PrewarmAllIcons() on a background std::thread.
+// Called once from OnRender's first-render branch.
+//
+// Threading contract:
+//   - prewarm_stop_ is initialised false in the constructor.
+//   - The destructor sets prewarm_stop_ = true then calls prewarm_thread_.join()
+//     before freeing cache_ or icon_tex_[], so the lambda's `this` is always valid.
+//   - Every GetSharedIconCache().Put() call inside PrewarmAllIcons() and its helpers is wrapped
+//     in a short-scope std::lock_guard<std::mutex> on cache_mutex_.
+//   - Every GetSharedIconCache().Get() call in PaintIconCell is similarly guarded, so the
+//     render thread never races with the prewarm writer.
+
+void QdDesktopIconsElement::SpawnPrewarmThread() {
+    // Safety: do nothing if the thread is already running (e.g. duplicate call).
+    if (prewarm_thread_.joinable()) {
+        return;
+    }
+    prewarm_stop_.store(false, std::memory_order_relaxed);
+    prewarm_thread_ = std::thread([this]() {
+        PrewarmAllIcons();
+    });
+}
+
 // ── OnRender ──────────────────────────────────────────────────────────────────
 
 void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
@@ -2327,11 +2777,18 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     // Obtain the raw SDL_Renderer* through Plutonium's accessor.
     SDL_Renderer *r = pu::ui::render::GetMainRenderer();
     {
-        static bool logged_once = false;
-        if (!logged_once) {
+        static bool first_render_done = false;
+        if (!first_render_done) {
             UL_LOG_INFO("qdesktop: DesktopIcons OnRender first call renderer=%p icons=%zu at x=%d y=%d",
                         static_cast<void*>(r), icon_count_, x, y);
-            logged_once = true;
+            // v1.8.15 Fix B (BackgroundPrewarm): spawn the background prewarm
+            // thread instead of blocking the render loop.  PaintIconCell's
+            // cache_.Get calls are now mutex-guarded so the render thread never
+            // races with the prewarm writer.  Fix A (icon_tex_[] == nullptr gate)
+            // from v1.8.14 ensures cells paint a colored block during the prewarm
+            // window rather than going black, so the UX is smooth.
+            SpawnPrewarmThread();
+            first_render_done = true;
         }
     }
     if (!r) {
@@ -2345,22 +2802,33 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
     //
     // v1.7.0-stabilize-7 Slice 4: switched from icons_[]-indexed HitTest() to
     // unified HitTestDesktop() (folders 0..5 + dock 6..10).  PaintFavoritesStrip
-    // does its own cursor query for hover detection because the strip is
-    // outside the unified focus ring (Slice 5 §"Open questions" #5 defers
-    // strip d-pad nav to v1.7.2).
+    // does its own cursor query for hover detection; the strip's D-pad nav is
+    // tracked separately in fav_strip_focus_index_ (Bug #4 v1.8 / cycle v1.8.23).
     if (cursor_ref_ != nullptr) {
         const s32 cx = cursor_ref_->GetCursorX();
         const s32 cy = cursor_ref_->GetCursorY();
         mouse_hover_index_ = HitTestDesktop(cx, cy);
 
-        // v1.7.0-stabilize-2 (REC-02 corrected): cursor motion flips the
-        // input-modality flag back to "mouse" so the hover ring renders
-        // again after a stretch of D-pad navigation. The first call sees
-        // the -1 sentinel (uninitialized) and only seeds prev_cursor_*;
-        // subsequent calls compare against the previous frame's sample.
+        // v1.8 Input-source latch (upgraded from v1.7.0-stabilize-2 REC-02):
+        // cursor motion flips the active input source to MOUSE so the hover
+        // ring renders again after a stretch of D-pad navigation.
+        //
+        // 4 px Manhattan threshold (spec requirement): prevents micro-jitter on
+        // the analog stick or touch digitiser from flip-flopping the latch on
+        // every frame.  abs(dx)+abs(dy) > 4 is coarser than per-axis but faster
+        // to evaluate than Euclidean and sufficient for a 1920×1080 layout.
+        //
+        // The first call sees the -1 sentinel (uninitialized) and only seeds
+        // prev_cursor_*; subsequent calls compare against the previous sample.
         if (prev_cursor_x_ != -1 && prev_cursor_y_ != -1) {
-            if (cx != prev_cursor_x_ || cy != prev_cursor_y_) {
+            const s32 manhattan = std::abs(cx - prev_cursor_x_)
+                                + std::abs(cy - prev_cursor_y_);
+            if (manhattan > 4) {
+                active_input_source_ = InputSource::MOUSE;
                 last_input_was_dpad_ = false;
+                if (cursor_ref_) {
+                    cursor_ref_->SetVisible(true);
+                }
             }
         }
         prev_cursor_x_ = cx;
@@ -2486,8 +2954,11 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         const s32 cell_x = builtin_slot_x[i] + x;
         const s32 cell_y = kDockNominalTop + y;
         NroEntry &entry = icons_[i];
-        const bool dpad_focused = (dpad_focus_index_ == kDesktopFolderCount + i);
-        const bool mouse_hovered = (mouse_hover_index_ == kDesktopFolderCount + i);
+        // v1.8 Input-source latch: D-pad focus only in DPAD mode; hover only in MOUSE mode.
+        const bool dpad_focused  = (active_input_source_ == InputSource::DPAD)
+                                && (dpad_focus_index_ == kDesktopFolderCount + i);
+        const bool mouse_hovered = (active_input_source_ == InputSource::MOUSE)
+                                && (mouse_hover_index_ == kDesktopFolderCount + i);
         PaintIconCell(r, entry, i, cell_x, cell_y, dpad_focused, mouse_hovered);
     }
 
@@ -2547,6 +3018,18 @@ void QdDesktopIconsElement::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
         }
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }
+
+    // ── Task 9 (v1.8): dev popup overlay ─────────────────────────────────────
+    // Rendered LAST (highest z-order), only when dev_popup_open_ is true.
+    // Each panel owns its own SDL_Renderer calls via its OnRender implementation.
+    // We pass a null drawer Ref because the panels obtain the renderer directly
+    // via pu::ui::render::GetMainRenderer() (same pattern as this element).
+    if (dev_popup_open_) {
+        pu::ui::render::Renderer::Ref null_drawer{};
+        if (nxlink_win_)  nxlink_win_->OnRender(null_drawer, 0, 0);
+        if (usb_win_)     usb_win_->OnRender(null_drawer, 0, 0);
+        if (log_win_)     log_win_->OnRender(null_drawer, 0, 0);
+    }
 }
 
 // ── OnInput ───────────────────────────────────────────────────────────────────
@@ -2569,7 +3052,40 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                                      const pu::ui::TouchPoint touch_pos)
 {
     (void)keys_up;
-    (void)keys_held;
+
+    // v1.8.23: coyote-timing — dpad-held repeat lambda (mirrors qd_VaultLayout.cpp:1062-1073).
+    // Accumulates per-direction held-frame counters in coyote_.dpad_held_frames[0..3]
+    // (indices: 0=Up 1=Down 2=Left 3=Right) and fires a synthetic repeat event after
+    // DPAD_REPEAT_DELAY_F frames, then every DPAD_REPEAT_INTERVAL_F frames.
+    auto dpad_should_repeat = [this, &keys_held](u32 dir_idx, u64 btn_mask) -> bool {
+        const bool is_held = (keys_held & btn_mask) != 0u;
+        if (!is_held) {
+            coyote_.dpad_held_frames[dir_idx] = 0u;
+            return false;
+        }
+        ++coyote_.dpad_held_frames[dir_idx];
+        if (coyote_.dpad_held_frames[dir_idx] <= DPAD_REPEAT_DELAY_F) {
+            return false;
+        }
+        const u32 since_delay = coyote_.dpad_held_frames[dir_idx] - DPAD_REPEAT_DELAY_F;
+        return (since_delay % DPAD_REPEAT_INTERVAL_F) == 0u;
+    };
+    const bool repeat_up    = dpad_should_repeat(0u, HidNpadButton_Up);
+    const bool repeat_down  = dpad_should_repeat(1u, HidNpadButton_Down);
+    const bool repeat_left  = dpad_should_repeat(2u, HidNpadButton_Left);
+    const bool repeat_right = dpad_should_repeat(3u, HidNpadButton_Right);
+
+    // ── Task 9 (v1.8): forward input to dev popup panels when open ────────────
+    // When the dev overlay is visible, input goes to each panel first.
+    // Panels handle their own button/touch interaction via their OnInput.
+    // We do NOT return here — desktop input continues normally (ZL still
+    // closes/opens the popup).  Panels that are not in focus simply ignore
+    // irrelevant input.
+    if (dev_popup_open_) {
+        if (nxlink_win_)  nxlink_win_->OnInput(keys_down, keys_up, keys_held, touch_pos);
+        if (usb_win_)     usb_win_->OnInput(keys_down, keys_up, keys_held, touch_pos);
+        if (log_win_)     log_win_->OnInput(keys_down, keys_up, keys_held, touch_pos);
+    }
 
     // ── v1.7.0-stabilize-7 Slice 4 (O-B Phase 5) — unified focus model ───────
     //
@@ -2577,25 +3093,87 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
     //   0..(kDesktopFolderCount-1)            -> desktop folder fi
     //   kDesktopFolderCount..(kDFC + BIC - 1)  -> dock slot (icon idx = focus - kDFC)
     //
-    // Total range: 0..10 (6 folders + 5 dock cells). Favorites strip is
-    // intentionally NOT in the focus ring — touch + cursor only. (Slice 5
-    // §"Open questions" #5 defers strip d-pad nav to v1.7.2.)
+    // Total range: 0..10 (6 folders + 5 dock cells). The favorites strip uses
+    // a parallel fav_strip_focus_index_ (Bug #4 v1.8); v1.8.23 wired it as a
+    // full peer in the Up/Down cycle: Folders <-> Favorites <-> Dock.
 
-    // ── A: launch focused folder OR dock builtin ─────────────────────────────
+    // ── A: launch focused folder OR dock builtin OR favorite ─────────────────
     if (keys_down & HidNpadButton_A) {
+        // v1.8.23: A button on favorites uses the SAME LaunchIcon dispatch
+        // path as touch and ZR (HitTestFavorites/ResolveFavoriteToIconIdx).
+        // ResolveFavoriteToIconIdx handles all FavoriteKinds (Nro, App,
+        // Builtin, Special) via FavEntryFromNroEntry round-trip, fixing the
+        // earlier Nro-only restriction in the v1.8 path.
+        if (fav_strip_focus_index_ != SIZE_MAX) {
+            // Map fav_strip_focus_index_ (paint-position 0..FAV_STRIP_VISIBLE-1)
+            // to a g_favorites_list_ index. Because PaintFavoritesStrip skips
+            // stale (unresolved) favorites when computing `painted`, we walk
+            // the same way to land on the same on-screen tile.
+            if (!g_favorites_list_.empty()) {
+                size_t painted = 0u;
+                const size_t cap =
+                    (g_favorites_list_.size() < static_cast<size_t>(FAV_STRIP_VISIBLE))
+                        ? g_favorites_list_.size()
+                        : static_cast<size_t>(FAV_STRIP_VISIBLE);
+                for (size_t fi = 0u; fi < cap; ++fi) {
+                    const FavoriteEntry &fav = g_favorites_list_[fi];
+                    const size_t idx = ResolveFavoriteToIconIdx(icons_, icon_count_, fav);
+                    if (idx >= icon_count_) {
+                        continue;  // stale favorite: not painted
+                    }
+                    if (painted == fav_strip_focus_index_) {
+                        // v1.8.23: coyote relaunch-lockout gate
+                        {
+                            const u64 now_tick = armGetSystemTick();
+                            if ((now_tick - coyote_.last_launch_tick) < RELAUNCH_LOCKOUT_TICKS) {
+                                UL_LOG_INFO("qdesktop: A fav coyote-lockout (within 300ms of last launch)");
+                                return;
+                            }
+                        }
+                        UL_LOG_INFO("qdesktop: A (strip fav_slot=%zu) → LaunchIcon(%zu)",
+                                    fav_strip_focus_index_, idx);
+                        LaunchIcon(idx);
+                        coyote_.last_launch_tick = armGetSystemTick();
+                        return;
+                    }
+                    ++painted;
+                }
+            }
+            // Strip slot has no matching loaded icon: no-op (shows nothing to launch).
+            UL_LOG_INFO("qdesktop: A (strip fav_slot=%zu) → no match, no-op",
+                        fav_strip_focus_index_);
+            return;
+        }
         const size_t f = dpad_focus_index_;
         if (f < kDesktopFolderCount) {
             OpenLaunchpadFiltered(static_cast<DesktopFolderId>(f));
             return;
         } else if (f < kDesktopFolderCount + BUILTIN_ICON_COUNT
                    && (f - kDesktopFolderCount) < icon_count_) {
+            // v1.8.23: coyote relaunch-lockout gate
+            {
+                const u64 now_tick = armGetSystemTick();
+                if ((now_tick - coyote_.last_launch_tick) < RELAUNCH_LOCKOUT_TICKS) {
+                    UL_LOG_INFO("qdesktop: A dock coyote-lockout (within 300ms of last launch)");
+                    return;
+                }
+            }
             LaunchIcon(f - kDesktopFolderCount);
+            coyote_.last_launch_tick = armGetSystemTick();
             return;
         }
     }
 
     // ── ZR: launch the cell under the cursor (folder or dock or favorite) ────
     if (keys_down & HidNpadButton_ZR) {
+        // v1.8 Input-source latch: ZR is "mouse button pressed" — it fires a
+        // cursor-targeted launch, so it unambiguously signals MOUSE mode.
+        // Show cursor (may already be visible, no harm in re-setting).
+        active_input_source_ = InputSource::MOUSE;
+        last_input_was_dpad_ = false;
+        if (cursor_ref_) {
+            cursor_ref_->SetVisible(true);
+        }
         if (cursor_ref_ != nullptr) {
             const s32 cx = cursor_ref_->GetCursorX();
             const s32 cy = cursor_ref_->GetCursorY();
@@ -2603,7 +3181,16 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
             // the small overlap region near y=622.
             const size_t fav_hit = HitTestFavorites(cx, cy);
             if (fav_hit < icon_count_) {
+                // v1.8.23: coyote relaunch-lockout gate
+                {
+                    const u64 now_tick = armGetSystemTick();
+                    if ((now_tick - coyote_.last_launch_tick) < RELAUNCH_LOCKOUT_TICKS) {
+                        UL_LOG_INFO("qdesktop: ZR fav coyote-lockout (within 300ms of last launch)");
+                        return;
+                    }
+                }
                 LaunchIcon(fav_hit);
+                coyote_.last_launch_tick = armGetSystemTick();
                 return;
             }
             const size_t hit = HitTestDesktop(cx, cy);
@@ -2613,32 +3200,47 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                 return;
             } else if (hit < kDesktopFolderCount + BUILTIN_ICON_COUNT
                        && (hit - kDesktopFolderCount) < icon_count_) {
+                // v1.8.23: coyote relaunch-lockout gate
+                {
+                    const u64 now_tick = armGetSystemTick();
+                    if ((now_tick - coyote_.last_launch_tick) < RELAUNCH_LOCKOUT_TICKS) {
+                        UL_LOG_INFO("qdesktop: ZR dock coyote-lockout (within 300ms of last launch)");
+                        return;
+                    }
+                }
                 LaunchIcon(hit - kDesktopFolderCount);
+                coyote_.last_launch_tick = armGetSystemTick();
                 return;
             }
         }
     }
 
-    // ── ZL / Y: context menu on dock / Y-toggle on favorite under cursor ─────
-    // Slice 4 changes Y semantics for desktop interactions:
-    //   - On a dock builtin (icon under cursor or focused dpad index) → context menu
-    //     (preserved Cycle G2 behavior; no behavioral change for builtins).
-    //   - On a favorited tile under the cursor → toggle (un-favorite).
-    //   - On a desktop folder cell → no-op (folders aren't entries; favorites
-    //     and Open are the meaningful actions there).
-    if ((keys_down & HidNpadButton_ZL) || (keys_down & HidNpadButton_Y)) {
-        // Slice 5 Patch 4: Y on cursor-hovered favorite → un-favorite.
-        if (cursor_ref_ != nullptr) {
-            const s32 cx = cursor_ref_->GetCursorX();
-            const s32 cy = cursor_ref_->GetCursorY();
-            const size_t fav_hit = HitTestFavorites(cx, cy);
-            if (fav_hit < icon_count_) {
-                ToggleFavorite(icons_[fav_hit]);
-                return;
-            }
+    // ── Bug #46 fix (v1.8): ZL — dev popup hot-zone OR dock context menu ────────
+    // ZL semantics (v1.8):
+    //   • Touch pressed in top-right corner hot-zone [1890,1920)×[0,30) on the
+    //     SAME frame as ZL: toggle the developer popup overlay.
+    //   • Otherwise (ZL with no matching touch hit-zone): dock context menu
+    //     (preserved Cycle G2 / stabilize-4 behavior).
+    // The dev-popup hot-zone uses the last-recorded touch position because
+    // keys_down fires on the same frame as the touch state update.
+    if (keys_down & HidNpadButton_ZL) {
+        // Check top-right corner hot-zone first.
+        // We query the last-seen touch coords (last_touch_x_/y_) because the
+        // touch state machine above may have already processed this frame's
+        // touch and updated them.  If no touch was active this frame both are
+        // 0 and the hit-test will miss (x=0 < 1890), so the dock path runs.
+        static constexpr s32 kDevHotZoneX0 = 1890;
+        static constexpr s32 kDevHotZoneY1 = 30;
+        const bool in_dev_hotzone =
+            was_touch_active_last_frame_
+            && last_touch_x_ >= kDevHotZoneX0
+            && last_touch_y_ < kDevHotZoneY1;
+        if (in_dev_hotzone) {
+            dev_popup_open_ = !dev_popup_open_;
+            UL_LOG_INFO("qdesktop: ZL hot-zone → dev_popup_open_=%d", static_cast<int>(dev_popup_open_));
+            return;
         }
-        // Resolve a dock slot under cursor or focused index for the legacy
-        // context menu (Cycle G2 / Y on Application icon → Resume/Close).
+        // Not in hot-zone: dock context menu (legacy behavior).
         size_t dock_idx = BUILTIN_ICON_COUNT;  // sentinel
         if (cursor_ref_ != nullptr) {
             const s32 cx = cursor_ref_->GetCursorX();
@@ -2658,7 +3260,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                 && dock_idx < icon_count_
                 && g_MenuApplication != nullptr) {
             const NroEntry &entry = icons_[dock_idx];
-            UL_LOG_INFO("qdesktop: context-menu open dock_idx=%zu name='%s' kind=%d",
+            UL_LOG_INFO("qdesktop: ZL context-menu open dock_idx=%zu name='%s' kind=%d",
                         dock_idx, entry.name, static_cast<int>(entry.kind));
 
             const u64 suspended_app_id = g_GlobalSettings.system_status.suspended_app_id;
@@ -2705,11 +3307,11 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                 true
             );
             if (choice < 0 || choice == cancel_idx) {
-                UL_LOG_INFO("qdesktop: context-menu cancelled");
+                UL_LOG_INFO("qdesktop: ZL context-menu cancelled");
             } else if (choice == opt_open) {
                 LaunchIcon(dock_idx);
             } else if (choice == opt_close && this_is_suspended) {
-                UL_LOG_INFO("qdesktop: context-menu Close → TerminateApplication 0x%016llx",
+                UL_LOG_INFO("qdesktop: ZL context-menu Close → TerminateApplication 0x%016llx",
                             static_cast<unsigned long long>(entry.app_id));
                 const auto trc = smi::TerminateApplication();
                 if (R_SUCCEEDED(trc)) {
@@ -2721,7 +3323,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                     g_MenuApplication->ShowNotification("Close failed");
                 }
             } else if (choice == opt_close_other) {
-                UL_LOG_INFO("qdesktop: context-menu Close-current → TerminateApplication 0x%016llx",
+                UL_LOG_INFO("qdesktop: ZL context-menu Close-current → TerminateApplication 0x%016llx",
                             static_cast<unsigned long long>(suspended_app_id));
                 const auto trc = smi::TerminateApplication();
                 if (R_SUCCEEDED(trc)) {
@@ -2734,6 +3336,26 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                 }
             }
         }
+    }
+
+    // ── Bug #47 fix (v1.8): Y — toggle favorite under cursor ONLY ───────────────
+    // Y semantics (v1.8): cursor hovering a favorited tile → un-favorite it.
+    // Dock context menu is NO LONGER triggered by Y (ZL still handles it above).
+    // This eliminates the Bug #47 regression where Y opened a dock context menu
+    // instead of toggling the favorited tile under the cursor.
+    if (keys_down & HidNpadButton_Y) {
+        if (cursor_ref_ != nullptr) {
+            const s32 cx = cursor_ref_->GetCursorX();
+            const s32 cy = cursor_ref_->GetCursorY();
+            const size_t fav_hit = HitTestFavorites(cx, cy);
+            if (fav_hit < icon_count_) {
+                UL_LOG_INFO("qdesktop: Y toggle-favorite icons_idx=%zu", fav_hit);
+                ToggleFavorite(icons_[fav_hit]);
+                return;
+            }
+        }
+        // No favorited tile under cursor: no-op for Y (folders/dock have no Y action).
+        UL_LOG_INFO("qdesktop: Y pressed, no favorite under cursor — no-op");
     }
 
     // ── v1.7.0-stabilize-2: hot-corner OPEN edge-trigger ─────────────────────
@@ -2775,53 +3397,146 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                           | HidNpadButton_A;
     if (keys_down & dpad_a_mask) {
         last_input_was_dpad_ = true;
+        // v1.8 Input-source latch: any directional D-pad key switches to DPAD
+        // mode.  A alone does NOT change the source (matches spec: "A/B/X/Y/L/R/
+        // ZL/ZR do NOT change source").  We check the directional bits only.
+        if (keys_down & (HidNpadButton_Up | HidNpadButton_Down
+                       | HidNpadButton_Left | HidNpadButton_Right)) {
+            active_input_source_ = InputSource::DPAD;
+            if (cursor_ref_) {
+                cursor_ref_->SetVisible(false);
+            }
+        }
     }
 
-    if (keys_down & HidNpadButton_Up) {
-        const size_t f = dpad_focus_index_;
-        if (f >= kDesktopFolderCount
-                && f < kDesktopFolderCount + BUILTIN_ICON_COUNT) {
-            // Dock -> folder row 1.  Map dock col (0..4) to folder col (0..2)
-            // via integer truncation: target_col = dock_i * DF_COLS / BIC.
-            const size_t dock_i = f - kDesktopFolderCount;
-            const size_t target_col =
-                (dock_i * static_cast<size_t>(DF_COLS)) / BUILTIN_ICON_COUNT;
-            dpad_focus_index_ = static_cast<size_t>(DF_COLS) + target_col;
-        } else if (f >= static_cast<size_t>(DF_COLS) && f < kDesktopFolderCount) {
-            // Folder row 1 -> row 0.
-            dpad_focus_index_ = f - static_cast<size_t>(DF_COLS);
+    // v1.8.23: seamless dpad cycle Folders <-> Favorites <-> Dock.
+    // Zones: Folders (dpad_focus_index_ in [0..kDesktopFolderCount)),
+    //        Favorites (fav_strip_focus_index_ in [0..FAV_STRIP_VISIBLE)),
+    //        Dock     (dpad_focus_index_ in [kDFC..kDFC+BIC)).
+    // UP transitions:   Dock -> Favorites (skip if empty -> Folder row 1);
+    //                   Favorites -> Folder row 1 (col-mapped);
+    //                   Folder row 1 -> Folder row 0;
+    //                   Folder row 0 -> Favorites (skip if empty -> stay).
+    // DOWN transitions: Folder row 0 -> Folder row 1;
+    //                   Folder row 1 -> Favorites (skip if empty -> Dock);
+    //                   Favorites -> Dock;
+    //                   Dock -> no-op (existing behavior).
+    // LEFT/RIGHT stay within the active zone (no zone change).
+    if ((keys_down & HidNpadButton_Up) || repeat_up) {
+        if (fav_strip_focus_index_ != SIZE_MAX) {
+            // v1.8.23: Favorites UP -> Folder row 1 (column-mapped from strip slot).
+            // Strip slot 0..FAV_STRIP_VISIBLE-1 maps to folder col 0..DF_COLS-1
+            // via truncation (strip is wider than folder grid).
+            const size_t strip_col =
+                (fav_strip_focus_index_ * static_cast<size_t>(DF_COLS)) / FAV_STRIP_VISIBLE;
+            dpad_focus_index_ = static_cast<size_t>(DF_COLS) + strip_col;  // row 1 col = strip_col
+            fav_strip_focus_index_ = SIZE_MAX;
+            UL_LOG_INFO("qdesktop: dpad up (strip→row1) focus=%zu", dpad_focus_index_);
+        } else {
+            const size_t f = dpad_focus_index_;
+            if (f >= kDesktopFolderCount
+                    && f < kDesktopFolderCount + BUILTIN_ICON_COUNT) {
+                // v1.8.23: Dock UP -> Favorites strip (skip-if-empty -> Folder row 1).
+                // Map dock col (0..4) to strip slot (0..FAV_STRIP_VISIBLE-1).
+                const size_t dock_i = f - kDesktopFolderCount;
+                if (!g_favorites_list_.empty()) {
+                    const size_t strip_slot =
+                        (dock_i * FAV_STRIP_VISIBLE) / BUILTIN_ICON_COUNT;
+                    fav_strip_focus_index_ = strip_slot < FAV_STRIP_VISIBLE ? strip_slot : 0u;
+                    UL_LOG_INFO("qdesktop: dpad up (dock→strip) strip_slot=%zu", fav_strip_focus_index_);
+                } else {
+                    // Empty favorites: skip strip, fall through to folder row 1.
+                    const size_t target_col =
+                        (dock_i * static_cast<size_t>(DF_COLS)) / BUILTIN_ICON_COUNT;
+                    dpad_focus_index_ = static_cast<size_t>(DF_COLS) + target_col;
+                    UL_LOG_INFO("qdesktop: dpad up (dock→row1, no favs) -> focus=%zu", dpad_focus_index_);
+                }
+            } else if (f >= static_cast<size_t>(DF_COLS) && f < kDesktopFolderCount) {
+                // Folder row 1 -> row 0.
+                dpad_focus_index_ = f - static_cast<size_t>(DF_COLS);
+                UL_LOG_INFO("qdesktop: dpad up (row1→row0) -> focus=%zu", dpad_focus_index_);
+            } else {
+                // f < DF_COLS (folder row 0) -> enter favorites strip.
+                // Skip-if-empty: stay on row 0 when no favorites are loaded.
+                if (!g_favorites_list_.empty()) {
+                    const size_t folder_col = f;  // row 0 col == index
+                    const size_t strip_slot =
+                        (folder_col * FAV_STRIP_VISIBLE) / static_cast<size_t>(DF_COLS);
+                    fav_strip_focus_index_ = strip_slot < FAV_STRIP_VISIBLE ? strip_slot : 0u;
+                    UL_LOG_INFO("qdesktop: dpad up (row0→strip) strip_slot=%zu", fav_strip_focus_index_);
+                } else {
+                    UL_LOG_INFO("qdesktop: dpad up (row0, no favs) -> stay focus=%zu", dpad_focus_index_);
+                }
+            }
         }
-        // f < DF_COLS (already row 0): no-op.
-        UL_LOG_INFO("qdesktop: dpad up -> focus=%zu", dpad_focus_index_);
     }
-    if (keys_down & HidNpadButton_Down) {
-        const size_t f = dpad_focus_index_;
-        if (f < static_cast<size_t>(DF_COLS)) {
-            // Folder row 0 -> row 1.
-            dpad_focus_index_ = f + static_cast<size_t>(DF_COLS);
-        } else if (f < kDesktopFolderCount) {
-            // Folder row 1 -> dock.  Map folder col (0..2) to dock col
-            // (0..4) via target_dock = col * BIC / DF_COLS.
-            const size_t folder_col = f - static_cast<size_t>(DF_COLS);
+    if ((keys_down & HidNpadButton_Down) || repeat_down) {
+        if (fav_strip_focus_index_ != SIZE_MAX) {
+            // v1.8.23: Favorites DOWN -> Dock (column-mapped from strip slot).
+            // Strip slot 0..FAV_STRIP_VISIBLE-1 maps to dock col 0..BIC-1.
             const size_t target_dock =
-                (folder_col * BUILTIN_ICON_COUNT) / static_cast<size_t>(DF_COLS);
-            dpad_focus_index_ = kDesktopFolderCount + target_dock;
+                (fav_strip_focus_index_ * BUILTIN_ICON_COUNT) / FAV_STRIP_VISIBLE;
+            dpad_focus_index_ = kDesktopFolderCount
+                              + (target_dock < BUILTIN_ICON_COUNT ? target_dock : 0u);
+            fav_strip_focus_index_ = SIZE_MAX;
+            UL_LOG_INFO("qdesktop: dpad down (strip→dock) focus=%zu", dpad_focus_index_);
+        } else {
+            const size_t f = dpad_focus_index_;
+            if (f < static_cast<size_t>(DF_COLS)) {
+                // Folder row 0 -> row 1.
+                dpad_focus_index_ = f + static_cast<size_t>(DF_COLS);
+                UL_LOG_INFO("qdesktop: dpad down (row0→row1) -> focus=%zu", dpad_focus_index_);
+            } else if (f < kDesktopFolderCount) {
+                // v1.8.23: Folder row 1 DOWN -> Favorites strip (skip-if-empty -> Dock).
+                // Map folder col (0..DF_COLS-1) to strip slot (0..FAV_STRIP_VISIBLE-1).
+                const size_t folder_col = f - static_cast<size_t>(DF_COLS);
+                if (!g_favorites_list_.empty()) {
+                    const size_t strip_slot =
+                        (folder_col * FAV_STRIP_VISIBLE) / static_cast<size_t>(DF_COLS);
+                    fav_strip_focus_index_ = strip_slot < FAV_STRIP_VISIBLE ? strip_slot : 0u;
+                    UL_LOG_INFO("qdesktop: dpad down (row1→strip) strip_slot=%zu", fav_strip_focus_index_);
+                } else {
+                    // Empty favorites: skip strip, fall through to dock.
+                    const size_t target_dock =
+                        (folder_col * BUILTIN_ICON_COUNT) / static_cast<size_t>(DF_COLS);
+                    dpad_focus_index_ = kDesktopFolderCount + target_dock;
+                    UL_LOG_INFO("qdesktop: dpad down (row1→dock, no favs) -> focus=%zu", dpad_focus_index_);
+                }
+            } else {
+                // f >= kDesktopFolderCount (already dock): no-op (existing).
+                UL_LOG_INFO("qdesktop: dpad down (dock no-op) focus=%zu", dpad_focus_index_);
+            }
         }
-        // f >= kDesktopFolderCount (already dock): no-op.
-        UL_LOG_INFO("qdesktop: dpad down -> focus=%zu", dpad_focus_index_);
     }
-    if (keys_down & HidNpadButton_Left) {
-        if (dpad_focus_index_ > 0u) {
-            --dpad_focus_index_;
+    if ((keys_down & HidNpadButton_Left) || repeat_left) {
+        if (fav_strip_focus_index_ != SIZE_MAX) {
+            // Bug #4 fix (v1.8): in strip → move left within strip (clamp at 0).
+            if (fav_strip_focus_index_ > 0u) {
+                --fav_strip_focus_index_;
+            }
+            UL_LOG_INFO("qdesktop: dpad left (strip) slot=%zu", fav_strip_focus_index_);
+        } else {
+            if (dpad_focus_index_ > 0u) {
+                --dpad_focus_index_;
+            }
+            UL_LOG_INFO("qdesktop: dpad left -> focus=%zu", dpad_focus_index_);
         }
-        UL_LOG_INFO("qdesktop: dpad left -> focus=%zu", dpad_focus_index_);
     }
-    if (keys_down & HidNpadButton_Right) {
-        const size_t max_idx = kDesktopFolderCount + BUILTIN_ICON_COUNT - 1u;
-        if (dpad_focus_index_ < max_idx) {
-            ++dpad_focus_index_;
+    if ((keys_down & HidNpadButton_Right) || repeat_right) {
+        if (fav_strip_focus_index_ != SIZE_MAX) {
+            // Bug #4 fix (v1.8): in strip → move right within strip
+            // (clamp at FAV_STRIP_VISIBLE-1).
+            if (fav_strip_focus_index_ + 1u < FAV_STRIP_VISIBLE) {
+                ++fav_strip_focus_index_;
+            }
+            UL_LOG_INFO("qdesktop: dpad right (strip) slot=%zu", fav_strip_focus_index_);
+        } else {
+            const size_t max_idx = kDesktopFolderCount + BUILTIN_ICON_COUNT - 1u;
+            if (dpad_focus_index_ < max_idx) {
+                ++dpad_focus_index_;
+            }
+            UL_LOG_INFO("qdesktop: dpad right -> focus=%zu", dpad_focus_index_);
         }
-        UL_LOG_INFO("qdesktop: dpad right -> focus=%zu", dpad_focus_index_);
     }
 
     // ── Touch click-vs-drag state machine (unified) ──────────────────────────
@@ -2858,6 +3573,15 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                 down_idx_ = HitTestDesktop(tx, ty);  // 0..10 or SIZE_MAX
             }
             last_input_was_dpad_ = false;
+            // v1.8 Input-source latch: touch-down is unambiguously a MOUSE/touch
+            // event.  Switch to MOUSE mode and show cursor.  Spec: "touch = MOUSE
+            // source, no auto-revert on touch lift."
+            active_input_source_ = InputSource::MOUSE;
+            if (cursor_ref_) {
+                cursor_ref_->SetVisible(true);
+            }
+            // v1.8.23: coyote-timing — record the tick at finger-down.
+            coyote_.down_tick = armGetSystemTick();
             UL_LOG_INFO("qdesktop: touch_down x=%d y=%d hit=%zu",
                         tx, ty, down_idx_);
         } else {
@@ -2886,6 +3610,32 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
             const s32 tol     = CLICK_TOLERANCE_PX;
             const s32 tol_sq  = tol * tol;
 
+            // v1.8.23: coyote-timing — tap-window ceiling check (4c).
+            // Reject taps held longer than 250 ms (TAP_MAX_TICKS); these are
+            // deliberate holds, not misclicks.
+            {
+                const u64 now_tick = armGetSystemTick();
+                const u64 elapsed  = (now_tick >= coyote_.down_tick)
+                                     ? (now_tick - coyote_.down_tick) : 0ULL;
+                if (elapsed > TAP_MAX_TICKS) {
+                    UL_LOG_INFO("qdesktop: touch_up coyote-reject ticks=%llu > %llu (hold; cancel)",
+                                static_cast<unsigned long long>(elapsed),
+                                static_cast<unsigned long long>(TAP_MAX_TICKS));
+                    pressed_ = false;
+                    was_touch_active_last_frame_ = touch_active_now;
+                    return;
+                }
+                // v1.8.23: coyote-timing — double-launch suppression lockout.
+                if ((now_tick - coyote_.last_launch_tick) < RELAUNCH_LOCKOUT_TICKS) {
+                    UL_LOG_INFO("qdesktop: touch_up coyote-lockout ticks=%llu < %llu",
+                                static_cast<unsigned long long>(now_tick - coyote_.last_launch_tick),
+                                static_cast<unsigned long long>(RELAUNCH_LOCKOUT_TICKS));
+                    pressed_ = false;
+                    was_touch_active_last_frame_ = touch_active_now;
+                    return;
+                }
+            }
+
             if (lift_hit != SIZE_MAX && lift_hit == down_idx_
                     && dist_sq <= tol_sq) {
                 // Cycle E1: clear ALL touch state BEFORE any nested-fade
@@ -2904,11 +3654,12 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                         UL_LOG_INFO("qdesktop: launch favorite icons_idx=%zu (touch click)",
                                     icons_idx);
                         LaunchIcon(icons_idx);
+                        coyote_.last_launch_tick = armGetSystemTick();
                     }
                     return;
                 }
                 if (lift_hit < kDesktopFolderCount) {
-                    // Folder tap → Launchpad pre-filtered.
+                    // Folder tap → Launchpad pre-filtered (no lockout: no LaunchIcon call).
                     UL_LOG_INFO("qdesktop: folder tap fid=%zu (touch click)",
                                 lift_hit);
                     OpenLaunchpadFiltered(static_cast<DesktopFolderId>(lift_hit));
@@ -2921,6 +3672,7 @@ void QdDesktopIconsElement::OnInput(const u64 keys_down,
                         UL_LOG_INFO("qdesktop: launch dock_i=%zu (touch click)",
                                     dock_i);
                         LaunchIcon(dock_i);
+                        coyote_.last_launch_tick = armGetSystemTick();
                     }
                     return;
                 }
@@ -3201,6 +3953,26 @@ void QdDesktopIconsElement::LaunchIcon(size_t i) {
 void QdDesktopIconsElement::SetApplicationEntries(
         const std::vector<ul::menu::Entry> &entries)
 {
+    // Bug #2/#3 fix (v1.8): invalidate the favorites in-process cache so the
+    // strip resolves icon indices against the freshly-rebuilt icons_[] array on
+    // the next PaintFavoritesStrip call.  Must happen BEFORE FreeCachedText so
+    // any icon_tex_ entries that the strip relied on are freed in the loop below,
+    // forcing lazy re-creation by PaintFavoritesStrip.
+    InvalidateFavoritesCache();
+
+    // v1.8.22b: clear the negative-load memoization set on every reload.
+    // g_has_no_asset_ is keyed by icon_path / "app:<hex16>".  On the FIRST boot
+    // prewarm the uSystem JPEG cache is empty (the game was never launched), so
+    // LoadAppIconFromUSystemCache returns false and the key is inserted here.
+    // When the user later launches and exits the game, uSystem writes the JPEG
+    // and SetApplicationEntries is called again — but without this clear the key
+    // remains blacklisted, PrewarmAllIcons skips it, and the icon stays gray
+    // permanently even though the JPEG is now available on disk.
+    // Clearing here is safe: g_has_no_asset_ is a negative-cache optimisation
+    // only; missing it costs one extra disk-or-NS probe per entry per reload,
+    // which is negligible compared to the prewarm thread's existing I/O budget.
+    g_has_no_asset_.clear();
+
     // Truncate back to the Application slot boundary (idempotent reload).
     // Free cached name/glyph text textures for the slots about to be reused
     // so the next paint re-rasterises with the new entry's name + glyph.
@@ -3399,130 +4171,178 @@ void QdDesktopIconsElement::SetSpecialEntries(
 }
 
 // ── LoadJpegIconToCache ───────────────────────────────────────────────────────
-// Reads the file at jpeg_path and decodes it as a JPEG (or any SDL2_image-supported
-// format) into a 32-bit RGBA surface, then calls cache_.Put() with the RGBA pixels.
-// cache_key is passed to Put() as the path hash key; it need not equal jpeg_path.
+// v1.8.20 (Change 2): kernel-direct file I/O replaces IMG_Load (which internally
+// calls fopen/fread behind the fsdev POSIX shim, adding an unnecessary buffering
+// layer for a file that is read exactly once).
 //
-// Returns true if the JPEG was decoded and the cache was populated with real image
-// data.  Returns false (and still populates the cache with a fallback solid-colour
-// block keyed by cache_key) on any of:
-//   - File not found / not readable
-//   - SDL2_image decode failure
-//   - Surface conversion to RGBA failure
+// Algorithm:
+//   1. fsdevGetDeviceFileSystem("sdmc") → FsFileSystem*
+//   2. fsFsOpenFile → FsFile; fsFileGetSize for capacity check.
+//   3. fsFileRead(off=0, buf, file_size) — single read into heap buffer.
+//   4. Close FsFile immediately (no fd held during decode).
+//   5a. BMP fast path: detect "BM" magic bytes; parse pixel-data offset from
+//       BITMAPFILEHEADER at buf[0x0A] (u32 LE); call SDL_RWFromMem + IMG_Load_RW.
+//       (SDL_image handles BMP correctly from memory; the "fast path" label
+//       means we avoid the double-open that the old IMG_Load path implied.)
+//   5b. JPEG path: SDL_RWFromMem + IMG_Load_RW on the raw buffer.
+//       Both paths converge at the SDL surface → ABGR8888 → cache Put() codepath.
 //
-// The fallback is derived from cache_key via MakeFallbackIcon so the colour is stable.
+// Fallback: any failure emits MakeFallbackIcon and returns false.
+// The caller always receives a valid cache entry for cache_key regardless.
 
 bool QdDesktopIconsElement::LoadJpegIconToCache(const char *jpeg_path,
                                                  const char *cache_key)
 {
-    // Attempt to load and decode the file.
-    SDL_Surface *raw = IMG_Load(jpeg_path);
-    if (raw == nullptr) {
-        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: IMG_Load(%s) failed: %s",
-                    jpeg_path, IMG_GetError());
-        // Fall through to generate a colour-coded fallback.
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
-    }
-
-    // Convert to RGBA8888 so our ScaleToBgra64 path receives the expected layout.
-    SDL_Surface *rgba = SDL_ConvertSurfaceFormat(raw, SDL_PIXELFORMAT_RGBA8888, 0);
-    SDL_FreeSurface(raw);
-
-    if (rgba == nullptr) {
-        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: SDL_ConvertSurface failed: %s",
-                    SDL_GetError());
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
-    }
-
-    // Lock the surface to access pixel data (required for non-RLE surfaces).
-    if (SDL_LockSurface(rgba) != 0) {
-        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: SDL_LockSurface failed: %s",
-                    SDL_GetError());
-        SDL_FreeSurface(rgba);
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
-    }
-
-    const s32 src_w = rgba->w;
-    const s32 src_h = rgba->h;
-
-    // SDL2 RGBA8888 on little-endian ARM is stored as [A, B, G, R] per byte in
-    // memory (i.e., 0xRRGGBBAA stored little-endian = bytes [AA BB GG RR]).
-    // Our ScaleToBgra64 expects standard RGBA layout [R, G, B, A].  The pixel
-    // format constant SDL_PIXELFORMAT_RGBA8888 packs channels as R8G8B8A8 in
-    // *big-endian* notation.  On the Switch (AArch64, little-endian), the in-memory
-    // byte order of a pixel is [A, B, G, R] (least-significant byte first in a u32).
-    // That is actually ABGR in byte order — identical to what SDL2_image ordinarily
-    // calls SDL_PIXELFORMAT_ABGR8888.
+    // ── v1.8.22e B66 defense-in-depth: reject romfs:/ paths at function root ──
+    // LoadJpegIconToCache is fundamentally sdmc-only — it calls
+    // fsdevGetDeviceFileSystem("sdmc") below, strips the "sdmc:" prefix, and
+    // hands the rest to fsFsOpenFile on the sdmc filesystem.  A romfs:/ path
+    // fails fsFsOpenFile with rc=0x2EEA02 (FS module 2 / desc 6004 = path-not-
+    // found), then falls through do_fallback() which Puts a gray MakeFallbackIcon
+    // BGRA into the shared cache keyed by the romfs path, displacing the real
+    // PNG that 2a-romfs branches in PaintIconCell / PaintCell load lazily via
+    // pu::ui::render::LoadImageFromFile.
     //
-    // We convert to the explicit ABGR format to pass the correct byte-order into
-    // ScaleToBgra64 which expects true RGBA (bytes: R G B A).
+    // Caller-side guards exist (PrewarmAllIcons :2653-2657, Launchpad::Open
+    // :282-286) but the bug class is closed only by rejecting at the function
+    // root.  Return false WITHOUT do_fallback() — no Put, no poison.
+    if (jpeg_path != nullptr
+            && jpeg_path[0] == 'r' && jpeg_path[1] == 'o'
+            && jpeg_path[2] == 'm' && jpeg_path[3] == 'f'
+            && jpeg_path[4] == 's' && jpeg_path[5] == ':') {
+        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: romfs:/ path rejected at root "
+                    "(use 2a-romfs LoadImageFromFile lazy path) '%s'", jpeg_path);
+        return false;
+    }
 
-    // Re-convert to a format whose byte order matches our caller's assumption.
-    SDL_UnlockSurface(rgba);
-    SDL_Surface *rgba_le = SDL_ConvertSurfaceFormat(rgba,
-                                                     SDL_PIXELFORMAT_ABGR8888, 0);
-    SDL_FreeSurface(rgba);
-
-    if (rgba_le == nullptr) {
-        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: ABGR re-convert failed: %s",
-                    SDL_GetError());
+    // ── helper lambda: emit fallback and return false ─────────────────────────
+    // v1.8.22c Edit 2: do NOT poison the cache with gray when the cache_key is
+    // an "app:<hex>" Application key.  PaintIconCell section 2c installs
+    // DefaultApplication.png per-frame on a Get-miss; a stored gray would
+    // outrank that.  Worse, gray BGRAs persist to sdmc:/ulaunch/cache/icons.bgra
+    // and survive process death/respawn — gray would lock in across boots.
+    // For NRO / SD-JPEG keys the existing gray-block fallback stays.
+    auto do_fallback = [&]() -> bool {
+        const bool is_app_key = (cache_key != nullptr
+                                 && cache_key[0] == 'a' && cache_key[1] == 'p'
+                                 && cache_key[2] == 'p' && cache_key[3] == ':');
+        if (is_app_key) {
+            return false;  // let section 2c install DefaultApplication.png
+        }
         u8 *fallback = MakeFallbackIcon(cache_key);
         if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
+            std::lock_guard<std::mutex> lock(GetSharedIconCacheMutex());
+            GetSharedIconCache().Put(cache_key, fallback,
                        static_cast<s32>(CACHE_ICON_W),
                        static_cast<s32>(CACHE_ICON_H));
             delete[] fallback;
         }
         return false;
+    };
+
+    // ── 1. Obtain sdmc FsFileSystem* ─────────────────────────────────────────
+    FsFileSystem *sdmc = fsdevGetDeviceFileSystem("sdmc");
+    if (!sdmc) {
+        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: sdmc not mounted for '%s'", jpeg_path);
+        return do_fallback();
+    }
+
+    // Strip "sdmc:" prefix — fsFsOpenFile takes paths without device prefix.
+    const char *fs_path = jpeg_path;
+    if (fs_path[0]=='s' && fs_path[1]=='d' && fs_path[2]=='m' &&
+        fs_path[3]=='c' && fs_path[4]==':') {
+        fs_path += 5;
+    }
+
+    // ── 2. Open file and get size ─────────────────────────────────────────────
+    FsFile fsf;
+    Result rc = fsFsOpenFile(sdmc, fs_path, FsOpenMode_Read, &fsf);
+    if (R_FAILED(rc)) {
+        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: fsFsOpenFile failed '%s' rc=0x%X",
+                    jpeg_path, rc);
+        return do_fallback();
+    }
+    s64 file_size = 0;
+    rc = fsFileGetSize(&fsf, &file_size);
+    if (R_FAILED(rc) || file_size <= 0 || file_size > (8 * 1024 * 1024)) {
+        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: bad file size '%s' sz=%lld rc=0x%X",
+                    jpeg_path, static_cast<long long>(file_size), rc);
+        fsFileClose(&fsf);
+        return do_fallback();
+    }
+
+    // ── 3. Read entire file into heap buffer (single kernel IPC call) ─────────
+    u8 *file_buf = new(std::nothrow) u8[static_cast<size_t>(file_size)];
+    if (!file_buf) {
+        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: OOM for '%s' size=%lld",
+                    jpeg_path, static_cast<long long>(file_size));
+        fsFileClose(&fsf);
+        return do_fallback();
+    }
+    u64 bytes_read = 0;
+    rc = fsFileRead(&fsf, /*off=*/0, file_buf, static_cast<u64>(file_size), 0, &bytes_read);
+    fsFileClose(&fsf);  // done with the FsFile; close immediately
+    if (R_FAILED(rc) || static_cast<s64>(bytes_read) < file_size) {
+        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: read failed '%s' rc=0x%X got=%llu need=%lld",
+                    jpeg_path, rc,
+                    static_cast<unsigned long long>(bytes_read),
+                    static_cast<long long>(file_size));
+        delete[] file_buf;
+        return do_fallback();
+    }
+
+    // ── 4. Detect BMP vs JPEG and decode via SDL_RWFromMem ───────────────────
+    // Both BMP and JPEG are decoded through IMG_Load_RW — same code path,
+    // single SDL_Surface ownership.  No pixel layout special-casing for BMP
+    // vs JPEG at this level; SDL_image normalises the output surface format.
+    SDL_RWops *rw = SDL_RWFromMem(file_buf, static_cast<int>(file_size));
+    if (!rw) {
+        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: SDL_RWFromMem failed '%s': %s",
+                    jpeg_path, SDL_GetError());
+        delete[] file_buf;
+        return do_fallback();
+    }
+    SDL_Surface *raw = IMG_Load_RW(rw, /*freesrc=*/1);  // frees rw on return
+    delete[] file_buf;                                   // raw file bytes done
+    if (!raw) {
+        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: IMG_Load_RW failed '%s': %s",
+                    jpeg_path, IMG_GetError());
+        return do_fallback();
+    }
+
+    // ── 5. Convert to ABGR8888 (correct byte order for ScaleToBgra64) ────────
+    // SDL_PIXELFORMAT_ABGR8888 on AArch64 LE stores pixels as [R,G,B,A] in
+    // memory — the byte order that ScaleToBgra64 and cache Put() expect.
+    // (SDL_PIXELFORMAT_RGBA8888 stores as [A,B,G,R] in memory on LE — wrong.)
+    SDL_Surface *rgba_le = SDL_ConvertSurfaceFormat(raw, SDL_PIXELFORMAT_ABGR8888, 0);
+    SDL_FreeSurface(raw);
+    if (!rgba_le) {
+        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: ABGR convert failed '%s': %s",
+                    jpeg_path, SDL_GetError());
+        return do_fallback();
     }
 
     if (SDL_LockSurface(rgba_le) != 0) {
-        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: SDL_LockSurface(le) failed: %s",
-                    SDL_GetError());
+        UL_LOG_WARN("qdesktop: LoadJpegIconToCache: SDL_LockSurface failed '%s': %s",
+                    jpeg_path, SDL_GetError());
         SDL_FreeSurface(rgba_le);
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
+        return do_fallback();
     }
 
-    // src_w / src_h still valid from the first conversion (dimensions unchanged).
+    const s32 src_w = rgba_le->w;
+    const s32 src_h = rgba_le->h;
     const u8 *le_pixels = static_cast<const u8 *>(rgba_le->pixels);
 
-    // ScaleToBgra64 expects RGBA byte layout [R G B A], which is what ABGR8888
-    // little-endian gives us for the byte sequence.  The cache Put() call scales to
-    // 64×64, swaps R↔B, and writes 64×64 BGRA to the disk cache.
-    cache_.Put(cache_key, le_pixels, src_w, src_h);
+    // v1.8.15 Fix B: short-scope lock — pixel data ready, only Put needs the lock.
+    {
+        std::lock_guard<std::mutex> lock(GetSharedIconCacheMutex());
+        GetSharedIconCache().Put(cache_key, le_pixels, src_w, src_h);
+    }
 
     SDL_UnlockSurface(rgba_le);
     SDL_FreeSurface(rgba_le);
 
-    UL_LOG_INFO("qdesktop: LoadJpegIconToCache: loaded %s (%d×%d) → cache key %s",
+    UL_LOG_INFO("qdesktop: LoadJpegIconToCache: loaded '%s' (%d×%d) → cache key %s",
                 jpeg_path, src_w, src_h, cache_key);
     return true;
 }
@@ -3611,20 +4431,24 @@ bool QdDesktopIconsElement::LoadAppIconFromUSystemCache(const u64 app_id,
 bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
                                                const char *cache_key)
 {
+    // v1.8.22c Edit 2: cache_key for this function is always an "app:<hex>"
+    // Application key (only call sites are PrewarmAllIcons + future lazy-load).
+    // On any failure we MUST NOT Put a gray fallback — that would persist into
+    // the on-disk icons.bgra blob and outrank section 2c's per-frame
+    // DefaultApplication.png install.  The gray emit lambda below intentionally
+    // does NOT call GetSharedIconCache().Put().  See do_fallback in
+    // LoadJpegIconToCache for the same reasoning.
+    auto fail_no_poison = [&]() -> bool {
+        return false;
+    };
+
     // Heap-allocate the control data struct (~393 KB — too large for stack).
     NsApplicationControlData *ctrl_data = new(std::nothrow) NsApplicationControlData;
     if (ctrl_data == nullptr) {
         UL_LOG_WARN("qdesktop: LoadNsIconToCache: OOM allocating NsApplicationControlData"
                     " for app_id=0x%016llx",
                     static_cast<unsigned long long>(app_id));
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
+        return fail_no_poison();
     }
 
     u64 icon_size = 0;
@@ -3669,14 +4493,7 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
                     static_cast<unsigned int>(rc),
                     static_cast<unsigned long long>(icon_size));
         delete ctrl_data;
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
+        return fail_no_poison();
     }
 
     // Wrap the in-memory JPEG bytes in an SDL_RWops (no disk I/O).
@@ -3686,14 +4503,7 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
                     " for app_id=0x%016llx: %s",
                     static_cast<unsigned long long>(app_id), SDL_GetError());
         delete ctrl_data;
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
+        return fail_no_poison();
     }
 
     // IMG_Load_RW decodes the JPEG and frees rw (freesrc = 1).
@@ -3706,14 +4516,7 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
         UL_LOG_WARN("qdesktop: LoadNsIconToCache: IMG_Load_RW failed"
                     " for app_id=0x%016llx: %s",
                     static_cast<unsigned long long>(app_id), IMG_GetError());
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
+        return fail_no_poison();
     }
 
     // First conversion: normalize to RGBA8888.
@@ -3724,18 +4527,11 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
         UL_LOG_WARN("qdesktop: LoadNsIconToCache: SDL_ConvertSurface(RGBA) failed"
                     " for app_id=0x%016llx: %s",
                     static_cast<unsigned long long>(app_id), SDL_GetError());
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
+        return fail_no_poison();
     }
 
     // Second conversion: RGBA8888 → ABGR8888 to match the byte-order expected
-    // by ScaleToBgra64 inside cache_.Put() (same reasoning as LoadJpegIconToCache).
+    // by ScaleToBgra64 inside GetSharedIconCache().Put() (same reasoning as LoadJpegIconToCache).
     SDL_Surface *rgba_le = SDL_ConvertSurfaceFormat(rgba, SDL_PIXELFORMAT_ABGR8888, 0);
     SDL_FreeSurface(rgba);
 
@@ -3743,14 +4539,7 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
         UL_LOG_WARN("qdesktop: LoadNsIconToCache: SDL_ConvertSurface(ABGR) failed"
                     " for app_id=0x%016llx: %s",
                     static_cast<unsigned long long>(app_id), SDL_GetError());
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
+        return fail_no_poison();
     }
 
     if (SDL_LockSurface(rgba_le) != 0) {
@@ -3758,21 +4547,18 @@ bool QdDesktopIconsElement::LoadNsIconToCache(const u64 app_id,
                     " for app_id=0x%016llx: %s",
                     static_cast<unsigned long long>(app_id), SDL_GetError());
         SDL_FreeSurface(rgba_le);
-        u8 *fallback = MakeFallbackIcon(cache_key);
-        if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
-                       static_cast<s32>(CACHE_ICON_W),
-                       static_cast<s32>(CACHE_ICON_H));
-            delete[] fallback;
-        }
-        return false;
+        return fail_no_poison();
     }
 
     const s32 src_w = rgba_le->w;
     const s32 src_h = rgba_le->h;
     const u8 *le_pixels = static_cast<const u8 *>(rgba_le->pixels);
 
-    cache_.Put(cache_key, le_pixels, src_w, src_h);
+    // v1.8.15 Fix B: short-scope lock around the cache mutation only.
+    {
+        std::lock_guard<std::mutex> lock(GetSharedIconCacheMutex());
+        GetSharedIconCache().Put(cache_key, le_pixels, src_w, src_h);
+    }
 
     SDL_UnlockSurface(rgba_le);
     SDL_FreeSurface(rgba_le);
@@ -3814,12 +4600,25 @@ bool QdDesktopIconsElement::LoadNroIconToCache(const char *nro_path,
                     cache_key != nullptr ? cache_key : "(null)");
         u8 *fallback = MakeFallbackIcon(cache_key != nullptr ? cache_key : "");
         if (fallback != nullptr) {
-            cache_.Put(cache_key, fallback,
+            std::lock_guard<std::mutex> lock(GetSharedIconCacheMutex());
+            GetSharedIconCache().Put(cache_key, fallback,
                        static_cast<s32>(CACHE_ICON_W),
                        static_cast<s32>(CACHE_ICON_H));
             delete[] fallback;
         }
         return false;
+    }
+
+    // v1.8.19 negative-extract cache: if this path previously failed extraction,
+    // skip the disk I/O and ASET parse entirely.  The file doesn't change while
+    // uMenu is running, so a prior failure is deterministic across all passes.
+    {
+        const auto &failed_set = GetFailedExtractPaths();
+        if (failed_set.count(nro_path) != 0) {
+            UL_LOG_INFO("qdesktop: LoadNroIconToCache: skip known-failed path %s",
+                        nro_path);
+            return false;
+        }
     }
 
     NroIconResult res = ExtractNroIcon(nro_path);
@@ -3833,8 +4632,12 @@ bool QdDesktopIconsElement::LoadNroIconToCache(const char *nro_path,
         // Snapshot dimensions to locals before FreeNroIcon zeroes the struct.
         const s32 snap_w = res.width;
         const s32 snap_h = res.height;
-        // cache_.Put copies via ScaleToBgra64 — res.pixels is not read after this.
-        cache_.Put(cache_key, res.pixels, snap_w, snap_h);
+        // v1.8.15 Fix B: short-scope lock around the cache mutation only.
+        // ExtractNroIcon (disk I/O + ASET parse) is outside the lock.
+        {
+            std::lock_guard<std::mutex> lock(GetSharedIconCacheMutex());
+            GetSharedIconCache().Put(cache_key, res.pixels, snap_w, snap_h);
+        }
         FreeNroIcon(res);
         UL_LOG_INFO("qdesktop: LoadNroIconToCache: loaded %s (%d×%d) → cache key %s",
                     nro_path, snap_w, snap_h, cache_key);
@@ -3854,9 +4657,15 @@ bool QdDesktopIconsElement::LoadNroIconToCache(const char *nro_path,
                 res.height);
     FreeNroIcon(res);
 
+    // v1.8.19: Record this path in the negative-extract cache so subsequent
+    // prewarm passes don't pay the disk I/O cost again.
+    GetFailedExtractPaths().insert(nro_path);
+
     u8 *fallback = MakeFallbackIcon(nro_path);
     if (fallback != nullptr) {
-        cache_.Put(cache_key, fallback,
+        // v1.8.15 Fix B: short-scope lock around the cache mutation only.
+        std::lock_guard<std::mutex> lock(GetSharedIconCacheMutex());
+        GetSharedIconCache().Put(cache_key, fallback,
                    static_cast<s32>(CACHE_ICON_W),
                    static_cast<s32>(CACHE_ICON_H));
         delete[] fallback;

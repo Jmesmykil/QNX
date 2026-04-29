@@ -354,6 +354,26 @@ namespace ul::menu::ui {
         }
         this->StartPlayBgm();
 
+        // Boot chime: plays BootChime.wav exactly once per boot as a SFX.
+        // Uses a separate static gate (distinct from g_login_chime_played which
+        // guards the BGM chime) so both can fire independently.
+        // The handle is intentionally kept only for its lifetime in OnLoad; we
+        // do not need to store it on MenuApplication because it is a fire-and-forget
+        // one-shot — SDL_mixer keeps the Mix_Chunk alive until Mix_FreeChunk is
+        // called, but since this SFX is played once at boot and never repeated we
+        // accept the tiny one-shot leak rather than polluting the MenuApplication
+        // interface with a member that can never be re-used.
+        {
+            static bool g_boot_chime_sfx_played = false;
+            if(!g_boot_chime_sfx_played) {
+                g_boot_chime_sfx_played = true;
+                auto boot_chime_sfx = pu::audio::LoadSfx(TryGetActiveThemeResource("sound/Launchpad/BootChime.wav"));
+                if(boot_chime_sfx) {
+                    pu::audio::PlaySfx(boot_chime_sfx);
+                }
+            }
+        }
+
         // Periodic system-volume re-apply: re-reads audctl every ~30 frames
         // (~500 ms at 60 fps) and updates SDL_mixer levels so the physical
         // volume buttons take effect without restarting BGM or SFX.
@@ -446,6 +466,34 @@ namespace ul::menu::ui {
         // stack unwinds, and main()'s scope releases g_MenuApplication
         // naturally — no mid-frame destruction.
         ::g_uMenuTerminating.store(true, std::memory_order_release);
+
+        // v1.8.22a RetroArch crash fix: stop the QdDesktopIcons prewarm thread
+        // before process kill.  TerminateMenu's IPC kill does not unwind the
+        // stack, so the element's destructor never fires; without this hook,
+        // the thread runs into uLoader_apl's process startup and triggers a
+        // Data Abort (0x4A8) on RetroArch launch.
+        //
+        // We reach the element via:
+        //   g_MenuApplication->GetMainMenuLayout()->GetQdesktopIcons()
+        //
+        // Do NOT call this unconditionally — guard for nullptr at each step
+        // because Finalize() can be reached before MainMenuLayout is
+        // constructed (e.g. a Settings-start-mode boot that never enters Main).
+        // Both GetMainMenuLayout() and GetQdesktopIcons() are guarded by
+        // QDESKTOP_MODE (same ifdef that governs the prewarm thread), so this
+        // block compiles out in any non-QDESKTOP_MODE build.
+#ifdef QDESKTOP_MODE
+        {
+            auto &main_lyt = this->main_menu_lyt;
+            if (main_lyt != nullptr) {
+                auto icons = main_lyt->GetQdesktopIcons();
+                if (icons != nullptr) {
+                    icons->StopPrewarmThread();
+                    UL_LOG_INFO("Finalize: prewarm thread stopped");
+                }
+            }
+        }
+#endif
 
         // This might look very ugly, but it is a simple and quick way to exit fast: let uSystem terminate us directly (the OS itself deals with the cleanup)
         // Most importantly, this allows us to exit without cleaning the screen to black when exiting SDL2 stuff (as regular homebrew apps do) so we can do cool transitions with applets/games

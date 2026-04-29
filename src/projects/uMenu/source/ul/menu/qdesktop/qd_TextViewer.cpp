@@ -47,18 +47,16 @@ QdTextViewer::~QdTextViewer() {
 void QdTextViewer::FreeAllTextures() {
     for (auto &kv : line_tex_cache_) {
         if (kv.second != nullptr) {
-            SDL_DestroyTexture(kv.second);
+            pu::ui::render::DeleteTexture(kv.second);
         }
     }
     line_tex_cache_.clear();
 
     if (header_tex_ != nullptr) {
-        SDL_DestroyTexture(header_tex_);
-        header_tex_ = nullptr;
+        pu::ui::render::DeleteTexture(header_tex_);
     }
     if (footer_tex_ != nullptr) {
-        SDL_DestroyTexture(footer_tex_);
-        footer_tex_ = nullptr;
+        pu::ui::render::DeleteTexture(footer_tex_);
     }
 }
 
@@ -76,7 +74,7 @@ void QdTextViewer::EvictDistantTextures() {
         }
     }
     for (int idx : to_remove) {
-        SDL_DestroyTexture(line_tex_cache_[idx]);
+        pu::ui::render::DeleteTexture(line_tex_cache_[idx]);
         line_tex_cache_.erase(idx);
     }
 }
@@ -307,7 +305,7 @@ void QdTextViewer::OnRender(pu::ui::render::Renderer::Ref & /*drawer*/,
                 const s32 gy = row_y + (LINE_H - nh) / 2;
                 SDL_Rect ndst { gx, gy, nw, nh };
                 SDL_RenderCopy(r, num_tex, nullptr, &ndst);
-                SDL_DestroyTexture(num_tex);
+                pu::ui::render::DeleteTexture(num_tex);
             }
         }
 

@@ -20,9 +20,11 @@ extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
 #include <pu/ui/ui_Types.hpp>
 #include <SDL2/SDL.h>
 #include <dirent.h>
+#include <sys/stat.h>   // Task B Properties: stat()
 #include <cstring>
 #include <cstdio>
 #include <cctype>
+#include <algorithm>    // Task D: std::sort
 
 namespace ul::menu::qdesktop {
 
@@ -47,6 +49,43 @@ s32 QdVaultLayout::MainPaneCols() {
     const s32 col_stride = VAULT_CELL_W + VAULT_CELL_GAP;
     const s32 cols = pane_w / col_stride;
     return (cols < 1) ? 1 : cols;
+}
+
+// ── ClassifyByExtension ───────────────────────────────────────────────────────
+// Task A: map file extension (lower-cased, after the dot) to an EntryKind.
+
+/*static*/ QdVaultLayout::EntryKind
+QdVaultLayout::ClassifyByExtension(const char *ext) {
+    // .nca / .nsp / .xci — Nintendo archives
+    if (strcmp(ext, "nca") == 0 || strcmp(ext, "nsp") == 0 ||
+        strcmp(ext, "xci") == 0) {
+        return EntryKind::NcaNspXci;
+    }
+    // Image files
+    if (strcmp(ext, "png")  == 0 || strcmp(ext, "jpg")  == 0 ||
+        strcmp(ext, "jpeg") == 0 || strcmp(ext, "bmp")  == 0 ||
+        strcmp(ext, "gif")  == 0) {
+        return EntryKind::ImageFile;
+    }
+    // Audio files
+    if (strcmp(ext, "mp3")  == 0 || strcmp(ext, "wav")  == 0 ||
+        strcmp(ext, "ogg")  == 0 || strcmp(ext, "flac") == 0 ||
+        strcmp(ext, "aac")  == 0) {
+        return EntryKind::AudioFile;
+    }
+    // Text / prose files
+    if (strcmp(ext, "txt")  == 0 || strcmp(ext, "log")  == 0 ||
+        strcmp(ext, "md")   == 0 || strcmp(ext, "nfo")  == 0) {
+        return EntryKind::TextFile;
+    }
+    // Config / data files
+    if (strcmp(ext, "json") == 0 || strcmp(ext, "toml") == 0 ||
+        strcmp(ext, "ini")  == 0 || strcmp(ext, "cfg")  == 0 ||
+        strcmp(ext, "xml")  == 0 || strcmp(ext, "yaml") == 0 ||
+        strcmp(ext, "yml")  == 0) {
+        return EntryKind::ConfigFile;
+    }
+    return EntryKind::OtherFile;
 }
 
 // ── Constructor / Destructor ──────────────────────────────────────────────────
@@ -82,8 +121,7 @@ QdVaultLayout::~QdVaultLayout() {
     FreeEntryTextures();
     for (size_t i = 0; i < SIDEBAR_ROOT_COUNT; ++i) {
         if (sidebar_tex_[i] != nullptr) {
-            SDL_DestroyTexture(sidebar_tex_[i]);
-            sidebar_tex_[i] = nullptr;
+            pu::ui::render::DeleteTexture(sidebar_tex_[i]);
         }
     }
 }
@@ -126,9 +164,16 @@ void QdVaultLayout::ScanCurrentDirectory() {
 
     struct dirent *de;
     while ((de = readdir(d)) != nullptr && entry_count_ < MAX_ENTRIES) {
-        // Skip hidden and navigation entries.
+        // Skip '.' and '..' always; skip other dotfiles unless show_dotfiles_ is on.
         if (de->d_name[0] == '.') {
-            continue;
+            // Always skip . and ..
+            if (de->d_name[1] == '\0' || (de->d_name[1] == '.' && de->d_name[2] == '\0')) {
+                continue;
+            }
+            // Other dotfiles: skip unless toggle is on.
+            if (!show_dotfiles_) {
+                continue;
+            }
         }
 
         Entry &e = entries_[entry_count_];
@@ -167,36 +212,78 @@ void QdVaultLayout::ScanCurrentDirectory() {
                 e.full_path[used + 1] = '\0';
             }
         } else {
-            // Check for .nro suffix (case-insensitive) using full d_name length.
-            const size_t dlen = strnlen(de->d_name, 256);
-            bool is_nro = false;
-            if (dlen > 4) {
-                const char *ext = de->d_name + dlen - 4;
-                is_nro = (ext[0] == '.' &&
-                          (ext[1] == 'n' || ext[1] == 'N') &&
-                          (ext[2] == 'r' || ext[2] == 'R') &&
-                          (ext[3] == 'o' || ext[3] == 'O'));
-            }
-            e.kind = is_nro ? EntryKind::Nro : EntryKind::OtherFile;
+            // Build full_path first (needed for extension extraction).
+            const size_t used = safe_copy(e.full_path, sizeof(e.full_path), cwd_);
+            safe_append(e.full_path, sizeof(e.full_path), de->d_name, used);
 
-            // Copy display name; truncation to 64 bytes is intentional.
+            // Find the last dot in d_name to extract the extension.
+            const size_t dlen = strnlen(de->d_name, 256);
+            const char *last_dot = nullptr;
+            for (size_t k = 0; k < dlen; ++k) {
+                if (de->d_name[k] == '.') {
+                    last_dot = &de->d_name[k];
+                }
+            }
+
+            // Build a lower-cased extension (without the dot).
+            char ext_lc[9] = {};
+            bool is_nro = false;
+            if (last_dot != nullptr && last_dot[1] != '\0') {
+                size_t ei = 0;
+                for (const char *p = last_dot + 1; *p != '\0' && ei < 8; ++p, ++ei) {
+                    ext_lc[ei] = static_cast<char>(tolower(static_cast<unsigned char>(*p)));
+                }
+                is_nro = (ext_lc[0] == 'n' && ext_lc[1] == 'r' &&
+                          ext_lc[2] == 'o' && ext_lc[3] == '\0');
+            }
+
+            if (is_nro) {
+                e.kind = EntryKind::Nro;
+            } else {
+                e.kind = ClassifyByExtension(ext_lc);
+            }
+
+            // Copy display name; strip .nro suffix from NRO display names.
             safe_copy(e.name, sizeof(e.name), de->d_name);
-            if (is_nro && dlen > 4) {
-                const size_t strip = dlen - 4;
+            if (is_nro && last_dot != nullptr) {
+                const size_t strip = static_cast<size_t>(last_dot - de->d_name);
                 if (strip < sizeof(e.name)) {
                     e.name[strip] = '\0';
                 }
             }
-            // Build full_path.
-            const size_t used = safe_copy(e.full_path, sizeof(e.full_path), cwd_);
-            safe_append(e.full_path, sizeof(e.full_path), de->d_name, used);
         }
 
         name_tex_[entry_count_] = nullptr;
         ++entry_count_;
     }
     closedir(d);
-    UL_LOG_INFO("vault: scan '%s' → %zu entries", cwd_, entry_count_);
+
+    // Task D: sort entries according to sort_mode_.
+    // Folders always sort before files regardless of mode.
+    if (entry_count_ > 1) {
+        std::sort(entries_, entries_ + entry_count_,
+            [this](const Entry &a, const Entry &b) -> bool {
+                // Folders first.
+                const bool a_dir = (a.kind == EntryKind::Folder);
+                const bool b_dir = (b.kind == EntryKind::Folder);
+                if (a_dir != b_dir) {
+                    return a_dir > b_dir; // folders first
+                }
+                if (sort_mode_ == SortMode::ByKind) {
+                    // Sort by kind ordinal, then name within the same kind.
+                    const u8 ak = static_cast<u8>(a.kind);
+                    const u8 bk = static_cast<u8>(b.kind);
+                    if (ak != bk) {
+                        return ak < bk;
+                    }
+                }
+                // Alphabetical by display name (case-insensitive).
+                return strncasecmp(a.name, b.name, sizeof(a.name)) < 0;
+            });
+    }
+
+    UL_LOG_INFO("vault: scan '%s' → %zu entries sort=%d", cwd_, entry_count_,
+                static_cast<int>(sort_mode_));
 }
 
 // ── FreeEntryTextures ─────────────────────────────────────────────────────────
@@ -209,8 +296,7 @@ void QdVaultLayout::FreeEntryTextures() {
             entries_[i].icon_decoded = false;
         }
         if (name_tex_[i] != nullptr) {
-            SDL_DestroyTexture(name_tex_[i]);
-            name_tex_[i] = nullptr;
+            pu::ui::render::DeleteTexture(name_tex_[i]);
         }
     }
 }
@@ -430,8 +516,7 @@ void QdVaultLayout::RenderMainPane(SDL_Renderer *r,
         static SDL_Texture *path_tex   = nullptr;
         if (strncmp(last_cwd, cwd_, MAX_PATH) != 0) {
             if (path_tex != nullptr) {
-                SDL_DestroyTexture(path_tex);
-                path_tex = nullptr;
+                pu::ui::render::DeleteTexture(path_tex);
             }
             snprintf(last_cwd, sizeof(last_cwd), "%s", cwd_);
             const pu::ui::Color pc { 0xE0u, 0xE0u, 0xF0u, 0xFFu };
@@ -485,12 +570,17 @@ void QdVaultLayout::RenderMainPane(SDL_Renderer *r,
         const s32 icon_x = cx + (VAULT_CELL_W - VAULT_ICON_SIZE) / 2;
         const s32 icon_y = cy + 6;
 
+        // Task A: draw procedural icon glyph for each EntryKind.
+        // All glyphs use VAULT_ICON_SIZE×VAULT_ICON_SIZE space at (icon_x, icon_y).
+        // Accent = cyan #7DD3FC outline against indigo-tinted background.
+        const s32 IS = VAULT_ICON_SIZE;  // alias for brevity
+        const u8 ar = theme_.accent.r, ag = theme_.accent.g, ab = theme_.accent.b;
+
         if (e.kind == EntryKind::Nro) {
-            // Lazy decode on first render.
+            // ── NRO: decoded ASET icon or cyan-outline fallback ──────────────
             if (!e.icon_decoded) {
                 DecodeNroIcon(e);
             }
-            // Build SDL_Texture from cache on first paint.
             if (e.icon_tex == nullptr) {
                 const u8 *bgra = cache_.Get(e.full_path);
                 if (bgra != nullptr) {
@@ -506,30 +596,184 @@ void QdVaultLayout::RenderMainPane(SDL_Renderer *r,
                 }
             }
             if (e.icon_tex != nullptr) {
-                SDL_Rect icon_dst { icon_x, icon_y, VAULT_ICON_SIZE, VAULT_ICON_SIZE };
+                SDL_Rect icon_dst { icon_x, icon_y, IS, IS };
                 SDL_RenderCopy(r, e.icon_tex, nullptr, &icon_dst);
             } else {
-                // Fallback colour block for NRO with no icon yet.
-                SDL_SetRenderDrawColor(r, 0x30u, 0x30u, 0x60u, 0xFFu);
-                SDL_Rect fb { icon_x, icon_y, VAULT_ICON_SIZE, VAULT_ICON_SIZE };
-                SDL_RenderFillRect(r, &fb);
+                // Cyan-outline rocket placeholder.
+                SDL_SetRenderDrawColor(r, 0x10u, 0x10u, 0x28u, 0xFFu);
+                SDL_Rect bg { icon_x, icon_y, IS, IS };
+                SDL_RenderFillRect(r, &bg);
+                SDL_SetRenderDrawColor(r, ar, ag, ab, 0xFFu);
+                SDL_Rect outline { icon_x, icon_y, IS, IS };
+                SDL_RenderDrawRect(r, &outline);
+                // Rocket body: tall centre rect
+                SDL_Rect body { icon_x + IS/2 - 6, icon_y + 8, 12, IS - 20 };
+                SDL_RenderFillRect(r, &body);
+                // Rocket nose cap
+                SDL_Rect nose { icon_x + IS/2 - 4, icon_y + 4, 8, 8 };
+                SDL_RenderFillRect(r, &nose);
+                // Fins: two small rects at the bottom left/right of body
+                SDL_Rect fin_l { icon_x + IS/2 - 12, icon_y + IS - 22, 6, 10 };
+                SDL_Rect fin_r { icon_x + IS/2 + 6,  icon_y + IS - 22, 6, 10 };
+                SDL_RenderFillRect(r, &fin_l);
+                SDL_RenderFillRect(r, &fin_r);
             }
+
         } else if (e.kind == EntryKind::Folder) {
-            // Folder: solid accent-tinted square.
-            SDL_SetRenderDrawColor(r,
-                                   theme_.accent.r,
-                                   theme_.accent.g,
-                                   theme_.accent.b,
-                                   0xB0u);
+            // ── Folder: filled accent square with a tab nub on top ───────────
             SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-            SDL_Rect fb { icon_x, icon_y, VAULT_ICON_SIZE, VAULT_ICON_SIZE };
-            SDL_RenderFillRect(r, &fb);
+            SDL_SetRenderDrawColor(r, ar, ag, ab, 0xB0u);
+            // Tab nub (upper-left, half-width, 10 px tall)
+            SDL_Rect tab { icon_x + 4, icon_y, IS / 2, 10 };
+            SDL_RenderFillRect(r, &tab);
+            // Main folder body (starts 8 px below top to accommodate tab)
+            SDL_Rect body { icon_x, icon_y + 8, IS, IS - 8 };
+            SDL_RenderFillRect(r, &body);
             SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+        } else if (e.kind == EntryKind::NcaNspXci) {
+            // ── NCA/NSP/XCI: cyan outline rect with bracket corner marks ─────
+            SDL_SetRenderDrawColor(r, 0x0Au, 0x10u, 0x22u, 0xFFu);
+            SDL_Rect bg { icon_x, icon_y, IS, IS };
+            SDL_RenderFillRect(r, &bg);
+            SDL_SetRenderDrawColor(r, ar, ag, ab, 0xFFu);
+            SDL_RenderDrawRect(r, &bg);
+            // Bracket marks: 4 L-shaped corner details (8 px each arm)
+            // Top-left
+            SDL_RenderDrawLine(r, icon_x+3,    icon_y+3,    icon_x+11,   icon_y+3);
+            SDL_RenderDrawLine(r, icon_x+3,    icon_y+3,    icon_x+3,    icon_y+11);
+            // Top-right
+            SDL_RenderDrawLine(r, icon_x+IS-4, icon_y+3,    icon_x+IS-12,icon_y+3);
+            SDL_RenderDrawLine(r, icon_x+IS-4, icon_y+3,    icon_x+IS-4, icon_y+11);
+            // Bottom-left
+            SDL_RenderDrawLine(r, icon_x+3,    icon_y+IS-4, icon_x+11,   icon_y+IS-4);
+            SDL_RenderDrawLine(r, icon_x+3,    icon_y+IS-4, icon_x+3,    icon_y+IS-12);
+            // Bottom-right
+            SDL_RenderDrawLine(r, icon_x+IS-4, icon_y+IS-4, icon_x+IS-12,icon_y+IS-4);
+            SDL_RenderDrawLine(r, icon_x+IS-4, icon_y+IS-4, icon_x+IS-4, icon_y+IS-12);
+            // Centre label lines (simulated NSP badge)
+            SDL_RenderDrawLine(r, icon_x+IS/2-10, icon_y+IS/2-3,  icon_x+IS/2+10, icon_y+IS/2-3);
+            SDL_RenderDrawLine(r, icon_x+IS/2-8,  icon_y+IS/2+3,  icon_x+IS/2+8,  icon_y+IS/2+3);
+
+        } else if (e.kind == EntryKind::TextFile) {
+            // ── Text/Log/Md: outline page with horizontal line details ────────
+            SDL_SetRenderDrawColor(r, 0x0Au, 0x0Eu, 0x1Au, 0xFFu);
+            SDL_Rect bg { icon_x, icon_y, IS, IS };
+            SDL_RenderFillRect(r, &bg);
+            SDL_SetRenderDrawColor(r, ar, ag, ab, 0xFFu);
+            // Page border with dog-eared top-right corner
+            const s32 ear = 14;
+            SDL_RenderDrawLine(r, icon_x+6,      icon_y+6,       icon_x+IS-6-ear, icon_y+6);
+            SDL_RenderDrawLine(r, icon_x+IS-6-ear,icon_y+6,       icon_x+IS-6,     icon_y+6+ear);
+            SDL_RenderDrawLine(r, icon_x+IS-6,   icon_y+6+ear,   icon_x+IS-6,     icon_y+IS-6);
+            SDL_RenderDrawLine(r, icon_x+IS-6,   icon_y+IS-6,    icon_x+6,        icon_y+IS-6);
+            SDL_RenderDrawLine(r, icon_x+6,      icon_y+IS-6,    icon_x+6,        icon_y+6);
+            // Dog-ear fold
+            SDL_RenderDrawLine(r, icon_x+IS-6-ear,icon_y+6,       icon_x+IS-6-ear, icon_y+6+ear);
+            SDL_RenderDrawLine(r, icon_x+IS-6-ear,icon_y+6+ear,   icon_x+IS-6,     icon_y+6+ear);
+            // Four text lines inside the page
+            for (s32 li = 0; li < 4; ++li) {
+                const s32 lx1 = icon_x + 12;
+                const s32 lx2 = (li == 3) ? icon_x + IS - 20 : icon_x + IS - 12;
+                const s32 ly  = icon_y + 24 + li * 9;
+                SDL_RenderDrawLine(r, lx1, ly, lx2, ly);
+            }
+
+        } else if (e.kind == EntryKind::ImageFile) {
+            // ── Image: outline frame with mountain + sun ──────────────────────
+            SDL_SetRenderDrawColor(r, 0x08u, 0x0Cu, 0x18u, 0xFFu);
+            SDL_Rect bg { icon_x, icon_y, IS, IS };
+            SDL_RenderFillRect(r, &bg);
+            SDL_SetRenderDrawColor(r, ar, ag, ab, 0xFFu);
+            // Frame border
+            SDL_RenderDrawRect(r, &bg);
+            // Mountain: two diagonal lines from base to a peak
+            const s32 mx  = icon_x + IS / 2;
+            const s32 mby = icon_y + IS - 14;
+            const s32 mty = icon_y + 20;
+            SDL_RenderDrawLine(r, icon_x + 10, mby, mx,       mty);
+            SDL_RenderDrawLine(r, mx,          mty, icon_x+IS-10, mby);
+            SDL_RenderDrawLine(r, icon_x + 10, mby, icon_x+IS-10, mby);
+            // Sun: small circle (drawn as 8 RenderDrawLine radii, r=7)
+            const s32 scx = icon_x + IS - 18, scy = icon_y + 16;
+            for (int ang = 0; ang < 8; ++ang) {
+                // Approximate circle with 8 short lines from centre
+                const float th = static_cast<float>(ang) * 3.14159f / 4.0f;
+                const s32 x2 = scx + static_cast<s32>(6.0f * __builtin_cosf(th));
+                const s32 y2 = scy + static_cast<s32>(6.0f * __builtin_sinf(th));
+                SDL_RenderDrawLine(r, scx, scy, x2, y2);
+            }
+
+        } else if (e.kind == EntryKind::AudioFile) {
+            // ── Audio: musical note (filled oval body + stem + flag) ─────────
+            SDL_SetRenderDrawColor(r, 0x08u, 0x0Cu, 0x18u, 0xFFu);
+            SDL_Rect bg { icon_x, icon_y, IS, IS };
+            SDL_RenderFillRect(r, &bg);
+            SDL_SetRenderDrawColor(r, ar, ag, ab, 0xFFu);
+            // Note head (filled as a 10×7 oval via stacked horizontal lines)
+            const s32 nhx = icon_x + IS/2 - 10, nhy = icon_y + IS - 22;
+            for (s32 row = 0; row < 7; ++row) {
+                const s32 half = (row < 3) ? (4 + row * 2) : (12 - (row - 3) * 2);
+                SDL_RenderDrawLine(r, nhx + 5 - half, nhy + row,
+                                      nhx + 5 + half, nhy + row);
+            }
+            // Stem (vertical line up from the right side of the note head)
+            const s32 sx = nhx + 16;
+            SDL_RenderDrawLine(r, sx, nhy, sx, nhy - 24);
+            // Flag (two short curved lines descending from stem top)
+            SDL_RenderDrawLine(r, sx,   nhy - 24, sx + 10, nhy - 18);
+            SDL_RenderDrawLine(r, sx,   nhy - 20, sx + 8,  nhy - 14);
+
+        } else if (e.kind == EntryKind::ConfigFile) {
+            // ── Config: gear outline (hexagon with 6 notch bumps) ────────────
+            SDL_SetRenderDrawColor(r, 0x0Cu, 0x0Au, 0x1Au, 0xFFu);
+            SDL_Rect bg { icon_x, icon_y, IS, IS };
+            SDL_RenderFillRect(r, &bg);
+            SDL_SetRenderDrawColor(r, ar, ag, ab, 0xFFu);
+            // Draw gear as a 12-point polygon approximation using SDL_RenderDrawLine.
+            // Two radii: inner r=16, outer r=22; 6 teeth alternating.
+            const s32 gcx = icon_x + IS / 2;
+            const s32 gcy = icon_y + IS / 2;
+            const float twopi = 6.2831853f;
+            s32 prev_x = 0, prev_y = 0;
+            for (int seg = 0; seg < 24; ++seg) {
+                const float angle = (static_cast<float>(seg) / 24.0f) * twopi;
+                const float r_val = ((seg % 4) < 2) ? 22.0f : 15.0f;
+                const s32 nx = gcx + static_cast<s32>(r_val * __builtin_cosf(angle));
+                const s32 ny = gcy + static_cast<s32>(r_val * __builtin_sinf(angle));
+                if (seg > 0) {
+                    SDL_RenderDrawLine(r, prev_x, prev_y, nx, ny);
+                }
+                prev_x = nx; prev_y = ny;
+            }
+            // Close the polygon
+            {
+                const float a0 = 0.0f;
+                const s32 fx = gcx + static_cast<s32>(22.0f * __builtin_cosf(a0));
+                const s32 fy = gcy + static_cast<s32>(22.0f * __builtin_sinf(a0));
+                SDL_RenderDrawLine(r, prev_x, prev_y, fx, fy);
+            }
+            // Centre hole (small circle, r=6)
+            for (int seg = 0; seg < 12; ++seg) {
+                const float a = (static_cast<float>(seg) / 12.0f) * twopi;
+                const float na = (static_cast<float>(seg + 1) / 12.0f) * twopi;
+                const s32 x1 = gcx + static_cast<s32>(6.0f * __builtin_cosf(a));
+                const s32 y1 = gcy + static_cast<s32>(6.0f * __builtin_sinf(a));
+                const s32 x2 = gcx + static_cast<s32>(6.0f * __builtin_cosf(na));
+                const s32 y2 = gcy + static_cast<s32>(6.0f * __builtin_sinf(na));
+                SDL_RenderDrawLine(r, x1, y1, x2, y2);
+            }
+
         } else {
-            // Other file: muted grey square.
+            // ── OtherFile: muted grey square (unchanged baseline) ─────────────
             SDL_SetRenderDrawColor(r, 0x44u, 0x44u, 0x66u, 0xFFu);
-            SDL_Rect fb { icon_x, icon_y, VAULT_ICON_SIZE, VAULT_ICON_SIZE };
+            SDL_Rect fb { icon_x, icon_y, IS, IS };
             SDL_RenderFillRect(r, &fb);
+            // Add a thin accent outline so the grey doesn't look entirely blank.
+            SDL_SetRenderDrawColor(r, ar, ag, ab, 0x60u);
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+            SDL_RenderDrawRect(r, &fb);
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
         }
 
         // ── Name label ────────────────────────────────────────────────────
@@ -574,6 +818,143 @@ void QdVaultLayout::RenderMainPane(SDL_Renderer *r,
     }
 }
 
+// ── RenderContextMenu ─────────────────────────────────────────────────────────
+// Task B: Draw a centred popup panel listing the three context-menu options.
+// Panel is 440×220 px, centred in the main-pane area (right of sidebar).
+// The highlighted option gets a cyan fill row and a left-edge accent marker.
+
+void QdVaultLayout::RenderContextMenu(SDL_Renderer *r) const {
+    // Panel geometry (main-pane centre).
+    static constexpr s32 PW = 440;
+    static constexpr s32 PH = 220;
+    const s32 main_left = VAULT_SIDEBAR_W;
+    const s32 main_w    = 1920 - main_left;
+    const s32 px = main_left + (main_w - PW) / 2;
+    const s32 py = VAULT_BODY_TOP + (VAULT_BODY_H - PH) / 2;
+
+    // Semi-transparent dark background.
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, 0x0Au, 0x0Au, 0x1Au, 0xEAu);
+    SDL_Rect bg { px, py, PW, PH };
+    SDL_RenderFillRect(r, &bg);
+
+    // Cyan border.
+    SDL_SetRenderDrawColor(r,
+                           theme_.accent.r,
+                           theme_.accent.g,
+                           theme_.accent.b,
+                           0xFFu);
+    SDL_RenderDrawRect(r, &bg);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+    // Title separator line below the top 42 px title area.
+    const s32 title_h = 42;
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r,
+                           theme_.accent.r,
+                           theme_.accent.g,
+                           theme_.accent.b,
+                           0x60u);
+    SDL_RenderDrawLine(r, px + 8, py + title_h, px + PW - 8, py + title_h);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+    // Option rows.
+    static const char *const OPT_LABELS[CTX_MENU_OPT_COUNT] = {
+        "  [A] Open",
+        "  [+] Properties",
+        "  [B] Close Menu",
+    };
+    const s32 row_h = (PH - title_h - 16) / CTX_MENU_OPT_COUNT;
+    for (s32 i = 0; i < CTX_MENU_OPT_COUNT; ++i) {
+        const s32 row_y = py + title_h + 8 + i * row_h;
+        if (i == ctx_menu_opt_) {
+            // Highlight row with a cyan tint fill.
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(r,
+                                   theme_.accent.r,
+                                   theme_.accent.g,
+                                   theme_.accent.b,
+                                   0x38u);
+            SDL_Rect hi { px + 4, row_y, PW - 8, row_h };
+            SDL_RenderFillRect(r, &hi);
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+            // Left-edge accent marker.
+            SDL_SetRenderDrawColor(r,
+                                   theme_.accent.r,
+                                   theme_.accent.g,
+                                   theme_.accent.b,
+                                   0xFFu);
+            SDL_RenderDrawLine(r, px + 4, row_y + 2, px + 4, row_y + row_h - 2);
+        }
+        // Render option label text.
+        const pu::ui::Color label_col = (i == ctx_menu_opt_)
+            ? pu::ui::Color { theme_.accent.r, theme_.accent.g, theme_.accent.b, 0xFFu }
+            : pu::ui::Color { 0xCCu, 0xCCu, 0xDDu, 0xFFu };
+        SDL_Texture *lbl_tex = pu::ui::render::RenderText(
+            pu::ui::GetDefaultFont(pu::ui::DefaultFontSize::Small),
+            OPT_LABELS[i],
+            label_col);
+        if (lbl_tex != nullptr) {
+            int tw = 0, th = 0;
+            SDL_QueryTexture(lbl_tex, nullptr, nullptr, &tw, &th);
+            SDL_Rect ldst { px + 14, row_y + (row_h - th) / 2, tw, th };
+            SDL_RenderCopy(r, lbl_tex, nullptr, &ldst);
+            pu::ui::render::DeleteTexture(lbl_tex);
+        }
+    }
+}
+
+// ── DispatchContextMenuOption ─────────────────────────────────────────────────
+// Task B: Execute the highlighted option for ctx_menu_entry_ and close the menu.
+
+void QdVaultLayout::DispatchContextMenuOption() {
+    if (ctx_menu_entry_ >= entry_count_) {
+        ctx_menu_active_ = false;
+        return;
+    }
+
+    switch (ctx_menu_opt_) {
+        case 0: {
+            // Open — same as pressing A on the entry directly.
+            ctx_menu_active_ = false;
+            focus_idx_ = ctx_menu_entry_;
+            EnterFocused();
+            break;
+        }
+        case 1: {
+            // Properties — stat() the file and log size + mtime.
+            // Logged to uMenu telemetry rather than a sub-panel in v1.8.
+            const Entry &e = entries_[ctx_menu_entry_];
+            struct stat st = {};
+            if (stat(e.full_path, &st) == 0) {
+                char time_buf[64] = {};
+                struct tm *tm_info = localtime(&st.st_mtime);
+                if (tm_info != nullptr) {
+                    strftime(time_buf, sizeof(time_buf),
+                             "%Y-%m-%d %H:%M:%S", tm_info);
+                } else {
+                    snprintf(time_buf, sizeof(time_buf), "(unknown)");
+                }
+                UL_LOG_INFO("vault: properties '%s': size=%lld bytes, mtime=%s",
+                            e.full_path,
+                            static_cast<long long>(st.st_size),
+                            time_buf);
+            } else {
+                UL_LOG_WARN("vault: properties stat() failed for '%s' errno=%d",
+                            e.full_path, errno);
+            }
+            ctx_menu_active_ = false;
+            break;
+        }
+        default:
+            // Option 2 (Close Menu) or any unexpected value.
+            ctx_menu_active_ = false;
+            UL_LOG_INFO("vault: ctx_menu closed via option %d", ctx_menu_opt_);
+            break;
+    }
+}
+
 // ── OnRender ──────────────────────────────────────────────────────────────────
 
 void QdVaultLayout::OnRender(pu::ui::render::Renderer::Ref &drawer,
@@ -605,6 +986,11 @@ void QdVaultLayout::OnRender(pu::ui::render::Renderer::Ref &drawer,
     RenderSidebar(r, x, y);
     RenderMainPane(r, x, y);
 
+    // Task B: context menu floats above the file grid but below the viewer.
+    if (ctx_menu_active_) {
+        RenderContextMenu(r);
+    }
+
     // Draw the active viewer as a full-screen overlay on top of the vault UI.
     if (viewer_active_) {
         if (text_viewer_->IsOpen()) {
@@ -624,6 +1010,30 @@ void QdVaultLayout::OnInput(const u64 keys_down,
                              const u64 keys_up,
                              const u64 keys_held,
                              const pu::ui::TouchPoint touch_pos) {
+    // Task B: context menu is the highest-priority overlay.  When it is open,
+    // Up/Down move the option cursor, A dispatches the option, B closes the menu.
+    // No other input reaches the vault while the menu is up.
+    if (ctx_menu_active_) {
+        if (keys_down & HidNpadButton_Up) {
+            if (ctx_menu_opt_ > 0) {
+                --ctx_menu_opt_;
+            }
+        }
+        if (keys_down & HidNpadButton_Down) {
+            if (ctx_menu_opt_ < CTX_MENU_OPT_COUNT - 1) {
+                ++ctx_menu_opt_;
+            }
+        }
+        if (keys_down & HidNpadButton_A) {
+            DispatchContextMenuOption();
+        }
+        if (keys_down & HidNpadButton_B) {
+            ctx_menu_active_ = false;
+            UL_LOG_INFO("vault: ctx_menu closed by B");
+        }
+        return;
+    }
+
     // When a viewer is active, route all input to it until it closes.
     if (viewer_active_) {
         if (text_viewer_->IsOpen()) {
@@ -816,15 +1226,47 @@ void QdVaultLayout::OnInput(const u64 keys_down,
         }
     }
 
-    // ── B / ZL: navigate up ──────────────────────────────────────────────────
+    // ── B: navigate up / release sidebar ────────────────────────────────────
     // (stabilize-6 / RC-C2): B on sidebar releases focus; B on main = NavigateUp.
-    if ((keys_down & HidNpadButton_B) || (keys_down & HidNpadButton_ZL)) {
+    // Task B: B is now strictly for navigation; ZL has its own context-menu block.
+    if (keys_down & HidNpadButton_B) {
         if (sidebar_focused_) {
             sidebar_focused_ = false;
             UL_LOG_INFO("vault: sidebar B -> main pane");
         } else {
             NavigateUp();
         }
+    }
+
+    // ── ZL: open context menu on focused entry ────────────────────────────────
+    // Task B: ZL triggers the per-entry popup (Open / Properties / Close Menu).
+    // Only meaningful when main pane is focused and an entry is selected.
+    if ((keys_down & HidNpadButton_ZL) && !sidebar_focused_ && entry_count_ > 0) {
+        ctx_menu_active_ = true;
+        ctx_menu_entry_  = focus_idx_;
+        ctx_menu_opt_    = 0;
+        UL_LOG_INFO("vault: ZL ctx_menu opened for entry %zu '%s'",
+                    ctx_menu_entry_, entries_[ctx_menu_entry_].name);
+    }
+
+    // ── Y: cycle sort mode ────────────────────────────────────────────────────
+    // Task D: Y toggles between ByName and ByKind, then re-scans so the new
+    // order takes effect immediately.
+    if ((keys_down & HidNpadButton_Y) && !sidebar_focused_) {
+        sort_mode_ = (sort_mode_ == SortMode::ByName) ? SortMode::ByKind
+                                                      : SortMode::ByName;
+        UL_LOG_INFO("vault: sort_mode_ -> %s",
+                    sort_mode_ == SortMode::ByName ? "ByName" : "ByKind");
+        ScanCurrentDirectory();
+    }
+
+    // ── Minus: toggle dotfile visibility ──────────────────────────────────────
+    // Task D: Minus shows/hides dotfiles (e.g. .config, .nro-cache) and re-scans.
+    if (keys_down & HidNpadButton_Minus) {
+        show_dotfiles_ = !show_dotfiles_;
+        UL_LOG_INFO("vault: show_dotfiles_ -> %s",
+                    show_dotfiles_ ? "true" : "false");
+        ScanCurrentDirectory();
     }
 }
 
@@ -864,7 +1306,13 @@ void QdVaultLayout::NavigateUp() {
     parent[new_len] = '\0';
 
     // Don't navigate above "sdmc:/" (7 chars).
+    // Task C: at root, B-back returns to the main desktop instead of silently
+    // no-opping.  Matches the qd_DesktopIcons HOME-press pattern.
     if (new_len < 7) {
+        UL_LOG_INFO("vault: NavigateUp at root -> returning to MainMenu");
+        if (g_MenuApplication) {
+            g_MenuApplication->LoadMenu(ul::menu::ui::MenuType::Main);
+        }
         return;
     }
 
@@ -901,56 +1349,49 @@ void QdVaultLayout::EnterFocused() {
             }
             break;
 
-        case EntryKind::OtherFile: {
-            // Determine the file extension (lower-cased) to pick the viewer.
-            const char *dot = nullptr;
-            for (const char *p = e.full_path; *p != '\0'; ++p) {
-                if (*p == '.') {
-                    dot = p;
-                }
-            }
-            // Build a lower-cased extension string (without the dot, max 8 chars).
-            char ext[9] = {};
-            if (dot != nullptr && dot[1] != '\0') {
-                size_t ei = 0;
-                for (const char *p = dot + 1; *p != '\0' && ei < 8; ++p, ++ei) {
-                    ext[ei] = static_cast<char>(tolower(static_cast<unsigned char>(*p)));
-                }
-            }
-            // Image viewer handles: png, jpg, jpeg, bmp, gif.
-            const bool is_image = (strcmp(ext, "png")  == 0 ||
-                                   strcmp(ext, "jpg")  == 0 ||
-                                   strcmp(ext, "jpeg") == 0 ||
-                                   strcmp(ext, "bmp")  == 0 ||
-                                   strcmp(ext, "gif")  == 0);
-            // Text viewer handles: txt, log, md, toml, json, ini, cfg, nfo.
-            const bool is_text  = (strcmp(ext, "txt")  == 0 ||
-                                   strcmp(ext, "log")  == 0 ||
-                                   strcmp(ext, "md")   == 0 ||
-                                   strcmp(ext, "toml") == 0 ||
-                                   strcmp(ext, "json") == 0 ||
-                                   strcmp(ext, "ini")  == 0 ||
-                                   strcmp(ext, "cfg")  == 0 ||
-                                   strcmp(ext, "nfo")  == 0);
-            if (is_image) {
-                if (image_viewer_->LoadFile(e.full_path)) {
-                    viewer_active_ = true;
-                    UL_LOG_INFO("vault: image viewer opened for '%s'", e.full_path);
-                } else {
-                    UL_LOG_WARN("vault: image viewer failed to load '%s'", e.full_path);
-                }
-            } else if (is_text) {
-                if (text_viewer_->LoadFile(e.full_path)) {
-                    viewer_active_ = true;
-                    UL_LOG_INFO("vault: text viewer opened for '%s'", e.full_path);
-                } else {
-                    UL_LOG_WARN("vault: text viewer failed to load '%s'", e.full_path);
-                }
+        // Task A/EnterFocused: all non-Folder, non-NRO kinds are routed here.
+        // ScanCurrentDirectory() already classified the entry, so we dispatch
+        // directly on e.kind rather than re-reading the extension.
+        case EntryKind::ImageFile:
+            if (image_viewer_->LoadFile(e.full_path)) {
+                viewer_active_ = true;
+                UL_LOG_INFO("vault: image viewer opened for '%s'", e.full_path);
             } else {
-                UL_LOG_INFO("vault: no viewer for extension '%s' — file '%s'", ext, e.full_path);
+                UL_LOG_WARN("vault: image viewer failed to load '%s'", e.full_path);
             }
             break;
-        }
+
+        case EntryKind::TextFile:
+        case EntryKind::ConfigFile:
+            if (text_viewer_->LoadFile(e.full_path)) {
+                viewer_active_ = true;
+                UL_LOG_INFO("vault: text viewer opened for '%s'", e.full_path);
+            } else {
+                UL_LOG_WARN("vault: text viewer failed to load '%s'", e.full_path);
+            }
+            break;
+
+        case EntryKind::NcaNspXci:
+            // Nintendo archives — no in-vault handler in v1.8; log and no-op.
+            UL_LOG_INFO("vault: no handler for NCA/NSP/XCI '%s'", e.full_path);
+            break;
+
+        case EntryKind::AudioFile:
+            // Audio playback — no in-vault audio player in v1.8; log and no-op.
+            UL_LOG_INFO("vault: no audio player for '%s'", e.full_path);
+            break;
+
+        case EntryKind::OtherFile:
+        default:
+            // Attempt the text viewer as a fallback for unknown file types;
+            // if it fails (binary/unsupported encoding) log silently.
+            if (text_viewer_->LoadFile(e.full_path)) {
+                viewer_active_ = true;
+                UL_LOG_INFO("vault: text viewer (fallback) opened for '%s'", e.full_path);
+            } else {
+                UL_LOG_INFO("vault: no viewer for '%s'", e.full_path);
+            }
+            break;
     }
 }
 

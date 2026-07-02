@@ -1,0 +1,22 @@
+target/
+build/
+out/
+*.nsp
+*.nso
+*.nro
+*.elf
+*.o
+__pycache__/
+.DS_Store
+# v3.0 — session-local pre-deploy asset backups (taken before each rebuild
+# so PNG regressions are recoverable). Local-only; not for the public repo.
+.icon-backups/
+# v3.7 — session-local theme-bundle .bak snapshots (Logo/ultheme/qd_Theme).
+# Local recovery only; never publish.
+_theme-bundle-backups/
+# 2026-05-19 cross-cutting audit cleanup: test logs + staging binaries should
+# not be tracked.  Files already tracked under these prefixes stay tracked
+# until `git rm --cached -r logs/ staging/` is run separately (commit-class
+# operation, owner discretion).
+logs/
+staging/

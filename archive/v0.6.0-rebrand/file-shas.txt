@@ -1,0 +1,51 @@
+=== Q OS Shell rebrand v0.6.0 — post-rebrand SHA256 manifest ===
+Generated: 2026-04-18
+
+--- Assets ---
+741ff63b0bc39d41b0a67522f1850c1d887d46556d0dbfb9a107792a38c64990  assets/qos-icon-256.jpg
+180e54426a2737e819aba5bf05b3872ca91550513f4e7e105fd8c8047b59ff7c  assets/qos-logo.png
+180e54426a2737e819aba5bf05b3872ca91550513f4e7e105fd8c8047b59ff7c  projects/uMenu/romfs/Logo.png
+
+--- Legal ---
+9da4d11b9fe563bd242bb4470ad1a4b302708c2550123b451bca69fbb6f4c5fe  NOTICE.md
+
+--- Build system ---
+3870bccba0fc41fd2f150e15583b493e9f6e4be6bdbd56b32d2e9d62c0865b13  Makefile
+5ec2d28ed719af9d4b00a2fa8dc85a7f4852d0152cdd10569924810507efc8d3  projects/uManager/Makefile
+
+--- NACP / NPDM configs ---
+3bb1ff513bcc7ea6aaca406afa4a563f82129fa6c259e86373b2cf6ed206c765  projects/uMenu/uMenu.json
+1fe1fa4163a23199a7e569fda8e9f065d1bfb7dfbe42caa009ab9d87d7c80564  projects/uSystem/uSystem.json
+3a791c0a62af54fe077d43bc9f8e71e96bed0831544cb07b6542d30f8f94ab72  projects/uLoader/uLoader_applet.json
+51ff84c35ee2bdbe463dd8403be743af29e1100a852b9618a288fac53442cadc  projects/uLoader/uLoader_application.json
+
+--- C++ sources ---
+bbca09d716f1f2732013206bca37f2b8353220110f952158a55704c417d40b73  libs/uCommon/include/ul/ul_Include.hpp
+5804f0d45e94f4747a592a0029153bdfa59c39625a13f0b24ec2cd33ffee9a47  projects/uSystem/source/main.cpp
+6355d01b4211531cc477d7d7421f4bddf5a1ef8d30213017c223cbac1a8026b3  projects/uMenu/source/main.cpp
+a511ec96a681b6b18fc71b0c0643e3ac4b4c360d00121fdc32b7d0c0ef125728  projects/uManager/source/main.cpp
+25501bc750b5f31cf9a2d7dc3e1f851ad7dce4762d023379c50c5590aa99a82b  projects/uDesigner/source/main.cpp
+cdfe3d64017dc53767598a1b64c83be51d23ed67e14c61d26a36b4ff6d94016b  projects/uDesigner/source/index.html
+529b77c8e98ca8756f4a2203db1bc68a3b901e06cc6ad732442b608d1afc1236  projects/uManager/source/ul/man/ui/ui_MainMenuLayout.cpp
+fdf84bcc7be509e806641b349b982a038810b4ea55c2a78ee8771bf94fc3a0ca  projects/uManager/source/ul/man/man_Network.cpp
+
+--- uMenu ROMFS lang (7 locales) ---
+63d10ad4ed61f83a86bb2dd9da7fb05e294eb406dffcf049b581c5e8e0e1f9d2  projects/uMenu/romfs/lang/en.json
+79eb2c9b1fdaa6783db1bd32951ff41bad5212b8ac7466fa5d5ca6014aac0a58  projects/uMenu/romfs/lang/de.json
+0bbe303894662b221797c9a3cc65e7d9ab983b97db57ea0fde06b62feddc1f99  projects/uMenu/romfs/lang/es.json
+7915c226b76feeafe5080fa6d2ff22626be630cb30d06b2f21bde6118d0ae2c2  projects/uMenu/romfs/lang/fr.json
+567241a04d39be42f8c37aa1a9376bf91d53bc0ce2df69f1e63a04a054320105  projects/uMenu/romfs/lang/it.json
+505065e1f3944ff9ed0bf521fbd109de5ba458e3079770abd54587cd1164e95b  projects/uMenu/romfs/lang/ko.json
+a6f84510abbd72b176c4c900bf2fa67c7b942f33e4708f7d7d3d5f81d0e0b288  projects/uMenu/romfs/lang/pt-BR.json
+
+--- uMenu ROMFS misc ---
+3123ed998f37127ad3140fa57b6026b2432a8d10d7067327d2a10ffa662ab9f4  projects/uMenu/romfs/default/theme/Manifest.json
+11ebc3ba8bf13be15620ce5baf37a9f68c2084172820e7f2bf32b3d4f28dceb8  projects/uMenu/source/ul/menu/ui/ui_Common.cpp
+
+--- uManager ROMFS lang (6 locales) ---
+29b5183ff95529685d3cb93cc4661e7c06360d906bd4f6690b8dd9b9f5deff81  projects/uManager/romfs/lang/en.json
+a598a8c50468a8f4322e31a23b2577ef5ef0145ef6ccd9fb306ce90da2537c16  projects/uManager/romfs/lang/de.json
+ed857083b669abc90217d96d4a341b6196789427d30dee11ae220d121fa886de  projects/uManager/romfs/lang/es.json
+c8a871684bda50763d4592c11e1d7f79646ad2207eb281dc862b15b9f2dcb585  projects/uManager/romfs/lang/fr.json
+95db2f7e2caccf239c473f727cd7ee48e484864dd14fb837b05c6892bffab027  projects/uManager/romfs/lang/it.json
+4042b339180e5d6d890cc4dd3c42e5ed96af46fd375c55c07e9c1882e39ca884  projects/uManager/romfs/lang/pt-BR.json

@@ -1,0 +1,267 @@
+[meta]
+scope                = "system"
+name                 = "src"
+version              = "0.2.0"
+generated            = "auto-seeded by scripts/glossary-seed.py; purposes need human enrichment"
+context_toml         = "none"
+total_items          = 25
+total_bytes          = 319587
+total_est_tokens     = 79888
+eager_context_tokens = 0
+tokens_l1_essential  = 0
+tokens_l2_warm       = 0
+tokens_l3_cold       = 0
+tokens_l4_ondemand   = 0
+tokens_none          = 0
+tokens_unknown       = 79888
+
+[[items]]
+id         = "glossary-self"
+path       = "GLOSSARY.toml"
+kind       = "config"
+purpose    = "This scope glossary + budget ledger - self-tracked so the scope has no orphans."
+status     = "active"
+bytes      = 0
+est_tokens = 0
+load_tier  = "none"
+
+[[items]]
+id         = "github-funding-yml"
+path       = ".github/FUNDING.yml"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 679
+est_tokens = 169
+load_tier  = "unknown"
+
+[[items]]
+id         = "github-workflows-main-yml"
+path       = ".github/workflows/main.yml"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1206
+est_tokens = 301
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-readme-md"
+path       = "arc/README.md"
+kind       = "doc"
+purpose    = "arc"
+status     = "active"
+bytes      = 3204
+est_tokens = 801
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-arc-py"
+path       = "arc/arc.py"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8534
+est_tokens = 2133
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-arc-cpp-gen-py"
+path       = "arc/arc_cpp_gen.py"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2885
+est_tokens = 721
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-arc-cpp-gen-template-hpp"
+path       = "arc/arc_cpp_gen_template.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3846
+est_tokens = 961
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-arc-db-gen-py"
+path       = "arc/arc_db_gen.py"
+kind       = "script"
+purpose    = "We assume for simplicity that all Atmosphere result-defining headers are inside 'libraries/libvapours/include/vapours/re"
+status     = "active"
+bytes      = 6596
+est_tokens = 1649
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-arc-range-db-json"
+path       = "arc/arc_range_db.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 15130
+est_tokens = 3782
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-arc-rc-db-json"
+path       = "arc/arc_rc_db.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 153134
+est_tokens = 38283
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-default-rc-hpps-hbabi-rc-hpp"
+path       = "arc/default_rc_hpps/hbabi.rc.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 320
+est_tokens = 80
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-default-rc-hpps-hbloader-rc-hpp"
+path       = "arc/default_rc_hpps/hbloader.rc.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 875
+est_tokens = 218
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-default-rc-hpps-libnx-rc-hpp"
+path       = "arc/default_rc_hpps/libnx.rc.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4303
+est_tokens = 1075
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-docs-config-yml"
+path       = "arc/docs/_config.yml"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 19
+est_tokens = 4
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-docs-index-md"
+path       = "arc/docs/index.md"
+kind       = "doc"
+purpose    = "Results"
+status     = "active"
+bytes      = 97216
+est_tokens = 24304
+load_tier  = "unknown"
+
+[[items]]
+id         = "arc-gen-pages-sh"
+path       = "arc/gen_pages.sh"
+kind       = "script"
+purpose    = "Include extra results here which might be useful for users"
+status     = "active"
+bytes      = 398
+est_tokens = 99
+load_tier  = "unknown"
+
+[[items]]
+id         = "crowdin-yml"
+path       = "crowdin.yml"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 112
+est_tokens = 28
+load_tier  = "unknown"
+
+[[items]]
+id         = "cur-changelog-md"
+path       = "cur-changelog.md"
+kind       = "doc"
+purpose    = "Current chamges"
+status     = "active"
+bytes      = 10624
+est_tokens = 2656
+load_tier  = "unknown"
+
+[[items]]
+id         = "default-theme-sound-bgm-json"
+path       = "default-theme/sound/BGM.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 469
+est_tokens = 117
+load_tier  = "unknown"
+
+[[items]]
+id         = "default-theme-theme-manifest-json"
+path       = "default-theme/theme/Manifest.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 150
+est_tokens = 37
+load_tier  = "unknown"
+
+[[items]]
+id         = "default-theme-ui-font-license-txt"
+path       = "default-theme/ui/Font-LICENSE.txt"
+kind       = "doc"
+purpose    = "Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)"
+status     = "active"
+bytes      = 4495
+est_tokens = 1123
+load_tier  = "unknown"
+
+[[items]]
+id         = "default-theme-ui-ui-json"
+path       = "default-theme/ui/UI.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3984
+est_tokens = 996
+load_tier  = "unknown"
+
+[[items]]
+id         = "default-theme-music-sound-bgm-json"
+path       = "default-theme-music/sound/BGM.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 469
+est_tokens = 117
+load_tier  = "unknown"
+
+[[items]]
+id         = "default-theme-music-theme-manifest-json"
+path       = "default-theme-music/theme/Manifest.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 202
+est_tokens = 50
+load_tier  = "unknown"
+
+[[items]]
+id         = "nx-hbloader-license-md"
+path       = "nx-hbloader.LICENSE.md"
+kind       = "doc"
+purpose    = "Copyright 2017-2018 nx-hbloader Authors"
+status     = "active"
+bytes      = 737
+est_tokens = 184
+load_tier  = "unknown"
+

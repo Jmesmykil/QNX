@@ -1,0 +1,137 @@
+[meta]
+scope                = "subsystem"
+name                 = "uLoader"
+version              = "0.2.0"
+generated            = "auto-seeded by scripts/glossary-seed.py; purposes need human enrichment"
+context_toml         = "none"
+total_items          = 12
+total_bytes          = 40943
+total_est_tokens     = 10232
+eager_context_tokens = 0
+tokens_l1_essential  = 0
+tokens_l2_warm       = 0
+tokens_l3_cold       = 0
+tokens_l4_ondemand   = 0
+tokens_none          = 0
+tokens_unknown       = 10232
+
+[[items]]
+id         = "glossary-self"
+path       = "GLOSSARY.toml"
+kind       = "config"
+purpose    = "This scope glossary + budget ledger - self-tracked so the scope has no orphans."
+status     = "active"
+bytes      = 0
+est_tokens = 0
+load_tier  = "none"
+
+[[items]]
+id         = "include-ul-loader-loader-hbabi-hpp"
+path       = "include/ul/loader/loader_HbAbi.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 821
+est_tokens = 205
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-loader-loader-input-hpp"
+path       = "include/ul/loader/loader_Input.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 204
+est_tokens = 51
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-loader-loader-programidutils-hpp"
+path       = "include/ul/loader/loader_ProgramIdUtils.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1128
+est_tokens = 282
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-loader-loader-selfprocess-hpp"
+path       = "include/ul/loader/loader_SelfProcess.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 607
+est_tokens = 151
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-loader-loader-target-hpp"
+path       = "include/ul/loader/loader_Target.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 214
+est_tokens = 53
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-main-cpp"
+path       = "source/main.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2520
+est_tokens = 630
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-loader-loader-input-cpp"
+path       = "source/ul/loader/loader_Input.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2534
+est_tokens = 633
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-loader-loader-programidutils-cpp"
+path       = "source/ul/loader/loader_ProgramIdUtils.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 638
+est_tokens = 159
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-loader-loader-target-cpp"
+path       = "source/ul/loader/loader_Target.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 18646
+est_tokens = 4661
+load_tier  = "unknown"
+
+[[items]]
+id         = "uloader-applet-json"
+path       = "uLoader_applet.json"
+kind       = "config"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 6920
+est_tokens = 1730
+load_tier  = "unknown"
+
+[[items]]
+id         = "uloader-application-json"
+path       = "uLoader_application.json"
+kind       = "config"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 6711
+est_tokens = 1677
+load_tier  = "unknown"
+

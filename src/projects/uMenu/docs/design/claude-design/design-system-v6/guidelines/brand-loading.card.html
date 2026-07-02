@@ -1,0 +1,74 @@
+<!-- @dsCard group="Brand" viewport="700x300" name="Loading spinner" subtitle="Time-driven ASCII spinner — keeps turning under heavy load" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 24px 26px; background: #0A0A14; font-family: var(--font-sans); display: flex; gap: 30px; align-items: center; }
+  .hero { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 150px; flex: none; }
+  .spin { font-family: var(--font-mono); font-size: 64px; line-height: 1; color: var(--accent);
+          text-shadow: 0 0 18px color-mix(in srgb, var(--accent) 55%, transparent); width: 1.2em; text-align: center; }
+  .loading { font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); letter-spacing: .04em; }
+  .right { flex: 1; }
+  .opts { display: flex; gap: 22px; margin-bottom: 18px; }
+  .opt { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+  .glyph { font-family: var(--font-mono); font-size: 30px; line-height: 1; color: var(--accent); width: 1.2em; text-align: center; }
+  .olabel { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-secondary); letter-spacing: .04em; }
+  .tag { display: inline-block; font-family: var(--font-mono); font-size: 8px; letter-spacing: .1em; text-transform: uppercase;
+         color: var(--btn-maximize); border: 1px solid color-mix(in srgb, var(--btn-maximize) 50%, transparent); border-radius: 4px; padding: 1px 5px; }
+  .spec { font-family: var(--font-mono); font-size: 11px; line-height: 1.7; color: var(--text-secondary);
+          background: rgba(18,18,42,.6); border: 1px solid rgba(125,211,252,.16); border-radius: 8px; padding: 12px 14px; }
+  .spec b { color: var(--accent); font-weight: 400; }
+  .spec .k { color: var(--btn-minimize); }
+</style>
+</head>
+<body>
+  <div class="hero">
+    <div class="spin" id="hero">⠋</div>
+    <div class="loading">Loading<span id="dots">…</span></div>
+  </div>
+
+  <div class="right">
+    <div class="opts">
+      <div class="opt"><div class="glyph" data-frames="ascii">|</div><div class="olabel">ASCII | / - \</div><div class="tag">ships</div></div>
+      <div class="opt"><div class="glyph" data-frames="braille">⠋</div><div class="olabel">braille ×10</div></div>
+      <div class="opt"><div class="glyph" data-frames="dots">⣾</div><div class="olabel">dots ×8</div></div>
+      <div class="opt"><div class="glyph" data-frames="quad">◴</div><div class="olabel">quadrant ×4</div></div>
+      <div class="opt"><div class="glyph" data-frames="bar">▰▱▱▱</div><div class="olabel">progress bar</div></div>
+    </div>
+    <div class="spec">
+      frame = <b>⌊ clock_ms / 90 ⌋ mod N</b>  — driven by the <span class="k">monotonic clock</span>, not the frame counter.<br>
+      Ticked on a <span class="k">dedicated thread</span>; heavy loads run on a <span class="k">worker</span> so the UI thread stays free to draw.<br>
+      → the wheel never freezes mid-load — like the macOS / Windows / Linux spinners.
+    </div>
+  </div>
+
+  <script>
+    const FRAMES = {
+      ascii:  ["|","/","-","\\"],
+      braille:["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"],
+      dots:   ["⣾","⣽","⣻","⢿","⡿","⣟","⣯","⣷"],
+      quad:   ["◴","◷","◶","◵"],
+      bar:    ["▰▱▱▱","▰▰▱▱","▰▰▰▱","▰▰▰▰","▱▰▰▰","▱▱▰▰","▱▱▱▰","▱▱▱▱"],
+    };
+    const INTERVAL = 90; // ms per frame — the spec's clock divisor
+    const hero = document.getElementById("hero");
+    const dots = document.getElementById("dots");
+    const opts = [...document.querySelectorAll(".glyph[data-frames]")];
+    function tick(now) {
+      // TIME-DRIVEN: index from wall-clock, so a dropped frame just skips ahead
+      // (the wheel shows the correct rotation for elapsed time, never stalls).
+      const bi = Math.floor(now / INTERVAL);
+      hero.textContent = FRAMES.braille[bi % FRAMES.braille.length];
+      dots.textContent = ".".repeat(1 + (Math.floor(now / 400) % 3));
+      for (const el of opts) {
+        const f = FRAMES[el.dataset.frames];
+        el.textContent = f[bi % f.length];
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  </script>
+</body>
+</html>

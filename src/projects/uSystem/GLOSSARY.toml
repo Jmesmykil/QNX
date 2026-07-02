@@ -1,0 +1,347 @@
+[meta]
+scope                = "system"
+name                 = "uSystem"
+version              = "0.2.0"
+generated            = "auto-seeded by scripts/glossary-seed.py; purposes need human enrichment"
+context_toml         = "none"
+total_items          = 33
+total_bytes          = 269320
+total_est_tokens     = 67318
+eager_context_tokens = 0
+tokens_l1_essential  = 0
+tokens_l2_warm       = 0
+tokens_l3_cold       = 0
+tokens_l4_ondemand   = 0
+tokens_none          = 0
+tokens_unknown       = 67318
+
+[[items]]
+id         = "glossary-self"
+path       = "GLOSSARY.toml"
+kind       = "config"
+purpose    = "This scope glossary + budget ledger - self-tracked so the scope has no orphans."
+status     = "active"
+bytes      = 0
+est_tokens = 0
+load_tier  = "none"
+
+[[items]]
+id         = "include-ul-system-app-app-application-hpp"
+path       = "include/ul/system/app/app_Application.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2140
+est_tokens = 535
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-app-app-controlcache-hpp"
+path       = "include/ul/system/app/app_ControlCache.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1732
+est_tokens = 433
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-ecs-ecs-externalcontent-hpp"
+path       = "include/ul/system/ecs/ecs_ExternalContent.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2248
+est_tokens = 562
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-la-la-libraryapplet-hpp"
+path       = "include/ul/system/la/la_LibraryApplet.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3117
+est_tokens = 779
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-la-la-open-hpp"
+path       = "include/ul/system/la/la_Open.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 510
+est_tokens = 127
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-led-led-computeindicator-hpp"
+path       = "include/ul/system/led/led_ComputeIndicator.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1885
+est_tokens = 471
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-overlay-overlay-actions-hpp"
+path       = "include/ul/system/overlay/overlay_Actions.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1532
+est_tokens = 383
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-overlay-overlay-fontcache-hpp"
+path       = "include/ul/system/overlay/overlay_FontCache.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3919
+est_tokens = 979
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-overlay-overlay-renderer-hpp"
+path       = "include/ul/system/overlay/overlay_Renderer.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5869
+est_tokens = 1467
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-overlay-overlay-testlayer-hpp"
+path       = "include/ul/system/overlay/overlay_TestLayer.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2181
+est_tokens = 545
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-sf-sf-ipublicservice-hpp"
+path       = "include/ul/system/sf/sf_IPublicService.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 603
+est_tokens = 150
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-sf-sf-ipcmanager-hpp"
+path       = "include/ul/system/sf/sf_IpcManager.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3183
+est_tokens = 795
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-smi-sf-sf-iprivateservice-hpp"
+path       = "include/ul/system/smi/sf/sf_IPrivateService.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1363
+est_tokens = 340
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-smi-smi-systemprotocol-hpp"
+path       = "include/ul/system/smi/smi_SystemProtocol.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 739
+est_tokens = 184
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-sys-sys-systemapplet-hpp"
+path       = "include/ul/system/sys/sys_SystemApplet.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 121
+est_tokens = 30
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-main-cpp"
+path       = "source/main.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 129785
+est_tokens = 32446
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-app-app-application-cpp"
+path       = "source/ul/system/app/app_Application.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 9448
+est_tokens = 2362
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-app-app-controlcache-cpp"
+path       = "source/ul/system/app/app_ControlCache.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 16005
+est_tokens = 4001
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-ecs-ecs-externalcontent-cpp"
+path       = "source/ul/system/ecs/ecs_ExternalContent.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2825
+est_tokens = 706
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-la-la-libraryapplet-cpp"
+path       = "source/ul/system/la/la_LibraryApplet.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11874
+est_tokens = 2968
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-la-la-open-cpp"
+path       = "source/ul/system/la/la_Open.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5072
+est_tokens = 1268
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-led-led-computeindicator-cpp"
+path       = "source/ul/system/led/led_ComputeIndicator.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8961
+est_tokens = 2240
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-overlay-overlay-actions-cpp"
+path       = "source/ul/system/overlay/overlay_Actions.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 347
+est_tokens = 86
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-overlay-overlay-fontcache-cpp"
+path       = "source/ul/system/overlay/overlay_FontCache.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 10173
+est_tokens = 2543
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-overlay-overlay-renderer-cpp"
+path       = "source/ul/system/overlay/overlay_Renderer.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3019
+est_tokens = 754
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-overlay-overlay-testlayer-cpp"
+path       = "source/ul/system/overlay/overlay_TestLayer.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 27461
+est_tokens = 6865
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-sf-sf-ipublicservice-cpp"
+path       = "source/ul/system/sf/sf_IPublicService.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 235
+est_tokens = 58
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-sf-sf-ipcmanager-cpp"
+path       = "source/ul/system/sf/sf_IpcManager.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3121
+est_tokens = 780
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-smi-sf-sf-iprivateservice-cpp"
+path       = "source/ul/system/smi/sf/sf_IPrivateService.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1779
+est_tokens = 444
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-smi-smi-systemprotocol-cpp"
+path       = "source/ul/system/smi/smi_SystemProtocol.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 456
+est_tokens = 114
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-sys-sys-systemapplet-cpp"
+path       = "source/ul/system/sys/sys_SystemApplet.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 418
+est_tokens = 104
+load_tier  = "unknown"
+
+[[items]]
+id         = "usystem-json"
+path       = "uSystem.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7199
+est_tokens = 1799
+load_tier  = "unknown"
+

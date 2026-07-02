@@ -1,0 +1,107 @@
+[meta]
+scope                = "subsystem"
+name                 = "uScreen"
+version              = "0.2.0"
+generated            = "auto-seeded by scripts/glossary-seed.py; purposes need human enrichment"
+context_toml         = "none"
+total_items          = 9
+total_bytes          = 22036
+total_est_tokens     = 5505
+eager_context_tokens = 0
+tokens_l1_essential  = 0
+tokens_l2_warm       = 0
+tokens_l3_cold       = 0
+tokens_l4_ondemand   = 0
+tokens_none          = 0
+tokens_unknown       = 5505
+
+[[items]]
+id         = "glossary-self"
+path       = "GLOSSARY.toml"
+kind       = "config"
+purpose    = "This scope glossary + budget ledger - self-tracked so the scope has no orphans."
+status     = "active"
+bytes      = 0
+est_tokens = 0
+load_tier  = "none"
+
+[[items]]
+id         = "pom-xml"
+path       = "pom.xml"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 6335
+est_tokens = 1583
+load_tier  = "unknown"
+
+[[items]]
+id         = "res-main-css"
+path       = "res/main.css"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 110
+est_tokens = 27
+load_tier  = "unknown"
+
+[[items]]
+id         = "src-main-java-com-xortroll-ulaunch-uscreen-buffer-java"
+path       = "src/main/java/com/xortroll/ulaunch/uscreen/Buffer.java"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 926
+est_tokens = 231
+load_tier  = "unknown"
+
+[[items]]
+id         = "src-main-java-com-xortroll-ulaunch-uscreen-main-java"
+path       = "src/main/java/com/xortroll/ulaunch/uscreen/Main.java"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2227
+est_tokens = 556
+load_tier  = "unknown"
+
+[[items]]
+id         = "src-main-java-com-xortroll-ulaunch-uscreen-ui-mainapplication-java"
+path       = "src/main/java/com/xortroll/ulaunch/uscreen/ui/MainApplication.java"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 6228
+est_tokens = 1557
+load_tier  = "unknown"
+
+[[items]]
+id         = "src-main-java-com-xortroll-ulaunch-uscreen-ui-maincontroller-java"
+path       = "src/main/java/com/xortroll/ulaunch/uscreen/ui/MainController.java"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2043
+est_tokens = 510
+load_tier  = "unknown"
+
+[[items]]
+id         = "src-main-java-com-xortroll-ulaunch-uscreen-usb-usbinterface-java"
+path       = "src/main/java/com/xortroll/ulaunch/uscreen/usb/UsbInterface.java"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 4032
+est_tokens = 1008
+load_tier  = "unknown"
+
+[[items]]
+id         = "src-main-java-com-xortroll-ulaunch-uscreen-usb-usbmode-java"
+path       = "src/main/java/com/xortroll/ulaunch/uscreen/usb/UsbMode.java"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 135
+est_tokens = 33
+load_tier  = "unknown"
+

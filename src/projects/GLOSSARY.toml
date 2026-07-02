@@ -1,0 +1,27 @@
+[meta]
+scope                = "subsystem"
+name                 = "uLaunch Projects"
+version              = "0.2.0"
+generated            = "auto-seeded by scripts/glossary-seed.py; purposes need human enrichment"
+context_toml         = "none"
+total_items          = 1
+total_bytes          = 0
+total_est_tokens     = 0
+eager_context_tokens = 0
+tokens_l1_essential  = 0
+tokens_l2_warm       = 0
+tokens_l3_cold       = 0
+tokens_l4_ondemand   = 0
+tokens_none          = 0
+tokens_unknown       = 0
+
+[[items]]
+id         = "glossary-self"
+path       = "GLOSSARY.toml"
+kind       = "config"
+purpose    = "This scope glossary + budget ledger - self-tracked so the scope has no orphans."
+status     = "active"
+bytes      = 0
+est_tokens = 0
+load_tier  = "none"
+

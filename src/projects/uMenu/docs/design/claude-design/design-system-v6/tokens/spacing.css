@@ -1,0 +1,56 @@
+/* ============================================================================
+   Q OS — Spacing, radii, shadows, chrome dimensions
+   ----------------------------------------------------------------------------
+   The desktop is authored at a fixed 1920×1080 canvas. Chrome dimensions below
+   mirror the C++ constants (TOPBAR_H, kChromeDockH, corner-button sizes, panel
+   radius) so recreations land pixel-accurate.
+   ============================================================================ */
+
+:root {
+  /* ── Spacing scale (4px base) ──────────────────────────────────────────── */
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* ── Corner radii ──────────────────────────────────────────────────────── */
+  --radius-sm:   4px;
+  --radius-md:   8px;   /* dropdown panels (kRadius=8), buttons */
+  --radius-lg:   12px;  /* cards, windows */
+  --radius-xl:   18px;  /* large feature surfaces */
+  --radius-full: 999px; /* pills, dock dots, cursor */
+
+  /* ── Borders ───────────────────────────────────────────────────────────── */
+  --border-hairline: 1px;  /* accent hairline on top bar / dock / panels */
+  --border-ring:     2px;  /* glass folder-tile ring, focus ring */
+
+  /* ── Shadows ───────────────────────────────────────────────────────────────
+     Windows cast a soft drop shadow on the void; accent glows echo the neon
+     hero orbs. Keep glows subtle — this is dark UI, not a lightshow. */
+  --shadow-window:  0 18px 60px -12px rgba(0, 0, 0, 0.7);
+  --shadow-panel:   0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  --shadow-tile:    0 4px 14px -4px rgba(0, 0, 0, 0.5);
+  --glow-accent:    0 0 0 1px rgba(125, 211, 252, 0.35), 0 0 24px -2px rgba(125, 211, 252, 0.45);
+  --glow-magenta:   0 0 28px -4px rgba(217, 70, 239, 0.55);
+
+  /* ── Desktop chrome geometry (mirrors C++ constants @ 1920×1080) ───────── */
+  --canvas-w:     1920px;
+  --canvas-h:     1080px;
+  --topbar-h:     48px;   /* kChromeTopBarH */
+  --dock-h:       148px;  /* kChromeDockH */
+  --hotcorner-w:  96px;   /* LP_HOTCORNER_W */
+  --hotcorner-h:  72px;   /* LP_HOTCORNER_H */
+  --row-h:        48px;   /* dropdown row height (kRowH) */
+  --window-w:     1280px; /* default window size */
+  --window-h:     800px;
+  --titlebar-h:   44px;   /* window titlebar */
+  --corner-btn:   30px;   /* window corner button diameter */
+}

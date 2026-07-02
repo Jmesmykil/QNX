@@ -1,0 +1,217 @@
+[meta]
+scope                = "subsystem"
+name                 = "uManager"
+version              = "0.2.0"
+generated            = "auto-seeded by scripts/glossary-seed.py; purposes need human enrichment"
+context_toml         = "none"
+total_items          = 20
+total_bytes          = 63340
+total_est_tokens     = 15827
+eager_context_tokens = 0
+tokens_l1_essential  = 0
+tokens_l2_warm       = 0
+tokens_l3_cold       = 0
+tokens_l4_ondemand   = 0
+tokens_none          = 0
+tokens_unknown       = 15827
+
+[[items]]
+id         = "glossary-self"
+path       = "GLOSSARY.toml"
+kind       = "config"
+purpose    = "This scope glossary + budget ledger - self-tracked so the scope has no orphans."
+status     = "active"
+bytes      = 0
+est_tokens = 0
+load_tier  = "none"
+
+[[items]]
+id         = "include-ul-man-man-appscanner-hpp"
+path       = "include/ul/man/man_AppScanner.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 5825
+est_tokens = 1456
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-man-man-manager-hpp"
+path       = "include/ul/man/man_Manager.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1598
+est_tokens = 399
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-man-man-network-hpp"
+path       = "include/ul/man/man_Network.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 526
+est_tokens = 131
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-man-ui-ui-mainapplication-hpp"
+path       = "include/ul/man/ui/ui_MainApplication.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1279
+est_tokens = 319
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-man-ui-ui-mainmenulayout-hpp"
+path       = "include/ul/man/ui/ui_MainMenuLayout.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2252
+est_tokens = 563
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-sf-sf-publicservice-hpp"
+path       = "include/ul/sf/sf_PublicService.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 179
+est_tokens = 44
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-de-json"
+path       = "romfs/lang/de.json"
+kind       = "config"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1938
+est_tokens = 484
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-en-json"
+path       = "romfs/lang/en.json"
+kind       = "config"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1642
+est_tokens = 410
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-es-json"
+path       = "romfs/lang/es.json"
+kind       = "config"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1880
+est_tokens = 470
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-fr-json"
+path       = "romfs/lang/fr.json"
+kind       = "config"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1973
+est_tokens = 493
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-it-json"
+path       = "romfs/lang/it.json"
+kind       = "config"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1734
+est_tokens = 433
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-pt-br-json"
+path       = "romfs/lang/pt-BR.json"
+kind       = "config"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1834
+est_tokens = 458
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-main-cpp"
+path       = "source/main.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2238
+est_tokens = 559
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-man-man-appscanner-cpp"
+path       = "source/ul/man/man_AppScanner.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 19382
+est_tokens = 4845
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-man-man-manager-cpp"
+path       = "source/ul/man/man_Manager.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1694
+est_tokens = 423
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-man-man-network-cpp"
+path       = "source/ul/man/man_Network.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 3370
+est_tokens = 842
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-man-ui-ui-mainapplication-cpp"
+path       = "source/ul/man/ui/ui_MainApplication.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1425
+est_tokens = 356
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-man-ui-ui-mainmenulayout-cpp"
+path       = "source/ul/man/ui/ui_MainMenuLayout.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 11793
+est_tokens = 2948
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-sf-sf-publicservice-cpp"
+path       = "source/ul/sf/sf_PublicService.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 778
+est_tokens = 194
+load_tier  = "unknown"
+

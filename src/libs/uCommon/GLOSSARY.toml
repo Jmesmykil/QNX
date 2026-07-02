@@ -1,0 +1,437 @@
+[meta]
+scope                = "subsystem"
+name                 = "uCommon (shared uLaunch lib)"
+version              = "0.2.0"
+generated            = "auto-seeded by scripts/glossary-seed.py; purposes need human enrichment"
+context_toml         = "none"
+total_items          = 42
+total_bytes          = 435848
+total_est_tokens     = 108944
+eager_context_tokens = 0
+tokens_l1_essential  = 0
+tokens_l2_warm       = 0
+tokens_l3_cold       = 0
+tokens_l4_ondemand   = 0
+tokens_none          = 0
+tokens_unknown       = 108944
+
+[[items]]
+id         = "glossary-self"
+path       = "GLOSSARY.toml"
+kind       = "config"
+purpose    = "This scope glossary + budget ledger - self-tracked so the scope has no orphans."
+status     = "active"
+bytes      = 0
+est_tokens = 0
+load_tier  = "none"
+
+[[items]]
+id         = "include-ul-acc-acc-accounts-hpp"
+path       = "include/ul/acc/acc_Accounts.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 304
+est_tokens = 76
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-cfg-cfg-config-hpp"
+path       = "include/ul/cfg/cfg_Config.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 12483
+est_tokens = 3120
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-fs-fs-stdio-hpp"
+path       = "include/ul/fs/fs_Stdio.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 6146
+est_tokens = 1536
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-la-la-libraryapplets-hpp"
+path       = "include/ul/la/la_LibraryApplets.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1112
+est_tokens = 278
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-loader-loader-targettypes-hpp"
+path       = "include/ul/loader/loader_TargetTypes.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2366
+est_tokens = 591
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-menu-cache-hpp"
+path       = "include/ul/menu/menu_Cache.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 543
+est_tokens = 135
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-menu-entries-hpp"
+path       = "include/ul/menu/menu_Entries.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 5496
+est_tokens = 1374
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-net-net-service-hpp"
+path       = "include/ul/net/net_Service.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 478
+est_tokens = 119
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-os-os-applications-hpp"
+path       = "include/ul/os/os_Applications.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 535
+est_tokens = 133
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-os-os-system-hpp"
+path       = "include/ul/os/os_System.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2169
+est_tokens = 542
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-sf-sf-public-hpp"
+path       = "include/ul/sf/sf_Public.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 95
+est_tokens = 23
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-smi-sf-sf-private-hpp"
+path       = "include/ul/smi/sf/sf_Private.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 339
+est_tokens = 84
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-smi-smi-protocol-hpp"
+path       = "include/ul/smi/smi_Protocol.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 10558
+est_tokens = 2639
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-system-system-message-hpp"
+path       = "include/ul/system/system_Message.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 3219
+est_tokens = 804
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-ul-include-hpp"
+path       = "include/ul/ul_Include.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 4091
+est_tokens = 1022
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-ul-result-hpp"
+path       = "include/ul/ul_Result.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2635
+est_tokens = 658
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-ul-results-gen-hpp"
+path       = "include/ul/ul_Results.gen.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 277092
+est_tokens = 69273
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-ul-results-rc-hpp"
+path       = "include/ul/ul_Results.rc.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2196
+est_tokens = 549
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-util-util-enum-hpp"
+path       = "include/ul/util/util_Enum.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 482
+est_tokens = 120
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-util-util-json-hpp"
+path       = "include/ul/util/util_Json.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 525
+est_tokens = 131
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-util-util-ringfile-hpp"
+path       = "include/ul/util/util_RingFile.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1852
+est_tokens = 463
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-util-util-scope-hpp"
+path       = "include/ul/util/util_Scope.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 638
+est_tokens = 159
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-util-util-size-hpp"
+path       = "include/ul/util/util_Size.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 397
+est_tokens = 99
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-util-util-string-hpp"
+path       = "include/ul/util/util_String.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1390
+est_tokens = 347
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-util-util-telemetry-hpp"
+path       = "include/ul/util/util_Telemetry.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 3004
+est_tokens = 751
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-util-util-zip-hpp"
+path       = "include/ul/util/util_Zip.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 31
+est_tokens = 7
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-acc-acc-accounts-cpp"
+path       = "source/ul/acc/acc_Accounts.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1716
+est_tokens = 429
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-cfg-cfg-config-cpp"
+path       = "source/ul/cfg/cfg_Config.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 16129
+est_tokens = 4032
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-fs-fs-stdio-cpp"
+path       = "source/ul/fs/fs_Stdio.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2158
+est_tokens = 539
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-menu-cache-cpp"
+path       = "source/ul/menu/menu_Cache.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 5502
+est_tokens = 1375
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-menu-entries-cpp"
+path       = "source/ul/menu/menu_Entries.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 32318
+est_tokens = 8079
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-net-net-service-cpp"
+path       = "source/ul/net/net_Service.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2925
+est_tokens = 731
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-os-os-applications-cpp"
+path       = "source/ul/os/os_Applications.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 1610
+est_tokens = 402
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-os-os-system-cpp"
+path       = "source/ul/os/os_System.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2358
+est_tokens = 589
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-smi-smi-protocol-cpp"
+path       = "source/ul/smi/smi_Protocol.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 717
+est_tokens = 179
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-system-system-message-cpp"
+path       = "source/ul/system/system_Message.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 631
+est_tokens = 157
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-ul-result-cpp"
+path       = "source/ul/ul_Result.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 5385
+est_tokens = 1346
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-util-util-json-cpp"
+path       = "source/ul/util/util_Json.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 635
+est_tokens = 158
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-util-util-ringfile-cpp"
+path       = "source/ul/util/util_RingFile.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 5878
+est_tokens = 1469
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-util-util-string-cpp"
+path       = "source/ul/util/util_String.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2223
+est_tokens = 555
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-util-util-telemetry-cpp"
+path       = "source/ul/util/util_Telemetry.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 15487
+est_tokens = 3871
+load_tier  = "unknown"
+

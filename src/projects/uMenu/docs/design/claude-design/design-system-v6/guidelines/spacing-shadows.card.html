@@ -1,0 +1,56 @@
+<!-- @dsCard group="Spacing" viewport="700x250" name="Shadows & glows" subtitle="Procedural glows — single-line gradient shaders, chroma style" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px 22px; background: #07070F; font-family: var(--font-sans); }
+  .eyebrow { font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+             color: var(--accent); margin-bottom: 16px; }
+  .row { display: flex; gap: 20px; align-items: flex-start; }
+  .item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .orb { width: 88px; height: 88px; border-radius: 999px; }
+  .name { font-family: var(--font-sans); font-size: 12px; font-weight: 600; color: var(--text-primary); }
+  .recipe { font-family: var(--font-mono); font-size: 9.5px; line-height: 1.5; color: var(--text-secondary);
+            text-align: center; max-width: 150px; }
+  .recipe b { color: var(--accent); font-weight: 400; }
+
+  /* ── single-line procedural glow "shaders" ── */
+  .accent  { background: radial-gradient(circle, #7DD3FC 0%, transparent 70%);
+             box-shadow: 0 0 34px -2px #7DD3FC; }
+  .chroma  { background: conic-gradient(from 0deg, #00E5FF, #A78BFA, #D946EF, #7DD3FC, #00E5FF);
+             box-shadow: 0 0 30px -4px #A78BFA; }
+  .plasma  { background: radial-gradient(circle at 36% 30%, #7DD3FC, #A070FF 46%, #D946EF 82%, transparent);
+             box-shadow: 0 0 32px -3px #A070FF; }
+  .bloom   { background: radial-gradient(circle, #D946EF 0%, #7C3AED 42%, transparent 74%);
+             box-shadow: 0 0 30px -2px #D946EF; }
+
+  .shadows { margin-top: 22px; display: flex; gap: 26px; align-items: center; }
+  .selev { width: 96px; height: 44px; border-radius: 10px; background: var(--surface-glass);
+           border: 1px solid rgba(125,211,252,.16); }
+  .scap { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); }
+  .e1 { box-shadow: 2px 2px 0 0 rgba(0,0,0,.35); }
+  .e2 { box-shadow: 6px 6px 0 0 rgba(0,0,0,.5); }
+</style>
+</head>
+<body>
+  <div class="eyebrow">Procedural glows · 1-line gradient shaders</div>
+  <div class="row">
+    <div class="item"><div class="orb accent"></div><div class="name">glow / accent</div>
+      <div class="recipe"><b>radial-gradient(</b>circle, accent, transparent 70%<b>)</b></div></div>
+    <div class="item"><div class="orb chroma"></div><div class="name">glow / chroma</div>
+      <div class="recipe"><b>conic-gradient(</b>cyan, lavender, magenta, cyan<b>)</b></div></div>
+    <div class="item"><div class="orb plasma"></div><div class="name">glow / plasma</div>
+      <div class="recipe"><b>radial-gradient(</b>cyan, violet 46%, magenta 82%<b>)</b></div></div>
+    <div class="item"><div class="orb bloom"></div><div class="name">glow / bloom</div>
+      <div class="recipe"><b>radial-gradient(</b>magenta, violet 42%, transparent<b>)</b></div></div>
+  </div>
+
+  <div class="shadows">
+    <span class="scap">Elevation (hard offset, engine-cheap):</span>
+    <div class="selev e1"></div><span class="scap">elev/1 · +2,+2 @25%</span>
+    <div class="selev e2"></div><span class="scap">elev/2 · +6,+6 @50% (window)</span>
+  </div>
+</body>
+</html>

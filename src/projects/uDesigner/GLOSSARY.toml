@@ -1,0 +1,57 @@
+[meta]
+scope                = "subsystem"
+name                 = "uDesigner"
+version              = "0.2.0"
+generated            = "auto-seeded by scripts/glossary-seed.py; purposes need human enrichment"
+context_toml         = "none"
+total_items          = 4
+total_bytes          = 129678
+total_est_tokens     = 32418
+eager_context_tokens = 0
+tokens_l1_essential  = 0
+tokens_l2_warm       = 0
+tokens_l3_cold       = 0
+tokens_l4_ondemand   = 0
+tokens_none          = 0
+tokens_unknown       = 32418
+
+[[items]]
+id         = "glossary-self"
+path       = "GLOSSARY.toml"
+kind       = "config"
+purpose    = "This scope glossary + budget ledger - self-tracked so the scope has no orphans."
+status     = "active"
+bytes      = 0
+est_tokens = 0
+load_tier  = "none"
+
+[[items]]
+id         = "include-ul-design-design-include-hpp"
+path       = "include/ul/design/design_Include.hpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2001
+est_tokens = 500
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-index-html"
+path       = "source/index.html"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 2278
+est_tokens = 569
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-main-cpp"
+path       = "source/main.cpp"
+kind       = "data"
+purpose    = "(vendored or generated content - not introspected)"
+status     = "active"
+bytes      = 125399
+est_tokens = 31349
+load_tier  = "unknown"
+

@@ -1,0 +1,41 @@
+<!-- @dsCard group="Type" viewport="700x340" name="OS font — Space Grotesk (OFL)" subtitle="The recommended signature OS face + thematic alternates" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Pixelify+Sans:wght@500;700&family=VT323&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; padding: 24px 26px; background: #0A0A14; font-family: "Space Grotesk", var(--font-sans); }
+  .eyebrow { font-family: var(--font-mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
+  .big { font-weight: 600; font-size: 52px; letter-spacing: -0.02em; color: var(--text-primary); line-height: 1; }
+  .scale { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; }
+  .r { display: flex; align-items: baseline; gap: 16px; }
+  .spec { width: 86px; flex: none; font-family: var(--font-mono); font-size: 10px; color: var(--accent); letter-spacing: .05em; }
+  .x { color: var(--text-primary); }
+  .nums { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+  .alts { margin-top: 20px; display: flex; gap: 28px; align-items: flex-end; }
+  .alt { display: flex; flex-direction: column; gap: 5px; }
+  .alt .name { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-secondary); letter-spacing: .06em; }
+  .pix { font-family: "Pixelify Sans"; font-size: 26px; color: var(--text-primary); }
+  .crt { font-family: "VT323"; font-size: 30px; color: #6AFF82; }
+  .mono { font-family: var(--font-mono); font-size: 22px; color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="eyebrow">Space Grotesk · OFL 1.1 · ships as ui/Font.ttf</div>
+  <div class="big">Q OS uMenu</div>
+  <div class="scale">
+    <div class="r"><span class="spec">title 44/600</span><span class="x" style="font-size:30px;font-weight:600">Reboot to Hekate</span></div>
+    <div class="r"><span class="spec">body 26/400</span><span class="x" style="font-size:18px">Drag a window into a corner to snap it.</span></div>
+    <div class="r"><span class="spec">label 20/500</span><span class="x" style="font-size:15px;font-weight:500">Homebrew · Saves · Payloads</span></div>
+    <div class="r"><span class="spec">figures</span><span class="nums" style="font-size:17px">BATTERY 87% · 1020 MHz · 14:22 · 0100000000001000</span></div>
+  </div>
+  <div class="alts">
+    <div class="alt"><span class="pix">PIXEL 8-BIT</span><span class="name">Pixelify Sans — Pixel theme</span></div>
+    <div class="alt"><span class="crt">RETRO CRT 60fps</span><span class="name">VT323 — Retro theme</span></div>
+    <div class="alt"><span class="mono">blueprint.mono</span><span class="name">IBM Plex Mono — Blueprint</span></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 44 44">
+
+<circle cx="22" cy="22" r="18" fill="#F5F5FF" fill-opacity="0.43"></circle>
+<circle cx="22" cy="22" r="18" fill="none" stroke="#050510" stroke-opacity="0.4" stroke-width="3.6"></circle>
+<circle cx="22" cy="22" r="18" fill="none" stroke="#E54B4B" stroke-width="2.4"></circle>
+<circle cx="22" cy="22" r="4.5" fill="#050510"></circle>
+<circle cx="22" cy="22" r="2" fill="#7DD3FC"></circle>
+<circle cx="34" cy="34" r="6" fill="#E54B4B" stroke="#050510" stroke-width="1.5"></circle>
+</svg>

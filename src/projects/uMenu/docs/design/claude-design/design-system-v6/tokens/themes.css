@@ -1,0 +1,100 @@
+/* ============================================================================
+   Q OS — Theme palettes (10 packs) — RETUNED (overhaul)
+   ----------------------------------------------------------------------------
+   Selecting a theme swaps palette + wallpaper + folder-icon pack atomically.
+   Each [data-theme] scope overrides the 17 semantic color roles. Values are the
+   overhaul-retuned set (see deliverables/design-system/palettes.json for the
+   repo-ready JSON + per-theme change notes). Personalities locked; retuned only
+   for cohesion (focus_ring prominence parity, button_minimize ≠ accent,
+   grid_line ≠ titlebar_inactive, Retro near-white primary).
+   ============================================================================ */
+
+/* 0 — Q OS / Glass (default also in colors.css :root) */
+[data-theme="glass"] {
+  --desktop-bg:#0A0A14; --surface-glass:#12122A; --topbar-bg:#0C0C20; --dock-bg:#10102A;
+  --accent:#7DD3FC; --focus-ring:#7CC5FF; --text-primary:#E0E0F0; --text-secondary:#8888AA;
+  --btn-close:#F87171; --btn-minimize:#FBBF24; --btn-maximize:#4ADE80; --btn-restore:#4ADE80;
+  --titlebar-inactive:#181830; --grid-line:#24244A;
+  --cursor-fill:#F5F5FF; --cursor-outline:#050510; --cursor-right-click:#E54B4B;
+}
+
+/* 1 — Neon */
+[data-theme="neon"] {
+  --desktop-bg:#050010; --surface-glass:#140522; --topbar-bg:#0A0018; --dock-bg:#100520;
+  --accent:#FF2AD0; --focus-ring:#2AFFE5; --text-primary:#F0FFF0; --text-secondary:#A870C8;
+  --btn-close:#FF326E; --btn-minimize:#F5E02A; --btn-maximize:#6AFF50; --btn-restore:#6AFF50;
+  --titlebar-inactive:#220A32; --grid-line:#2A103A;
+  --cursor-fill:#FFF0FF; --cursor-outline:#100018; --cursor-right-click:#FF2AD0;
+}
+
+/* 2 — Minimal — focus_ring bumped, grid_line separated */
+[data-theme="minimal"] {
+  --desktop-bg:#1A1816; --surface-glass:#262422; --topbar-bg:#1E1C1A; --dock-bg:#22201E;
+  --accent:#D4C8B4; --focus-ring:#E0B86A; --text-primary:#F2EEE6; --text-secondary:#90887C;
+  --btn-close:#E06060; --btn-minimize:#E0C040; --btn-maximize:#40C870; --btn-restore:#40C870;
+  --titlebar-inactive:#2E2A26; --grid-line:#34302A;
+  --cursor-fill:#FAF6EE; --cursor-outline:#1A1816; --cursor-right-click:#E06060;
+}
+
+/* 3 — Retro — near-white primary, phosphor green → secondary, minimize ≠ accent */
+[data-theme="retro"] {
+  --desktop-bg:#0A1420; --surface-glass:#141C2A; --topbar-bg:#101826; --dock-bg:#141C2C;
+  --accent:#FFA83A; --focus-ring:#FFC860; --text-primary:#E8F0E0; --text-secondary:#6AD080;
+  --btn-close:#E85A4C; --btn-minimize:#FFD24A; --btn-maximize:#6AFF82; --btn-restore:#6AFF82;
+  --titlebar-inactive:#1A2436; --grid-line:#222E42;
+  --cursor-fill:#6AFF82; --cursor-outline:#0A1420; --cursor-right-click:#E85A4C;
+}
+
+/* 4 — Cards */
+[data-theme="cards"] {
+  --desktop-bg:#1C2030; --surface-glass:#262C40; --topbar-bg:#202436; --dock-bg:#24283A;
+  --accent:#FF9A3C; --focus-ring:#FF7AD0; --text-primary:#F0ECE4; --text-secondary:#B0A896;
+  --btn-close:#FF7A82; --btn-minimize:#FFCC4A; --btn-maximize:#60E89C; --btn-restore:#60E89C;
+  --titlebar-inactive:#2A3044; --grid-line:#2E3448;
+  --cursor-fill:#FFF5E6; --cursor-outline:#10141E; --cursor-right-click:#FF7AD0;
+}
+
+/* 5 — Pastel — focus_ring bumped, grid_line separated */
+[data-theme="pastel"] {
+  --desktop-bg:#1E1E28; --surface-glass:#2A2A38; --topbar-bg:#24222E; --dock-bg:#262432;
+  --accent:#FBC6E4; --focus-ring:#D4C7F5; --text-primary:#F4ECF4; --text-secondary:#B8A8C2;
+  --btn-close:#F5A8AE; --btn-minimize:#FAE3A4; --btn-maximize:#B0E8C0; --btn-restore:#B0E8C0;
+  --titlebar-inactive:#322C3C; --grid-line:#3E3648;
+  --cursor-fill:#FDF2F5; --cursor-outline:#1E1828; --cursor-right-click:#F5A8AE;
+}
+
+/* 6 — Dark — grid_line separated from titlebar_inactive */
+[data-theme="dark"] {
+  --desktop-bg:#000004; --surface-glass:#120A06; --topbar-bg:#080402; --dock-bg:#0C0604;
+  --accent:#FF6040; --focus-ring:#FF8050; --text-primary:#ECE6E0; --text-secondary:#807066;
+  --btn-close:#E84040; --btn-minimize:#E8A030; --btn-maximize:#60C070; --btn-restore:#60C070;
+  --titlebar-inactive:#1A0E08; --grid-line:#261410;
+  --cursor-fill:#FFE6D8; --cursor-outline:#000000; --cursor-right-click:#E84040;
+}
+
+/* 7 — Gradient — grid_line nudged */
+[data-theme="gradient"] {
+  --desktop-bg:#100522; --surface-glass:#1A1232; --topbar-bg:#140828; --dock-bg:#180C30;
+  --accent:#A070FF; --focus-ring:#7AE0FF; --text-primary:#ECE8FA; --text-secondary:#9A88C0;
+  --btn-close:#F86A9A; --btn-minimize:#FFC470; --btn-maximize:#70E0B8; --btn-restore:#70E0B8;
+  --titlebar-inactive:#221838; --grid-line:#2E2247;
+  --cursor-fill:#F5EFFF; --cursor-outline:#0A0518; --cursor-right-click:#F86A9A;
+}
+
+/* 8 — Blueprint */
+[data-theme="blueprint"] {
+  --desktop-bg:#051832; --surface-glass:#0A2240; --topbar-bg:#061C36; --dock-bg:#081F3A;
+  --accent:#7AE0FF; --focus-ring:#A8E8FF; --text-primary:#E0F0FF; --text-secondary:#70A8D0;
+  --btn-close:#E87A7A; --btn-minimize:#F0C86A; --btn-maximize:#6AE8B0; --btn-restore:#6AE8B0;
+  --titlebar-inactive:#0C2646; --grid-line:#123252;
+  --cursor-fill:#F0F8FF; --cursor-outline:#051224; --cursor-right-click:#E87A7A;
+}
+
+/* 9 — Pixel — minimize ≠ accent */
+[data-theme="pixel"] {
+  --desktop-bg:#000018; --surface-glass:#101030; --topbar-bg:#080820; --dock-bg:#0C0C28;
+  --accent:#FFCC00; --focus-ring:#00E800; --text-primary:#F8F8F8; --text-secondary:#8080C0;
+  --btn-close:#E80000; --btn-minimize:#FF9800; --btn-maximize:#00E800; --btn-restore:#00E800;
+  --titlebar-inactive:#181838; --grid-line:#202040;
+  --cursor-fill:#FFFFFF; --cursor-outline:#000000; --cursor-right-click:#E80000;
+}

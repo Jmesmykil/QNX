@@ -1,0 +1,311 @@
+
+#pragma once
+#include <ul/menu/ui/ui_MainMenuLayout.hpp>
+#include <ul/menu/ui/ui_StartupMenuLayout.hpp>
+#include <ul/menu/ui/ui_ThemesMenuLayout.hpp>
+#include <ul/menu/ui/ui_SettingsMenuLayout.hpp>
+#include <ul/menu/ui/ui_LockscreenMenuLayout.hpp>
+#include <ul/menu/ui/ui_BackgroundScreenCapture.hpp>
+#include <ul/menu/smi/smi_Commands.hpp>
+#include <ul/menu/qdesktop/qd_VaultLayout.hpp>
+#include <ul/menu/qdesktop/qd_VaultHostLayout.hpp>
+#include <ul/menu/qdesktop/qd_MonitorLayout.hpp>
+#include <ul/menu/qdesktop/qd_MonitorHostLayout.hpp>
+#include <ul/menu/qdesktop/qd_AboutLayout.hpp>
+#include <ul/menu/qdesktop/qd_SettingsLayout.hpp>
+#include <ul/menu/qdesktop/qd_LockscreenLayout.hpp>
+#include <ul/menu/qdesktop/qd_LaunchpadHostLayout.hpp>
+#include <ul/menu/qdesktop/qd_GlobalChrome.hpp>  // v1.9: persistent top-bar + dock chrome
+
+namespace ul::menu::ui {
+
+    std::string GetLanguageString(const std::string &name);
+
+    enum class MenuType {
+        Main,
+        Startup,
+        Themes,
+        // Upstream ulaunch settings/lockscreen layouts (thin wrappers around NX
+        // system applets).  Still used for the upstream ulaunch Settings/Lockscreen
+        // paths; the qdesktop-promoted surfaces use QSettings/QLockscreen below.
+        Settings,
+        Lockscreen,
+        // Q OS qdesktop-native surfaces (K-cycle promoted from quarantine).
+        // MUST be IMenuLayout subclasses — see qd_VaultHostLayout.hpp for the
+        // crash chain that any bare pu::ui::Layout here would trigger.
+        Vault,
+        // Cycle K-noterminal: Terminal MenuType removed — feature dropped per
+        // creator decision; the dock no longer has a terminal slot.
+        Monitor,
+        About,
+        // qdesktop-native settings + lockscreen (replace upstream once stable).
+        QSettings,
+        QLockscreen,
+        // K-cycle Track D: QdLaunchpad — full-screen app-grid "All Programs".
+        Launchpad,
+    };
+
+    void OnMessage(const smi::MenuMessageContext &msg_ctx);
+
+    class MenuApplication : public pu::ui::Application {
+        public:
+            using MenuFadeCallback = std::function<void()>;
+
+            static constexpr u8 FastFadeAlphaIncrementSteps = 12;
+            static constexpr u8 DefaultFadeAlphaIncrementSteps = 24;
+
+        private:
+            smi::MenuStartMode start_mode;
+            MainMenuLayout::Ref main_menu_lyt;
+            StartupMenuLayout::Ref startup_menu_lyt;
+            ThemesMenuLayout::Ref themes_menu_lyt;
+            SettingsMenuLayout::Ref settings_menu_lyt;
+            LockscreenMenuLayout::Ref lockscreen_menu_lyt;
+            qdesktop::QdVaultLayout::Ref vault_lyt;
+            // Vault host layout. MUST be a real IMenuLayout subclass — NOT a bare
+            // pu::ui::Layout. Plutonium's GetLayout<L>() is a static_pointer_cast,
+            // so the OnMessage dispatcher will reinterpret whatever lives here as
+            // an IMenuLayout. A bare Layout here causes a Data Abort at 0x0 the
+            // moment any smi::MenuMessage arrives. See qd_VaultHostLayout.hpp.
+            qdesktop::QdVaultHostLayout::Ref vault_host_lyt_;
+            // K-cycle promoted qdesktop surfaces. The Element (*Layout in name
+            // only) + host wrapper pairs follow the same pattern as Vault above:
+            // the host MUST be a real IMenuLayout for the same static_pointer_cast
+            // reason. The *Layout elements are heap-allocated once and reused.
+            // Cycle K-noterminal: terminal_lyt_/terminal_host_lyt_ Refs removed;
+            // QdTerminalLayout + QdTerminalHostLayout source files deleted.
+            qdesktop::QdMonitorLayout::Ref monitor_lyt_;
+            qdesktop::QdMonitorHostLayout::Ref monitor_host_lyt_;
+            // About, QSettings, QLockscreen are direct IMenuLayout subclasses
+            // (no separate element wrapper needed — the *Layout IS the host).
+            qdesktop::QdAboutLayout::Ref about_lyt_;
+            qdesktop::QdSettingsLayout::Ref qsettings_lyt_;
+            qdesktop::QdLockscreenLayout::Ref qlockscreen_lyt_;
+            // K-cycle Track D: Launchpad element + host wrapper pair.
+            // Same Element+IMenuLayout host pattern as Vault/Monitor.
+            qdesktop::QdLaunchpadElement::Ref launchpad_lyt_;
+            qdesktop::QdLaunchpadHostLayout::Ref launchpad_host_lyt_;
+            // v1.9: persistent top-bar + dock-backdrop chrome rendered at the
+            // Application-level AddRenderCallback (below Plutonium elements).
+            // Non-copyable; holds no SDL_Texture — pure FillRect geometry.
+            qdesktop::QdGlobalChrome chrome_;
+            pu::ui::extras::Toast::Ref notif_toast;
+            bool launch_failed;
+            Result pending_gc_mount_rc;
+            bool needs_app_records_reload;
+            bool needs_app_entries_reload;
+            char chosen_hb[FS_MAX_PATH];
+            u64 verify_finished_app_id;
+            Result verify_rc;
+            Result verify_detail_rc;
+            Result active_theme_load_rc;
+            bool active_theme_outdated;
+            MenuType loaded_menu;
+            // W5-TRANSITIONS #1: store boot chime handle so DisposeAllSfx can free it.
+            pu::audio::Sfx boot_chime_sfx_ = nullptr;
+            pu::ui::Color text_clr;
+            pu::ui::Color menu_focus_clr;
+            pu::ui::Color menu_bg_clr;
+            pu::ui::Color dialog_title_clr;
+            pu::ui::Color dialog_cnt_clr;
+            pu::ui::Color dialog_opt_clr;
+            pu::ui::Color dialog_clr;
+            pu::ui::Color dialog_over_clr;
+
+            MenuBgmEntry &GetCurrentMenuBgm();
+
+            void EnsureLayoutCreated(const MenuType type);
+
+        public:
+            using Application::Application;
+            PU_SMART_CTOR(MenuApplication)
+
+            void OnLoad() override;
+
+            inline void Initialize(const smi::MenuStartMode start_mode) {
+                this->start_mode = start_mode;
+            }
+
+            void Finalize();
+
+            void SetBackgroundFade();
+
+            inline void ResetFade() {
+                this->ResetFadeBackgroundImage();
+            }
+
+            inline void FadeOutToColor(const pu::ui::Color clr) {
+                this->SetFadeBackgroundColor(clr);
+                this->SetFadeAlphaIncrementStepCount(DefaultFadeAlphaIncrementSteps);
+                this->FadeOut();
+                appletClearCaptureBuffer(true, AppletCaptureSharedBuffer_CallerApplet, GetColorARGB(clr));
+            }
+
+            inline void FadeOutToLibraryApplet(const AppletId applet_id) {
+                this->FadeOutToColor(GetLibraryAppletFadeColor(applet_id));
+            }
+
+            // TODO: custom fades for homebrew?
+
+            inline void FadeOutToNonLibraryApplet() {
+                this->FadeOutToColor(GetDefaultFadeColor());
+            }
+
+            void LoadMenu(const MenuType type, const bool fade = true, MenuFadeCallback fade_cb = nullptr);
+
+            inline void NotifyLaunchFailed() {
+                this->launch_failed = true;
+            }
+
+            inline bool GetConsumeLastLaunchFailed() {
+                const auto res = this->launch_failed;
+                this->launch_failed = 0;
+                return res;
+            }
+
+            inline void NotifyHomebrewChosen(const char (&chosen_hb_path)[FS_MAX_PATH]) {
+                util::CopyToStringBuffer(this->chosen_hb, chosen_hb_path);
+            }
+
+            inline bool HasChosenHomebrew() {
+                return this->chosen_hb[0] != '\0';
+            }
+
+            inline std::string GetConsumeChosenHomebrew() {
+                const std::string res = this->chosen_hb;
+                memset(this->chosen_hb, 0, sizeof(this->chosen_hb));
+                return res;
+            }
+
+            inline void NotifyGameCardMountFailure(const Result rc) {
+                this->pending_gc_mount_rc = rc;
+            }
+
+            inline bool HasGameCardMountFailure() {
+                return R_FAILED(this->pending_gc_mount_rc);
+            }
+
+            Result GetConsumeGameCardMountFailure() {
+                const auto gc_rc = this->pending_gc_mount_rc;
+                this->pending_gc_mount_rc = ResultSuccess;
+                return gc_rc;
+            }
+
+            inline void NotifyApplicationRecordReloadNeeded() {
+                this->needs_app_records_reload = true;
+            }
+
+            inline bool GetConsumeApplicationRecordReloadNeeded() {
+                const auto needs_reload = this->needs_app_records_reload;
+                this->needs_app_records_reload = false;
+                return needs_reload;
+            }
+
+            inline void NotifyApplicationEntryReloadNeeded() {
+                this->needs_app_entries_reload = true;
+            }
+
+            inline bool GetConsumeApplicationEntryReloadNeeded() {
+                const auto needs_reload = this->needs_app_entries_reload;
+                this->needs_app_entries_reload = false;
+                return needs_reload;
+            }
+
+            inline void NotifyVerifyFinished(const u64 app_id, const Result rc, const Result detail_rc) {
+                this->verify_finished_app_id = app_id;
+                this->verify_rc = rc;
+                this->verify_detail_rc = detail_rc;
+            }
+
+            inline bool HasVerifyFinishedPending() {
+                return this->verify_finished_app_id != 0;
+            }
+
+            inline u64 GetConsumeVerifyFinishedApplicationId() {
+                const auto app_id = this->verify_finished_app_id;
+                this->verify_finished_app_id = 0;
+                return app_id;
+            }
+
+            inline Result GetConsumeVerifyResult() {
+                const auto rc = this->verify_rc;
+                this->verify_rc = ResultSuccess;
+                return rc;
+            }
+
+            inline Result GetConsumeVerifyDetailResult() {
+                const auto rc = this->verify_detail_rc;
+                this->verify_detail_rc = ResultSuccess;
+                return rc;
+            }
+
+            inline void NotifyApplicationVerifyProgress(const u64 app_id, const float progress = NAN) {
+                if(this->loaded_menu == MenuType::Main) {
+                    this->GetLayout<MainMenuLayout>()->UpdateApplicationVerifyProgress(app_id, progress);
+                }
+            }
+
+            inline void NotifyActiveThemeLoadFailure(const Result rc) {
+                this->active_theme_load_rc = rc;
+            }
+
+            inline bool HasActiveThemeLoadFailure() {
+                return R_FAILED(this->active_theme_load_rc);
+            }
+
+            inline Result GetConsumeActiveThemeLoadFailure() {
+                const auto rc = this->active_theme_load_rc;
+                this->active_theme_load_rc = ResultSuccess;
+                return rc;
+            }
+
+            inline void NotifyActiveThemeOutdated() {
+                this->active_theme_outdated = true;
+            }
+
+            inline bool HasActiveThemeOutdated() {
+                return this->active_theme_outdated;
+            }
+
+            inline void ConsumeActiveThemeOutdated() {
+                this->active_theme_outdated = false;
+            }
+
+            void ShowNotification(const std::string &text, const u64 timeout = 1500);
+
+            inline pu::ui::Color GetTextColor() {
+                return this->text_clr;
+            }
+
+            inline pu::ui::Color GetMenuFocusColor() {
+                return this->menu_focus_clr;
+            }
+
+            inline pu::ui::Color GetMenuBackgroundColor() {
+                return this->menu_bg_clr;
+            }
+
+            void StartPlayBgm();
+            void StopPlayBgm();
+
+            void LoadBgmSfxForCreatedMenus();
+            void DisposeAllSfx();
+
+            inline MainMenuLayout::Ref &GetMainMenuLayout() {
+                return this->main_menu_lyt;
+            }
+
+            // FIX-1 (2026-06-19): returns the currently active menu type so the
+            // debug server can decide whether to feed Plutonium sim-touch or not.
+            inline MenuType GetLoadedMenuType() const {
+                return this->loaded_menu;
+            }
+
+            int DisplayDialog(const std::string &title, const std::string &content, const std::vector<std::string> &opts, const bool use_last_opt_as_cancel, pu::sdl2::TextureHandle::Ref icon = {});
+    };
+
+    inline void RegisterMenuOnMessageDetect() {
+        smi::sf::RegisterOnMessageDetect(OnMessage);
+    }
+
+}

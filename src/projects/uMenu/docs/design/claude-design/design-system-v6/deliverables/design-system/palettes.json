@@ -1,0 +1,110 @@
+{
+  "_meta": {
+    "system": "Q OS",
+    "schema": "QdPalette.json — 17 color roles + wallpaper_pack string",
+    "purpose": "Retuned 10-theme palettes resolving the 01-CURRENT-STATE drift audit. Drop each object into romfs/themes/q-os-{idx}-*.ultheme :: ui/QdPalette.json AND mirror into qd_Theme.hpp factories (SSOT = this file).",
+    "retune_rules": [
+      "focus_ring tuned for consistent prominence across all 10 themes (bumped where it whispered: Minimal, Pastel)",
+      "button_minimize made distinct from accent (was equal in Retro #FFA83A and Pixel #FFCC00)",
+      "button_restore == button_maximize is a deliberate rule (restore is the maximize alternate state) — one hue shipped",
+      "grid_line kept distinct from titlebar_inactive (collided in Glass, Dark; near-collided Minimal, Pastel, Gradient)",
+      "Retro: text_primary moved to near-white for legibility; phosphor green relocated to text_secondary (signature retained, not in primary)",
+      "personalities locked — only contrast/role cohesion retuned, hues nudged minimally",
+      "selection corners rounded on all 10 (no Pixel hard-corner exception)"
+    ],
+    "format": "all values #RRGGBB; cursor_outline may be near-black per theme"
+  },
+
+  "themes": [
+    {
+      "idx": 0, "name": "Q OS", "personality": "Dark liquid glass — cyan on deep navy",
+      "desktop_bg": "#0A0A14", "surface_glass": "#12122A", "topbar_bg": "#0C0C20", "dock_bg": "#10102A",
+      "accent": "#7DD3FC", "text_primary": "#E0E0F0", "text_secondary": "#8888AA", "focus_ring": "#7CC5FF",
+      "button_close": "#F87171", "button_minimize": "#FBBF24", "button_maximize": "#4ADE80", "button_restore": "#4ADE80",
+      "cursor_fill": "#F5F5FF", "cursor_outline": "#050510", "cursor_right_click": "#E54B4B",
+      "titlebar_inactive": "#181830", "grid_line": "#24244A", "wallpaper_pack": "Q OS",
+      "_changed": { "grid_line": "#181832 → #24244A (was indistinguishable from titlebar_inactive #181830)" }
+    },
+    {
+      "idx": 1, "name": "Neon", "personality": "Black base + hot magenta + electric cyan + lime",
+      "desktop_bg": "#050010", "surface_glass": "#140522", "topbar_bg": "#0A0018", "dock_bg": "#100520",
+      "accent": "#FF2AD0", "text_primary": "#F0FFF0", "text_secondary": "#A870C8", "focus_ring": "#2AFFE5",
+      "button_close": "#FF326E", "button_minimize": "#F5E02A", "button_maximize": "#6AFF50", "button_restore": "#6AFF50",
+      "cursor_fill": "#FFF0FF", "cursor_outline": "#100018", "cursor_right_click": "#FF2AD0",
+      "titlebar_inactive": "#220A32", "grid_line": "#2A103A", "wallpaper_pack": "Neon",
+      "_changed": {}
+    },
+    {
+      "idx": 2, "name": "Minimal", "personality": "Warm stone gray + dusty amber, quiet",
+      "desktop_bg": "#1A1816", "surface_glass": "#262422", "topbar_bg": "#1E1C1A", "dock_bg": "#22201E",
+      "accent": "#D4C8B4", "text_primary": "#F2EEE6", "text_secondary": "#90887C", "focus_ring": "#E0B86A",
+      "button_close": "#E06060", "button_minimize": "#E0C040", "button_maximize": "#40C870", "button_restore": "#40C870",
+      "cursor_fill": "#FAF6EE", "cursor_outline": "#1A1816", "cursor_right_click": "#E06060",
+      "titlebar_inactive": "#2E2A26", "grid_line": "#34302A", "wallpaper_pack": "Minimal",
+      "_changed": { "focus_ring": "#C8A86A → #E0B86A (whispered; bumped for prominence parity)", "grid_line": "#2C2824 → #34302A (near-collided with titlebar_inactive #2E2A26)" }
+    },
+    {
+      "idx": 3, "name": "Retro", "personality": "Amber CRT + green phosphor + scanlines",
+      "desktop_bg": "#0A1420", "surface_glass": "#141C2A", "topbar_bg": "#101826", "dock_bg": "#141C2C",
+      "accent": "#FFA83A", "text_primary": "#E8F0E0", "text_secondary": "#6AD080", "focus_ring": "#FFC860",
+      "button_close": "#E85A4C", "button_minimize": "#FFD24A", "button_maximize": "#6AFF82", "button_restore": "#6AFF82",
+      "cursor_fill": "#6AFF82", "cursor_outline": "#0A1420", "cursor_right_click": "#E85A4C",
+      "titlebar_inactive": "#1A2436", "grid_line": "#222E42", "wallpaper_pack": "Retro",
+      "_changed": { "text_primary": "#6AFF82 → #E8F0E0 (saturated green primary → legible near-white)", "text_secondary": "#4AB060 → #6AD080 (phosphor green relocated here as the signature)", "button_minimize": "#FFA83A → #FFD24A (was equal to accent)" }
+    },
+    {
+      "idx": 4, "name": "Cards", "personality": "Warm amber on blue slate, layered cards",
+      "desktop_bg": "#1C2030", "surface_glass": "#262C40", "topbar_bg": "#202436", "dock_bg": "#24283A",
+      "accent": "#FF9A3C", "text_primary": "#F0ECE4", "text_secondary": "#B0A896", "focus_ring": "#FF7AD0",
+      "button_close": "#FF7A82", "button_minimize": "#FFCC4A", "button_maximize": "#60E89C", "button_restore": "#60E89C",
+      "cursor_fill": "#FFF5E6", "cursor_outline": "#10141E", "cursor_right_click": "#FF7AD0",
+      "titlebar_inactive": "#2A3044", "grid_line": "#2E3448", "wallpaper_pack": "Cards",
+      "_changed": {}
+    },
+    {
+      "idx": 5, "name": "Pastel", "personality": "Soft slate + powder pink + mint + lavender",
+      "desktop_bg": "#1E1E28", "surface_glass": "#2A2A38", "topbar_bg": "#24222E", "dock_bg": "#262432",
+      "accent": "#FBC6E4", "text_primary": "#F4ECF4", "text_secondary": "#B8A8C2", "focus_ring": "#D4C7F5",
+      "button_close": "#F5A8AE", "button_minimize": "#FAE3A4", "button_maximize": "#B0E8C0", "button_restore": "#B0E8C0",
+      "cursor_fill": "#FDF2F5", "cursor_outline": "#1E1828", "cursor_right_click": "#F5A8AE",
+      "titlebar_inactive": "#322C3C", "grid_line": "#3E3648", "wallpaper_pack": "Pastel",
+      "_changed": { "focus_ring": "#C9BBF0 → #D4C7F5 (bumped for prominence parity)", "grid_line": "#363040 → #3E3648 (near-collided with titlebar_inactive #322C3C)" }
+    },
+    {
+      "idx": 6, "name": "Dark", "personality": "Embers in a void — pure black + ember orange",
+      "desktop_bg": "#000004", "surface_glass": "#120A06", "topbar_bg": "#080402", "dock_bg": "#0C0604",
+      "accent": "#FF6040", "text_primary": "#ECE6E0", "text_secondary": "#807066", "focus_ring": "#FF8050",
+      "button_close": "#E84040", "button_minimize": "#E8A030", "button_maximize": "#60C070", "button_restore": "#60C070",
+      "cursor_fill": "#FFE6D8", "cursor_outline": "#000000", "cursor_right_click": "#E84040",
+      "titlebar_inactive": "#1A0E08", "grid_line": "#261410", "wallpaper_pack": "Dark",
+      "_changed": { "grid_line": "#1A0E08 → #261410 (was identical to titlebar_inactive #1A0E08)" }
+    },
+    {
+      "idx": 7, "name": "Gradient", "personality": "Indigo → violet → cyan smooth transition",
+      "desktop_bg": "#100522", "surface_glass": "#1A1232", "topbar_bg": "#140828", "dock_bg": "#180C30",
+      "accent": "#A070FF", "text_primary": "#ECE8FA", "text_secondary": "#9A88C0", "focus_ring": "#7AE0FF",
+      "button_close": "#F86A9A", "button_minimize": "#FFC470", "button_maximize": "#70E0B8", "button_restore": "#70E0B8",
+      "cursor_fill": "#F5EFFF", "cursor_outline": "#0A0518", "cursor_right_click": "#F86A9A",
+      "titlebar_inactive": "#221838", "grid_line": "#2E2247", "wallpaper_pack": "Gradient",
+      "_changed": { "grid_line": "#261C3C → #2E2247 (nudged clear of titlebar_inactive #221838)" }
+    },
+    {
+      "idx": 8, "name": "Blueprint", "personality": "Drafting paper — cyan lines on blueprint blue",
+      "desktop_bg": "#051832", "surface_glass": "#0A2240", "topbar_bg": "#061C36", "dock_bg": "#081F3A",
+      "accent": "#7AE0FF", "text_primary": "#E0F0FF", "text_secondary": "#70A8D0", "focus_ring": "#A8E8FF",
+      "button_close": "#E87A7A", "button_minimize": "#F0C86A", "button_maximize": "#6AE8B0", "button_restore": "#6AE8B0",
+      "cursor_fill": "#F0F8FF", "cursor_outline": "#051224", "cursor_right_click": "#E87A7A",
+      "titlebar_inactive": "#0C2646", "grid_line": "#123252", "wallpaper_pack": "Blueprint",
+      "_changed": {}
+    },
+    {
+      "idx": 9, "name": "Pixel", "personality": "NES limited palette, bold primaries",
+      "desktop_bg": "#000018", "surface_glass": "#101030", "topbar_bg": "#080820", "dock_bg": "#0C0C28",
+      "accent": "#FFCC00", "text_primary": "#F8F8F8", "text_secondary": "#8080C0", "focus_ring": "#00E800",
+      "button_close": "#E80000", "button_minimize": "#FF9800", "button_maximize": "#00E800", "button_restore": "#00E800",
+      "cursor_fill": "#FFFFFF", "cursor_outline": "#000000", "cursor_right_click": "#E80000",
+      "titlebar_inactive": "#181838", "grid_line": "#202040", "wallpaper_pack": "Pixel",
+      "_changed": { "button_minimize": "#FFCC00 → #FF9800 (was equal to accent NES yellow)" }
+    }
+  ]
+}

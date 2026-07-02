@@ -1,0 +1,48 @@
+<!-- @dsCard group="Components" viewport="700x460" name="Window — WindowFrame" subtitle="The signature windowed-OS chrome with corner controls" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body { margin: 0; padding: 24px; background: #0A0A14; }
+  .qos-void { position: fixed; inset: 0; z-index: 0; }
+  #root { position: relative; z-index: 1; display: flex; gap: 20px; flex-wrap: wrap; }
+</style>
+</head>
+<body class="qos-void">
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="../../_ds_bundle.js"></script>
+  <script type="text/babel">
+    const { WindowFrame, Button } = window.QOSDesignSystem_d41fd9;
+    function Demo() {
+      return (
+        <React.Fragment>
+          <WindowFrame title="About Q OS" hint="B / +  Close   ·   Drag titlebar to move" width={440} height={300}>
+            <div style={{ fontFamily: "var(--font-display)", fontStyle: "italic", fontSize: 30, color: "var(--text-primary)" }}>Q OS uMenu</div>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)", margin: "8px 0 18px" }}>v3.5.0 · HOS 20.0.0 · Erista</div>
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "8px 16px", fontSize: 13 }}>
+              <span style={{ color: "var(--text-secondary)" }}>Firmware</span><span>20.0.0 (Atmosphère)</span>
+              <span style={{ color: "var(--text-secondary)" }}>Battery</span><span>87% · charging</span>
+              <span style={{ color: "var(--text-secondary)" }}>emuMMC</span><span>active</span>
+            </div>
+          </WindowFrame>
+          <WindowFrame title="Monitor" active={false} hint="L / R  Switch view   ·   Y  Dump ledger" width={300} height={300}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 2, color: "var(--text-secondary)" }}>
+              <div>CPU <span style={{color:"var(--accent)"}}>1020 MHz</span></div>
+              <div>GPU <span style={{color:"var(--accent)"}}>768 MHz</span></div>
+              <div>SoC <span style={{color:"var(--accent)"}}>48.5°C</span></div>
+              <div>RAM <span style={{color:"var(--accent)"}}>2.1 / 4 GB</span></div>
+              <div>FPS <span style={{color:"var(--btn-maximize)"}}>60</span></div>
+            </div>
+          </WindowFrame>
+        </React.Fragment>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById("root")).render(<Demo />);
+  </script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!-- @dsCard group="Colors" viewport="700x180" name="Window corner buttons" subtitle="Four corners, each its own color + glyph — BR is resize" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 24px 28px; background: #0A0A14; display: flex; gap: 30px; align-items: center; }
+  .item { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+  .btn { width: 46px; height: 46px; border-radius: 999px; display: grid; place-items: center; color: #0A0A14; }
+  .btn span { font-family: var(--font-sans); font-size: 22px; font-weight: 700; line-height: 1; }
+  .lbl { font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .pos { font-family: var(--font-mono); font-size: 10px; color: var(--accent); letter-spacing: .1em; }
+  .hex { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); }
+  .g { stroke: #0A0A14; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+  <div class="item"><div class="btn" style="background:var(--btn-close)"><span>×</span></div><div class="lbl">Close</div><div class="pos">TOP-LEFT</div><div class="hex">#F87171</div></div>
+  <div class="item"><div class="btn" style="background:var(--btn-maximize)"><span>□</span></div><div class="lbl">Maximize</div><div class="pos">TOP-RIGHT</div><div class="hex">#4ADE80</div></div>
+  <div class="item"><div class="btn" style="background:var(--btn-minimize)"><span>–</span></div><div class="lbl">Minimize</div><div class="pos">BOTTOM-LEFT</div><div class="hex">#FBBF24</div></div>
+  <div class="item">
+    <div class="btn" style="background:var(--accent)">
+      <svg class="g" width="24" height="24" viewBox="0 0 24 24" stroke-width="2.2"><path d="M7 7 L17 17 M17 17 L17 12.5 M17 17 L12.5 17 M7 7 L7 11.5 M7 7 L11.5 7"/></svg>
+    </div>
+    <div class="lbl">Resize</div><div class="pos">BOTTOM-RIGHT</div><div class="hex">accent</div>
+  </div>
+</body>
+</html>

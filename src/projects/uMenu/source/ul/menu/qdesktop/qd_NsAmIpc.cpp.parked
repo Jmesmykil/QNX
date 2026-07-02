@@ -1,0 +1,136 @@
+// qd_NsAmIpc.cpp — clean-room ns:am IApplicationManagerInterface IPC wrapper.
+// See qd_NsAmIpc.hpp. Both commands are WRITE-CLASS and are only ever reached
+// from the NSP installer's GATED Register/Rollback steps.
+
+#ifdef QDESKTOP_MODE
+
+#include <ul/menu/qdesktop/qd_NsAmIpc.hpp>
+#include <ul/menu/qdesktop/qd_ResourceLedger.hpp>
+#include <ul/ul_Result.hpp>
+
+#include <switch.h>
+#include <cstring>
+
+namespace ul::menu::qdesktop::nsam {
+
+namespace {
+
+    // Our own IApplicationManagerInterface session. We get it from libnx's `ns`
+    // in a firmware-tolerant way and close it ourselves.
+    ::Service g_AppManSrv = {};
+    bool      g_HaveOwnSession = false;  // true if g_AppManSrv is ours to close.
+    uint64_t  g_LedgerHandle   = 0;
+
+    // Resolve the IApplicationManagerInterface Service* across firmware versions.
+    // [3.0.0+]: the GetterInterface exposes a cmd that returns AppManager — libnx
+    //           wraps it as nsGetApplicationManagerInterface(Service*), giving us
+    //           a fresh subsession we OWN (and must close).
+    // pre-3.0.0: `ns:am` IS IApplicationManagerInterface directly — libnx hands
+    //           it back via nsGetServiceSession_ApplicationManagerInterface(),
+    //           which we must NOT close (libnx owns it; nsExit() will).
+    Result AcquireAppManager() {
+        // [3.0.0+] path: ask for our own subsession.
+        Result rc = nsGetApplicationManagerInterface(&g_AppManSrv);
+        if (R_SUCCEEDED(rc) && serviceIsActive(&g_AppManSrv)) {
+            g_HaveOwnSession = true;
+            return ResultSuccess;
+        }
+
+        // pre-3.0.0 fallback: borrow libnx's direct AppManager session.
+        ::Service *borrowed = nsGetServiceSession_ApplicationManagerInterface();
+        if (borrowed != nullptr && serviceIsActive(borrowed)) {
+            g_AppManSrv      = *borrowed;  // shallow copy; we do NOT own/close it.
+            g_HaveOwnSession = false;
+            return ResultSuccess;
+        }
+
+        UL_LOG_WARN("qd_NsAmIpc: could not resolve IApplicationManagerInterface "
+                    "(getter rc=0x%08X, no pre-3.0.0 session)", rc);
+        return R_SUCCEEDED(rc) ? MAKERESULT(Module_Libnx, LibnxError_NotInitialized)
+                               : rc;
+    }
+
+}  // namespace
+
+Result Initialize() {
+    if (g_HaveOwnSession || serviceIsActive(&g_AppManSrv)) {
+        return ResultSuccess;
+    }
+    UL_RC_TRY(nsInitialize());
+
+    const Result rc = AcquireAppManager();
+    if (R_FAILED(rc)) {
+        nsExit();
+        return rc;
+    }
+    g_LedgerHandle = UL_LEDGER_TRACK(QdResKind::Service, "ns:am", 0);
+    UL_LOG_INFO("qd_NsAmIpc::Initialize: IApplicationManagerInterface acquired "
+                "(own_session=%d)", g_HaveOwnSession ? 1 : 0);
+    return ResultSuccess;
+}
+
+void Finalize() {
+    if (serviceIsActive(&g_AppManSrv)) {
+        if (g_HaveOwnSession) {
+            serviceClose(&g_AppManSrv);  // only close a subsession WE opened.
+        }
+        UL_LEDGER_UNTRACK(g_LedgerHandle);
+        g_LedgerHandle   = 0;
+        g_AppManSrv      = ::Service{};
+        g_HaveOwnSession = false;
+        nsExit();
+        UL_LOG_INFO("qd_NsAmIpc::Finalize: session released");
+    }
+}
+
+bool IsActive() {
+    return serviceIsActive(&g_AppManSrv);
+}
+
+Result PushApplicationRecord(u64 app_id, u8 last_modified_event,
+                             const ContentStorageRecord *records, s32 count) {
+    if (records == nullptr || count <= 0) {
+        return MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    }
+    if (!serviceIsActive(&g_AppManSrv)) {
+        UL_LOG_WARN("qd_NsAmIpc::PushApplicationRecord: session not initialized");
+        return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
+    }
+
+    // IApplicationManagerInterface cmd 16 = PushApplicationRecord.
+    // Raw input (packed): u8 last_modified_event, then u64 application_id.
+    // Buffer: the ContentStorageRecord array as one In map-alias buffer.
+    struct {
+        u8  last_modified_event;
+        u64 application_id;
+    } NX_PACKED in = { last_modified_event, app_id };
+
+    UL_LOG_WARN("qd_NsAmIpc::PushApplicationRecord: WRITE-CLASS — app_id=0x%016llX "
+                "records=%d (mutates the title database)",
+                static_cast<unsigned long long>(app_id), count);
+    return serviceDispatchIn(&g_AppManSrv, 16, in,
+        .buffer_attrs = { SfBufferAttr_HipcMapAlias | SfBufferAttr_In },
+        .buffers = {
+            { records, static_cast<size_t>(count) * sizeof(ContentStorageRecord) },
+        },
+    );
+}
+
+Result DeleteApplicationRecord(u64 app_id) {
+    if (!serviceIsActive(&g_AppManSrv)) {
+        UL_LOG_WARN("qd_NsAmIpc::DeleteApplicationRecord: session not initialized");
+        return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
+    }
+
+    // IApplicationManagerInterface cmd 21 = DeleteApplicationRecord.
+    // Raw input: u64 application_id. No buffers.
+    u64 in_app_id = app_id;
+    UL_LOG_WARN("qd_NsAmIpc::DeleteApplicationRecord: WRITE-CLASS — app_id=0x%016llX "
+                "(mutates the title database)",
+                static_cast<unsigned long long>(app_id));
+    return serviceDispatchIn(&g_AppManSrv, 21, in_app_id);
+}
+
+}  // namespace ul::menu::qdesktop::nsam
+
+#endif  // QDESKTOP_MODE

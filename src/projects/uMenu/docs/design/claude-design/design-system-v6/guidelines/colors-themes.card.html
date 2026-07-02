@@ -1,0 +1,30 @@
+<!-- @dsCard group="Colors" viewport="700x200" name="Theme accents" subtitle="10 swappable packs — palette + wallpaper + icons swap as one" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px; background: #0A0A14; }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .t { border-radius: 9px; padding: 12px 10px; border: 1px solid rgba(255,255,255,.07); }
+  .dot { width: 22px; height: 22px; border-radius: 999px; box-shadow: 0 0 14px -2px currentColor; }
+  .name { font-family: var(--font-sans); font-size: 11px; font-weight: 600; color: var(--text-primary); margin-top: 9px; }
+  .hex { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); margin-top: 1px; }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="t" data-theme="glass" style="background:var(--surface-glass)"><div class="dot" style="background:var(--accent);color:var(--accent)"></div><div class="name">Glass</div><div class="hex">#7DD3FC</div></div>
+    <div class="t" data-theme="neon" style="background:var(--surface-glass)"><div class="dot" style="background:var(--accent);color:var(--accent)"></div><div class="name">Neon</div><div class="hex">#FF2AD0</div></div>
+    <div class="t" data-theme="minimal" style="background:var(--surface-glass)"><div class="dot" style="background:var(--accent);color:var(--accent)"></div><div class="name">Minimal</div><div class="hex">#D4C8B4</div></div>
+    <div class="t" data-theme="retro" style="background:var(--surface-glass)"><div class="dot" style="background:var(--accent);color:var(--accent)"></div><div class="name">Retro</div><div class="hex">#FFA83A</div></div>
+    <div class="t" data-theme="cards" style="background:var(--surface-glass)"><div class="dot" style="background:var(--accent);color:var(--accent)"></div><div class="name">Cards</div><div class="hex">#FF9A3C</div></div>
+    <div class="t" data-theme="pastel" style="background:var(--surface-glass)"><div class="dot" style="background:var(--accent);color:var(--accent)"></div><div class="name">Pastel</div><div class="hex">#FBC6E4</div></div>
+    <div class="t" data-theme="dark" style="background:var(--surface-glass)"><div class="dot" style="background:var(--accent);color:var(--accent)"></div><div class="name">Dark</div><div class="hex">#FF6040</div></div>
+    <div class="t" data-theme="gradient" style="background:var(--surface-glass)"><div class="dot" style="background:var(--accent);color:var(--accent)"></div><div class="name">Gradient</div><div class="hex">#A070FF</div></div>
+    <div class="t" data-theme="blueprint" style="background:var(--surface-glass)"><div class="dot" style="background:var(--accent);color:var(--accent)"></div><div class="name">Blueprint</div><div class="hex">#7AE0FF</div></div>
+    <div class="t" data-theme="pixel" style="background:var(--surface-glass)"><div class="dot" style="background:var(--accent);color:var(--accent)"></div><div class="name">Pixel</div><div class="hex">#FFCC00</div></div>
+  </div>
+</body>
+</html>

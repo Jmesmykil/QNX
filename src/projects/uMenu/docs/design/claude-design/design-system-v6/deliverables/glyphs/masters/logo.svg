@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+
+<defs>
+  <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#00E5FF" stop-opacity="0.45"></stop><stop offset="1" stop-color="#00E5FF" stop-opacity="0"></stop></radialGradient>
+  <filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="6"></feGaussianBlur></filter>
+</defs>
+<rect width="256" height="256" fill="#0A0A14"></rect>
+<circle cx="128" cy="128" r="96" fill="url(#halo)"></circle>
+<g filter="url(#glow)" opacity="0.7"><circle cx="116" cy="116" r="58" fill="none" stroke="#00E5FF" stroke-width="12"></circle><line x1="158" y1="158" x2="196" y2="196" stroke="#00E5FF" stroke-width="14" stroke-linecap="round"></line></g>
+<circle cx="116" cy="116" r="58" fill="none" stroke="#7DD3FC" stroke-width="9"></circle>
+<line x1="158" y1="158" x2="196" y2="196" stroke="#7DD3FC" stroke-width="11" stroke-linecap="round"></line>
+<circle cx="64" cy="196" r="9" fill="#D946EF"></circle>
+<circle cx="86" cy="200" r="6" fill="#A78BFA"></circle>
+</svg>

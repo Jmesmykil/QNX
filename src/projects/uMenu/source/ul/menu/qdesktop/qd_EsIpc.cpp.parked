@@ -1,0 +1,86 @@
+// qd_EsIpc.cpp — clean-room `es` (ETicket) IPC wrapper. See qd_EsIpc.hpp.
+//
+// Implemented purely against public libnx service plumbing (smGetService +
+// serviceDispatch). The single import call is WRITE-CLASS and is only ever
+// reached from the NSP installer's GATED ImportTicket step.
+
+#ifdef QDESKTOP_MODE
+
+#include <ul/menu/qdesktop/qd_EsIpc.hpp>
+#include <ul/menu/qdesktop/qd_ResourceLedger.hpp>
+#include <ul/ul_Result.hpp>
+
+#include <switch.h>
+
+namespace ul::menu::qdesktop::es {
+
+namespace {
+
+    // The process-wide `es` session. We hold at most one; Initialize() is
+    // idempotent and Finalize() releases it.
+    ::Service g_EsSrv = {};
+    uint64_t  g_LedgerHandle = 0;
+
+}  // namespace
+
+Result Initialize() {
+    if (serviceIsActive(&g_EsSrv)) {
+        return ResultSuccess;
+    }
+    // `es` is a plain named service (no per-session Initialize cmd, unlike some
+    // ns interfaces). smGetService is the whole acquisition.
+    const Result rc = smGetService(&g_EsSrv, "es");
+    if (R_FAILED(rc)) {
+        UL_LOG_WARN("qd_EsIpc::Initialize: smGetService(\"es\") rc=0x%08X "
+                    "(es may be permission-denied for uMenu)", rc);
+        return rc;
+    }
+    g_LedgerHandle = UL_LEDGER_TRACK(QdResKind::Service, "es", 0);
+    UL_LOG_INFO("qd_EsIpc::Initialize: es session acquired");
+    return ResultSuccess;
+}
+
+void Finalize() {
+    if (serviceIsActive(&g_EsSrv)) {
+        serviceClose(&g_EsSrv);
+        UL_LEDGER_UNTRACK(g_LedgerHandle);
+        g_LedgerHandle = 0;
+        g_EsSrv = ::Service{};
+        UL_LOG_INFO("qd_EsIpc::Finalize: es session closed");
+    }
+}
+
+bool IsActive() {
+    return serviceIsActive(&g_EsSrv);
+}
+
+Result ImportTicket(const void *tik,  size_t tik_size,
+                    const void *cert, size_t cert_size) {
+    if (tik == nullptr || tik_size == 0 || cert == nullptr || cert_size == 0) {
+        return MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    }
+    if (!serviceIsActive(&g_EsSrv)) {
+        UL_LOG_WARN("qd_EsIpc::ImportTicket: es session not initialized");
+        return MAKERESULT(Module_Libnx, LibnxError_NotInitialized);
+    }
+
+    // es cmd 1 = ImportTicket. ABI: no raw input words; two In map-alias buffers:
+    //   buffer[0] = ticket bytes, buffer[1] = certificate-chain bytes.
+    // (Publicly documented on switchbrew; identical shape to Goldleaf's wrapper.)
+    UL_LOG_WARN("qd_EsIpc::ImportTicket: WRITE-CLASS es call (tik=%zu cert=%zu) — "
+                "this mutates the ETicket store", tik_size, cert_size);
+    return serviceDispatch(&g_EsSrv, 1,
+        .buffer_attrs = {
+            SfBufferAttr_HipcMapAlias | SfBufferAttr_In,
+            SfBufferAttr_HipcMapAlias | SfBufferAttr_In,
+        },
+        .buffers = {
+            { tik,  tik_size  },
+            { cert, cert_size },
+        },
+    );
+}
+
+}  // namespace ul::menu::qdesktop::es
+
+#endif  // QDESKTOP_MODE

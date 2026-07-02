@@ -1,0 +1,26 @@
+<!-- @dsCard group="Colors" viewport="700x160" name="Folder categories" subtitle="Auto-classified desktop folder tile tints" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 22px; background: #0A0A14; }
+  .row { display: flex; gap: 12px; }
+  .sw { flex: 1; text-align: center; }
+  .chip { height: 56px; border-radius: 10px; border: 1px solid rgba(255,255,255,.08); }
+  .name { font-family: var(--font-sans); font-size: 11px; font-weight: 600; color: var(--text-primary); margin-top: 8px; }
+  .hex { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:var(--cat-games)"></div><div class="name">Games</div><div class="hex">#60A5FA</div></div>
+    <div class="sw"><div class="chip" style="background:var(--cat-homebrew)"></div><div class="name">Homebrew</div><div class="hex">#4ADE80</div></div>
+    <div class="sw"><div class="chip" style="background:var(--cat-system)"></div><div class="name">System</div><div class="hex">#C084FC</div></div>
+    <div class="sw"><div class="chip" style="background:var(--cat-payloads)"></div><div class="name">Payloads</div><div class="hex">#E07840</div></div>
+    <div class="sw"><div class="chip" style="background:var(--cat-builtin)"></div><div class="name">Builtin</div><div class="hex">#A78BFA</div></div>
+    <div class="sw"><div class="chip" style="background:var(--cat-custom)"></div><div class="name">Custom</div><div class="hex">#7DD3FC</div></div>
+  </div>
+</body>
+</html>

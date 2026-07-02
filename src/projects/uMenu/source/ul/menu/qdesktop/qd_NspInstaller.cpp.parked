@@ -1,0 +1,750 @@
+// qd_NspInstaller.cpp — see qd_NspInstaller.hpp for the API contract + safety posture.
+//
+// WHAT IS IMPLEMENTED (read-only, safe to ship):
+//   - PFS0/NSP header + entry-table + string-table parse (OpenAndParse).
+//   - Container-kind detection from magic + extension (DetectKind).
+//   - Free-space query via query-only NCM (QueryFreeSpace).
+//   - The Parse + Validate state-machine steps.
+//
+// WHAT IS GATED (returns QdNspInstaller_NotImplemented — NO writes):
+//   - PlaceContent / ImportTicket / Register / Rollback.
+//   - VerifyInstalled's inner-CNMT crack (needs the NCA reader that lands with
+//     the gated content path).
+//
+// Build notes: compiled with -fno-exceptions -fno-rtti (see Makefile). No throw,
+// no dynamic_cast. All failure paths are Result codes. fopen/fread only — no
+// direct fs-session handles are opened by the safe path.
+
+#ifdef QDESKTOP_MODE
+
+#include <ul/menu/qdesktop/qd_NspInstaller.hpp>
+#include <ul/menu/qdesktop/qd_ResourceLedger.hpp>
+#include <ul/menu/qdesktop/qd_EsIpc.hpp>     // clean-room es ImportTicket
+#include <ul/menu/qdesktop/qd_NsAmIpc.hpp>   // clean-room ns:am record push/delete
+#include <ul/ul_Result.hpp>
+
+#include <switch.h>
+
+#include <cstdio>
+#include <cstring>
+#include <cstdarg>
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace ul::menu::qdesktop {
+
+namespace {
+
+// PFS0 ("partition filesystem, 0-aligned") on-disk layout. This is the public,
+// documented container Nintendo's NSPs use; the same shape libnx tools parse.
+//
+//   struct Pfs0Header {            // 0x10 bytes
+//       u32 magic;                 // "PFS0" = 0x30534650 little-endian
+//       u32 file_count;
+//       u32 string_table_size;
+//       u32 reserved;              // 0
+//   };
+//   struct Pfs0FileEntry {         // 0x18 bytes, file_count of them
+//       u64 data_offset;           // offset from start of DATA region
+//       u64 data_size;
+//       u32 string_table_offset;   // offset into the string table for the name
+//       u32 reserved;
+//   };
+//   // then: char string_table[string_table_size]  (NUL-separated names)
+//   // then: the file DATA region begins (this is offset 0 for data_offset).
+//
+// Layout: [header 0x10][entries file_count*0x18][string_table N][DATA...]
+// data region base = 0x10 + file_count*0x18 + string_table_size.
+
+constexpr u32    kPfs0Magic       = 0x30534650u;  // 'P''F''S''0' little-endian
+constexpr u32    kHfs0Magic       = 0x30534648u;  // 'H''F''S''0' (XCI partitions)
+constexpr size_t kPfs0HeaderSize  = 0x10;
+constexpr size_t kPfs0EntrySize   = 0x18;
+
+// Defensive bounds so a malformed/hostile NSP can't make us allocate gigabytes
+// or loop forever. A real NSP has a handful of entries and a small string table.
+constexpr u32    kMaxFileCount    = 4096;          // far above any real NSP.
+constexpr u32    kMaxStringTable  = 1u * 1024 * 1024;  // 1 MiB of names is absurd already.
+
+// ── MASTER LIVE-INSTALL GATE ─────────────────────────────────────────────────
+//
+// HARD SAFETY GATE. While this is `false` (it MUST stay false until James
+// authorizes per PD-11 and the design-doc open questions are resolved), every
+// write-class step returns QdNspInstaller_NotImplemented and performs NO NAND/
+// NCM/ES/NS writes. The es/ns:am wrapper calls below live inside
+// `if (kLiveInstallEnabled) { ... }` blocks so the compiler TYPE-CHECKS the real
+// IPC integration, but the branch is statically dead — it can never execute.
+// Do NOT flip this to true as part of "make it compile". It gates bricking.
+constexpr bool   kLiveInstallEnabled = false;
+
+#pragma pack(push, 1)
+struct Pfs0Header {
+    u32 magic;
+    u32 file_count;
+    u32 string_table_size;
+    u32 reserved;
+};
+struct Pfs0FileEntry {
+    u64 data_offset;
+    u64 data_size;
+    u32 string_table_offset;
+    u32 reserved;
+};
+#pragma pack(pop)
+
+static_assert(sizeof(Pfs0Header)    == kPfs0HeaderSize, "Pfs0Header must be 0x10");
+static_assert(sizeof(Pfs0FileEntry) == kPfs0EntrySize,  "Pfs0FileEntry must be 0x18");
+
+// Case-insensitive suffix test (FAT names can vary in case).
+bool EndsWithI(const std::string &s, const char *suffix) {
+    const size_t n = std::strlen(suffix);
+    if (s.size() < n) return false;
+    for (size_t i = 0; i < n; ++i) {
+        char a = s[s.size() - n + i];
+        char b = suffix[i];
+        if (a >= 'A' && a <= 'Z') a = static_cast<char>(a - 'A' + 'a');
+        if (b >= 'A' && b <= 'Z') b = static_cast<char>(b - 'A' + 'a');
+        if (a != b) return false;
+    }
+    return true;
+}
+
+void ClassifyEntry(NspFileEntry &e) {
+    // Order matters: ".cnmt.nca" must be tested before ".nca".
+    if (EndsWithI(e.name, ".cnmt.nca")) {
+        e.is_cnmt = true;
+    } else if (EndsWithI(e.name, ".nca")) {
+        e.is_nca = true;
+    } else if (EndsWithI(e.name, ".ncz")) {
+        e.is_ncz = true;   // compressed NCA → NSZ container.
+    } else if (EndsWithI(e.name, ".tik")) {
+        e.is_ticket = true;
+    } else if (EndsWithI(e.name, ".cert")) {
+        e.is_cert = true;
+    }
+}
+
+}  // namespace
+
+// ── State-name table ─────────────────────────────────────────────────────────
+
+const char *NspInstallStateName(NspInstallState s) {
+    switch (s) {
+        case NspInstallState::Idle:         return "Idle";
+        case NspInstallState::Parse:        return "Parse";
+        case NspInstallState::Validate:     return "Validate";
+        case NspInstallState::PlaceContent: return "PlaceContent";
+        case NspInstallState::ImportTicket: return "ImportTicket";
+        case NspInstallState::Register:     return "Register";
+        case NspInstallState::Verify:       return "Verify";
+        case NspInstallState::Done:         return "Done";
+        case NspInstallState::Rollback:     return "Rollback";
+        case NspInstallState::Failed:       return "Failed";
+        default:                            return "?";
+    }
+}
+
+// ── DetectKind ────────────────────────────────────────────────────────────────
+
+NspContainerKind QdNspInstaller::DetectKind(const std::string &path) {
+    if (path.empty()) return NspContainerKind::Unknown;
+
+    FILE *f = std::fopen(path.c_str(), "rb");
+    if (!f) {
+        UL_LOG_WARN("QdNspInstaller::DetectKind: fopen(%s) failed", path.c_str());
+        return NspContainerKind::Unknown;
+    }
+    u32 magic = 0;
+    const size_t rd = std::fread(&magic, 1, sizeof(magic), f);
+    std::fclose(f);
+    if (rd != sizeof(magic)) return NspContainerKind::Unknown;
+
+    if (magic == kPfs0Magic) {
+        // PFS0 envelope. NSZ reuses PFS0 but carries .ncz members; we only learn
+        // that after the full parse, so by-magic this is "Nsp" and the parser
+        // promotes it to Nsz when it sees a .ncz entry.
+        return NspContainerKind::Nsp;
+    }
+    if (magic == kHfs0Magic) {
+        // XCI's partitions are HFS0; the outer XCI also has a 'HEAD'/'magic' at
+        // 0x100. We treat a bare HFS0 here as the XCI family (deferred).
+        return NspContainerKind::Xci;
+    }
+    return NspContainerKind::Unknown;
+}
+
+// ── OpenAndParse — the fully-implemented, READ-ONLY core ─────────────────────
+
+Result QdNspInstaller::OpenAndParse(const std::string &path, NspContainer *out) {
+    if (out == nullptr || path.empty()) {
+        UL_LOG_WARN("QdNspInstaller::OpenAndParse: bad input");
+        return MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    }
+    *out = NspContainer{};
+    out->path = path;
+
+    FILE *f = std::fopen(path.c_str(), "rb");
+    if (!f) {
+        UL_LOG_WARN("QdNspInstaller::OpenAndParse: fopen(%s) failed", path.c_str());
+        return MAKERESULT(Module_Libnx, LibnxError_IoError);
+    }
+    // Track the open FILE* in the ledger so Monitor shows we hold a handle for
+    // the duration of the parse (released before return on every path).
+    const uint64_t ledger_h =
+        UL_LEDGER_TRACK(QdResKind::FileHandle, "nsp-parse", 0);
+
+    // Helper: close + untrack on every exit. (No exceptions in this build, so a
+    // small goto-free pattern: set rc, jump to a single cleanup label.)
+    Result rc = ResultSuccess;
+
+    // 1. Header.
+    Pfs0Header hdr{};
+    if (std::fread(&hdr, 1, sizeof(hdr), f) != sizeof(hdr)) {
+        UL_LOG_WARN("QdNspInstaller: short read on PFS0 header (%s)", path.c_str());
+        rc = MAKERESULT(Module_Libnx, LibnxError_IoError);
+        goto cleanup;
+    }
+    if (hdr.magic != kPfs0Magic) {
+        UL_LOG_WARN("QdNspInstaller: not a PFS0 (magic=0x%08X) — %s", hdr.magic, path.c_str());
+        rc = MAKERESULT(Module_Libnx, LibnxError_IoError);
+        goto cleanup;
+    }
+    if (hdr.file_count == 0 || hdr.file_count > kMaxFileCount ||
+        hdr.string_table_size > kMaxStringTable) {
+        UL_LOG_WARN("QdNspInstaller: implausible PFS0 (files=%u strtab=%u) — %s",
+                    hdr.file_count, hdr.string_table_size, path.c_str());
+        rc = MAKERESULT(Module_Libnx, LibnxError_IoError);
+        goto cleanup;
+    }
+
+    {
+        // 2. Entry table.
+        std::vector<Pfs0FileEntry> raw(hdr.file_count);
+        const size_t want = static_cast<size_t>(hdr.file_count) * sizeof(Pfs0FileEntry);
+        if (std::fread(raw.data(), 1, want, f) != want) {
+            UL_LOG_WARN("QdNspInstaller: short read on PFS0 entry table — %s", path.c_str());
+            rc = MAKERESULT(Module_Libnx, LibnxError_IoError);
+            goto cleanup;
+        }
+
+        // 3. String table.
+        std::vector<char> strtab(hdr.string_table_size + 1, '\0');
+        if (hdr.string_table_size > 0) {
+            if (std::fread(strtab.data(), 1, hdr.string_table_size, f) != hdr.string_table_size) {
+                UL_LOG_WARN("QdNspInstaller: short read on PFS0 string table — %s", path.c_str());
+                rc = MAKERESULT(Module_Libnx, LibnxError_IoError);
+                goto cleanup;
+            }
+        }
+        strtab[hdr.string_table_size] = '\0';  // guarantee NUL-termination.
+
+        // 4. DATA region base = header + entries + string table.
+        const u64 data_base =
+            kPfs0HeaderSize +
+            static_cast<u64>(hdr.file_count) * kPfs0EntrySize +
+            hdr.string_table_size;
+
+        // 5. Materialize entries with absolute offsets + classification.
+        out->kind = NspContainerKind::Nsp;
+        out->entries.reserve(hdr.file_count);
+        for (u32 i = 0; i < hdr.file_count; ++i) {
+            const Pfs0FileEntry &re = raw[i];
+
+            // Bounds-check the name offset into the string table.
+            if (re.string_table_offset >= hdr.string_table_size + 1u) {
+                UL_LOG_WARN("QdNspInstaller: entry %u name offset OOB (%u >= %u) — %s",
+                            i, re.string_table_offset, hdr.string_table_size, path.c_str());
+                rc = MAKERESULT(Module_Libnx, LibnxError_IoError);
+                goto cleanup;
+            }
+
+            NspFileEntry e{};
+            e.name        = std::string(&strtab[re.string_table_offset]);
+            e.data_offset = data_base + re.data_offset;  // absolute within the .nsp
+            e.size        = re.data_size;
+            ClassifyEntry(e);
+
+            if (e.is_nca)    out->nca_count++;
+            if (e.is_ncz)    out->ncz_count++;
+            if (e.is_nca || e.is_ncz || e.is_cnmt) out->total_content_bytes += e.size;
+            if (e.is_cnmt) { out->has_cnmt = true; out->cnmt_entry_index = static_cast<int>(out->entries.size()); }
+            if (e.is_ticket) out->has_ticket = true;
+            if (e.is_cert)   out->has_cert   = true;
+
+            out->entries.push_back(std::move(e));
+        }
+
+        // 6. If any member is .ncz this is really an NSZ (compressed) container.
+        if (out->ncz_count > 0) {
+            out->kind = NspContainerKind::Nsz;
+        }
+
+        UL_LOG_INFO("QdNspInstaller::OpenAndParse: %s — kind=%d files=%u nca=%d ncz=%d "
+                    "cnmt=%d tik=%d cert=%d content=%llu bytes",
+                    path.c_str(), static_cast<int>(out->kind), hdr.file_count,
+                    out->nca_count, out->ncz_count, out->has_cnmt ? 1 : 0,
+                    out->has_ticket ? 1 : 0, out->has_cert ? 1 : 0,
+                    static_cast<unsigned long long>(out->total_content_bytes));
+    }
+
+cleanup:
+    std::fclose(f);
+    UL_LEDGER_UNTRACK(ledger_h);
+    return rc;
+}
+
+// ── QueryFreeSpace — query-only NCM, READ-ONLY ───────────────────────────────
+
+Result QdNspInstaller::QueryFreeSpace(NcmStorageId storage_id, s64 *out_free) {
+    if (out_free == nullptr) {
+        return MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    }
+    *out_free = 0;
+
+    Result rc = ncmInitialize();
+    if (R_FAILED(rc)) {
+        UL_LOG_WARN("QdNspInstaller::QueryFreeSpace: ncmInitialize rc=0x%08X", rc);
+        return rc;
+    }
+
+    NcmContentStorage cs{};
+    rc = ncmOpenContentStorage(&cs, storage_id);
+    if (R_FAILED(rc)) {
+        UL_LOG_WARN("QdNspInstaller::QueryFreeSpace: ncmOpenContentStorage(%d) rc=0x%08X",
+                    static_cast<int>(storage_id), rc);
+        ncmExit();
+        return rc;
+    }
+
+    rc = ncmContentStorageGetFreeSpaceSize(&cs, out_free);
+    if (R_FAILED(rc)) {
+        UL_LOG_WARN("QdNspInstaller::QueryFreeSpace: GetFreeSpaceSize rc=0x%08X", rc);
+    } else {
+        UL_LOG_INFO("QdNspInstaller::QueryFreeSpace: storage=%d free=%lld bytes",
+                    static_cast<int>(storage_id), static_cast<long long>(*out_free));
+    }
+
+    ncmContentStorageClose(&cs);
+    ncmExit();
+    return rc;
+}
+
+// ── VerifyInstalled — read-only; inner CNMT crack is GATED ───────────────────
+
+Result QdNspInstaller::VerifyInstalled(const NspContainer &container,
+                                       NcmStorageId        storage_id,
+                                       bool               *out_all_present) {
+    if (out_all_present == nullptr) {
+        return MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    }
+    *out_all_present = false;
+
+    if (!container.has_cnmt) {
+        UL_LOG_WARN("QdNspInstaller::VerifyInstalled: container has no CNMT — cannot verify");
+        return MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    }
+
+    // GATED: enumerating the content-ids the CNMT lists requires decrypting +
+    // parsing the CNMT NCA's PFS0 section (the NCA reader). That reader is part
+    // of the gated content path and is NOT implemented in this scaffold. We
+    // perform ZERO writes here; we simply cannot answer yet.
+    //
+    // When the NCA reader lands (post-review), this becomes:
+    //   1. ncmOpenContentMetaDatabase(storage_id)
+    //   2. for each <content-id, type> the CNMT lists:
+    //        ncmContentStorageHas(&cs, &present, &content_id)
+    //   3. ncmContentMetaDatabaseHas(&db, &meta_present, &meta_key)
+    //   4. *out_all_present = AND of all the above.
+    (void)storage_id;
+    UL_LOG_WARN("QdNspInstaller::VerifyInstalled: inner-CNMT enumeration not yet "
+                "implemented (needs gated NCA reader) — returning NotImplemented");
+    return QdNspInstaller_NotImplemented;
+}
+
+// ── Install driver / state machine ───────────────────────────────────────────
+
+QdNspInstaller::~QdNspInstaller() {
+    Stop();
+}
+
+void QdNspInstaller::SetState(NspInstallState s, const char *step) {
+    mutexLock(&progress_lock_);
+    progress_.state = s;
+    std::snprintf(progress_.step, sizeof(progress_.step), "%s", step ? step : "");
+    mutexUnlock(&progress_lock_);
+    UL_LOG_INFO("QdNspInstaller: state=%s step=\"%s\"", NspInstallStateName(s), step ? step : "");
+}
+
+void QdNspInstaller::SetPercent(int pct) {
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    mutexLock(&progress_lock_);
+    progress_.percent = pct;
+    mutexUnlock(&progress_lock_);
+}
+
+void QdNspInstaller::Fail(const char *fmt, ...) {
+    char buf[256];
+    va_list ap;
+    va_start(ap, fmt);
+    std::vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    mutexLock(&progress_lock_);
+    progress_.state = NspInstallState::Failed;
+    std::snprintf(progress_.error, sizeof(progress_.error), "%s", buf);
+    mutexUnlock(&progress_lock_);
+    UL_LOG_WARN("QdNspInstaller: FAILED — %s", buf);
+}
+
+NspInstallProgress QdNspInstaller::GetProgress() const {
+    mutexLock(&progress_lock_);
+    NspInstallProgress snap = progress_;
+    mutexUnlock(&progress_lock_);
+    return snap;
+}
+
+// ── SAFE step: Parse ──────────────────────────────────────────────────────────
+
+Result QdNspInstaller::StepParse() {
+    SetState(NspInstallState::Parse, "Reading container header");
+    const Result rc = OpenAndParse(path_, &container_);
+    if (R_FAILED(rc)) {
+        Fail("Could not parse container (rc=0x%08X)", rc);
+    }
+    return rc;
+}
+
+// ── SAFE step: Validate ───────────────────────────────────────────────────────
+
+Result QdNspInstaller::StepValidate() {
+    SetState(NspInstallState::Validate, "Validating container + free space");
+
+    // Deferred formats: refuse early with a clear message rather than silently
+    // mis-handling. (NSZ needs zstd decompression; XCI needs HFS0 + secure part.)
+    if (container_.kind == NspContainerKind::Nsz) {
+        Fail("NSZ (compressed) install is not yet supported");
+        return QdNspInstaller_NotImplemented;
+    }
+    if (container_.kind == NspContainerKind::Xci) {
+        Fail("XCI install is not yet supported");
+        return QdNspInstaller_NotImplemented;
+    }
+    if (container_.kind != NspContainerKind::Nsp) {
+        Fail("Unrecognized container format");
+        return MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    }
+
+    // A valid installable NSP must carry a CNMT NCA and at least one program NCA.
+    if (!container_.has_cnmt) {
+        Fail("Container has no content-meta (.cnmt.nca) — not an installable title");
+        return MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    }
+    if (container_.nca_count == 0) {
+        Fail("Container has no NCAs to install");
+        return MAKERESULT(Module_Libnx, LibnxError_BadInput);
+    }
+
+    // Free-space floor: require destination free >= total content + 10% slack.
+    s64 free_bytes = 0;
+    const Result rc_free = QueryFreeSpace(storage_id_, &free_bytes);
+    if (R_FAILED(rc_free)) {
+        // Non-fatal to the *gate* logic, but we surface it: without a number we
+        // can't promise the install fits, so we refuse rather than risk ENOSPC
+        // mid-NAND-write (which is exactly the dangerous case this guards).
+        Fail("Could not query destination free space (rc=0x%08X)", rc_free);
+        return rc_free;
+    }
+    const u64 need = container_.total_content_bytes +
+                     (container_.total_content_bytes / 10);  // +10% slack
+    if (static_cast<u64>(free_bytes) < need) {
+        Fail("Not enough free space: need ~%llu, have %lld",
+             static_cast<unsigned long long>(need), static_cast<long long>(free_bytes));
+        return MAKERESULT(Module_Libnx, LibnxError_IoError);
+    }
+
+    mutexLock(&progress_lock_);
+    progress_.ncas_total  = container_.nca_count;
+    progress_.bytes_total = container_.total_content_bytes;
+    mutexUnlock(&progress_lock_);
+
+    UL_LOG_INFO("QdNspInstaller::StepValidate: OK — %d NCAs, %llu bytes, %lld free",
+                container_.nca_count,
+                static_cast<unsigned long long>(container_.total_content_bytes),
+                static_cast<long long>(free_bytes));
+    return ResultSuccess;
+}
+
+// ── GATED step: PlaceContent ──────────────────────────────────────────────────
+
+Result QdNspInstaller::StepPlaceContent() {
+    SetState(NspInstallState::PlaceContent, "Placing content into NCM");
+
+    // GATED: live NAND write — do not enable without review.
+    //
+    // The reviewed implementation would, for each NCA entry in container_.entries:
+    //   1. Derive its NcmContentId from the 16-hex filename stem (the NCA's name
+    //      IS its content-id for installed NSPs).
+    //   2. ncmContentStorageGeneratePlaceHolderId(&cs, &phid)
+    //   3. ncmContentStorageCreatePlaceHolder(&cs, &content_id, &phid, size)
+    //      → record phid in created_placeholders_ for Rollback.
+    //   4. stream the NCA bytes from the .nsp (fseek to entry.data_offset) in
+    //      large blocks via ncmContentStorageWritePlaceHolder(&cs, &phid, off, buf, n)
+    //      → update progress_.bytes_done / percent each block.
+    //   5. ncmContentStorageRegister(&cs, &content_id, &phid)
+    //      → record content_id in registered_contents_ for Rollback.
+    //
+    // This is the single most destructive step: it writes encrypted content into
+    // the console's content store. It MUST NOT run until: (a) James authorizes
+    // (PD-11), (b) Rollback below is implemented and tested, (c) the NCA-name→
+    // content-id derivation and a NAND-vs-SD target decision are reviewed.
+    UL_LOG_WARN("QdNspInstaller::StepPlaceContent: GATED — live NCM write disabled");
+    Fail("Live install is disabled in this build (content placement is gated)");
+    return QdNspInstaller_NotImplemented;
+}
+
+// ── GATED step: ImportTicket ──────────────────────────────────────────────────
+
+Result QdNspInstaller::StepImportTicket() {
+    SetState(NspInstallState::ImportTicket, "Importing ticket");
+
+    if (!container_.has_ticket) {
+        // Legitimately common: standard-crypto titles have no per-title ticket.
+        // Nothing to import; not an error.
+        UL_LOG_INFO("QdNspInstaller::StepImportTicket: no ticket in container — skipping");
+        return ResultSuccess;
+    }
+
+    // GATED: live NAND write — do not enable without review.
+    //
+    // Reviewed implementation:
+    //   1. Read the .tik (0x2C0 bytes) and .cert entries from the .nsp into RAM.
+    //   2. esImportTicket(tik, tik_size, cert, cert_size)
+    //
+    // libnx GAP now CLOSED by our clean-room wrapper: qd_EsIpc provides
+    // es::Initialize + es::ImportTicket via serviceDispatch. We import the ticket
+    // VERBATIM; we never forge or derive one (legal-clean).
+    //
+    // The call is wired but GATED: kLiveInstallEnabled is statically false, so the
+    // block below is dead — it exists to type-check the integration only. NOTHING
+    // is imported in this build.
+    if (kLiveInstallEnabled) {
+        // (reviewed impl would read the .tik + .cert from the .nsp into RAM here)
+        const void *tik = nullptr;  size_t tik_size  = 0;
+        const void *cert = nullptr; size_t cert_size = 0;
+        Result rc_es = es::Initialize();
+        if (R_SUCCEEDED(rc_es)) {
+            rc_es = es::ImportTicket(tik, tik_size, cert, cert_size);
+            es::Finalize();
+        }
+        if (R_FAILED(rc_es)) {
+            Fail("Ticket import failed (rc=0x%08X)", rc_es);
+            return rc_es;
+        }
+        return ResultSuccess;
+    }
+
+    UL_LOG_WARN("QdNspInstaller::StepImportTicket: GATED — es ticket import disabled "
+                "(wrapper present in qd_EsIpc; kLiveInstallEnabled=false)");
+    Fail("Ticket import is disabled in this build (gated)");
+    return QdNspInstaller_NotImplemented;
+}
+
+// ── GATED step: Register ──────────────────────────────────────────────────────
+
+Result QdNspInstaller::StepRegister() {
+    SetState(NspInstallState::Register, "Registering application");
+
+    // GATED: live NAND write — do not enable without review.
+    //
+    // Reviewed implementation (two writes):
+    //   A. Content-meta DB row:
+    //        ncmOpenContentMetaDatabase(&db, storage_id_)
+    //        build NcmContentMetaKey {id, version, type=Application} + the
+    //        packaged-content blob from the CNMT, then
+    //        ncmContentMetaDatabaseSet(&db, &key, data, data_size)
+    //        ncmContentMetaDatabaseCommit(&db)
+    //   B. ns application record:
+    //        build a ContentStorageRecord{ meta_key, storage_id } array and call
+    //        nsPushApplicationRecord(app_id, lastModifiedEvent=0x3, records, count)
+    //        then nsInvalidateApplicationControlCache(app_id) so HOME refreshes
+    //        the icon/metadata.
+    //
+    // libnx GAP now CLOSED by our clean-room wrapper: qd_NsAmIpc provides
+    // nsam::PushApplicationRecord (cmd 16) + nsam::DeleteApplicationRecord
+    // (cmd 21). Part (A) the content-meta DB row uses NCM, which IS bound.
+    //
+    // The call is wired but GATED: kLiveInstallEnabled is statically false, so the
+    // block below is dead — it type-checks the integration only. NOTHING is
+    // written in this build.
+    if (kLiveInstallEnabled) {
+        // (A) reviewed impl: ncmOpenContentMetaDatabase + build NcmContentMetaKey
+        //     + ncmContentMetaDatabaseSet/Commit from the CNMT blob — needs the
+        //     gated NCA reader to produce the blob, so it is omitted here.
+        const u64 app_id = 0;  // (reviewed impl: derive from the CNMT meta key)
+
+        // (B) push the ns application record so HOME shows the title.
+        nsam::ContentStorageRecord rec = {};
+        rec.storage_id = static_cast<u8>(storage_id_);
+        // (reviewed impl: rec.meta_key = the committed NcmContentMetaKey)
+        Result rc_ns = nsam::Initialize();
+        if (R_SUCCEEDED(rc_ns)) {
+            rc_ns = nsam::PushApplicationRecord(app_id, /*last_modified_event=*/0x3,
+                                                &rec, 1);
+            nsam::Finalize();
+        }
+        if (R_FAILED(rc_ns)) {
+            Fail("Application registration failed (rc=0x%08X)", rc_ns);
+            return rc_ns;
+        }
+        return ResultSuccess;
+    }
+
+    UL_LOG_WARN("QdNspInstaller::StepRegister: GATED — content-meta/ns record write disabled "
+                "(wrapper present in qd_NsAmIpc; kLiveInstallEnabled=false)");
+    Fail("Application registration is disabled in this build (gated)");
+    return QdNspInstaller_NotImplemented;
+}
+
+// ── SAFE step: Verify (delegates to the read-only VerifyInstalled) ───────────
+
+Result QdNspInstaller::StepVerify() {
+    SetState(NspInstallState::Verify, "Verifying installed content");
+    bool all_present = false;
+    const Result rc = VerifyInstalled(container_, storage_id_, &all_present);
+    if (R_FAILED(rc)) {
+        // In the scaffold this is NotImplemented (the inner CNMT crack is gated).
+        // We do not treat that as a hard install failure here because we never
+        // got far enough to install anything — but we surface it honestly.
+        UL_LOG_WARN("QdNspInstaller::StepVerify: verify unavailable (rc=0x%08X)", rc);
+        return rc;
+    }
+    if (!all_present) {
+        Fail("Post-install verify failed: NCM is missing expected content");
+        return MAKERESULT(Module_Libnx, LibnxError_IoError);
+    }
+    return ResultSuccess;
+}
+
+// ── GATED step: Rollback ──────────────────────────────────────────────────────
+
+Result QdNspInstaller::StepRollback() {
+    SetState(NspInstallState::Rollback, "Rolling back partial install");
+
+    // GATED: live NAND write (delete) — do not enable without review.
+    //
+    // Reviewed implementation walks the exact things we created, newest-first:
+    //   1. for each content_id in registered_contents_:
+    //        ncmContentStorageDelete(&cs, &content_id)
+    //   2. for each phid in created_placeholders_:
+    //        ncmContentStorageDeletePlaceHolder(&cs, &phid)
+    //   3. ncmContentMetaDatabaseRemove(&db, &meta_key) if Register got that far.
+    //   4. nsDeleteApplicationRecord(app_id) if the record was pushed.
+    //
+    // Rollback is itself a NAND-mutating operation, so it is gated too. It only
+    // ever touches placeholders/contents/records THIS object created (tracked in
+    // created_placeholders_ / registered_contents_) — never pre-existing data.
+    //
+    // The ns-record delete is wired to our clean-room wrapper but GATED: the
+    // block below is statically dead (kLiveInstallEnabled=false). NOTHING is
+    // deleted in this build.
+    if (kLiveInstallEnabled) {
+        const u64 app_id = 0;  // (reviewed impl: the app id pushed in Register)
+        if (nsam::IsActive() || R_SUCCEEDED(nsam::Initialize())) {
+            (void)nsam::DeleteApplicationRecord(app_id);
+            nsam::Finalize();
+        }
+        return ResultSuccess;
+    }
+
+    UL_LOG_WARN("QdNspInstaller::StepRollback: GATED — rollback delete disabled "
+                "(wrapper present in qd_NsAmIpc; kLiveInstallEnabled=false)");
+    return QdNspInstaller_NotImplemented;
+}
+
+// ── Worker entry + driver ─────────────────────────────────────────────────────
+
+void QdNspInstaller::RunInstall() {
+    // Parse (safe).
+    if (R_FAILED(StepParse()))    return;
+    if (abort_.load()) { Fail("Aborted"); return; }
+
+    // Validate (safe).
+    if (R_FAILED(StepValidate())) return;
+    if (abort_.load()) { Fail("Aborted"); return; }
+
+    // PlaceContent → ImportTicket → Register are GATED. StepPlaceContent returns
+    // QdNspInstaller_NotImplemented and sets state=Failed, so the install stops
+    // here with a clear "live install disabled" message. NOTHING is written.
+    if (R_FAILED(StepPlaceContent())) {
+        // On a real failure here the reviewed build would call StepRollback();
+        // in the scaffold there is nothing to roll back (no writes happened).
+        (void)StepRollback();
+        return;
+    }
+    if (R_FAILED(StepImportTicket())) { (void)StepRollback(); return; }
+    if (R_FAILED(StepRegister()))     { (void)StepRollback(); return; }
+
+    // Verify (safe) + Done.
+    if (R_FAILED(StepVerify())) { (void)StepRollback(); return; }
+
+    SetState(NspInstallState::Done, "Install complete");
+    SetPercent(100);
+}
+
+void QdNspInstaller::WorkerEntry(void *arg) {
+    auto *self = static_cast<QdNspInstaller *>(arg);
+    self->RunInstall();
+}
+
+void QdNspInstaller::StartInstall(const std::string &path, NcmStorageId storage_id) {
+    if (thread_started_) {
+        UL_LOG_WARN("QdNspInstaller::StartInstall: already started — ignoring");
+        return;
+    }
+    path_       = path;
+    storage_id_ = storage_id;
+    abort_.store(false);
+
+    // Initialize the progress lock before the worker can touch it (mirrors
+    // qd_CheatsInstaller::StartInstall). A zero-initialized libnx Mutex is
+    // already a valid unlocked mutex, but we init explicitly for clarity/parity.
+    mutexInit(&progress_lock_);
+
+    mutexLock(&progress_lock_);
+    progress_ = NspInstallProgress{};
+    mutexUnlock(&progress_lock_);
+
+    const Result rc = threadCreate(&thread_, &QdNspInstaller::WorkerEntry, this,
+                                   stack_, sizeof(stack_), 0x2C, -2);
+    if (R_FAILED(rc)) {
+        Fail("threadCreate failed (rc=0x%08X)", rc);
+        return;
+    }
+    const uint64_t lh = UL_LEDGER_TRACK(QdResKind::Thread, "nsp-install", sizeof(stack_));
+    (void)lh;  // tracked for Monitor; the thread outlives this scope intentionally.
+
+    const Result rc_start = threadStart(&thread_);
+    if (R_FAILED(rc_start)) {
+        threadClose(&thread_);
+        Fail("threadStart failed (rc=0x%08X)", rc_start);
+        return;
+    }
+    thread_started_ = true;
+    UL_LOG_INFO("QdNspInstaller::StartInstall: worker started for %s", path.c_str());
+}
+
+void QdNspInstaller::Stop() {
+    abort_.store(true);
+    if (thread_started_) {
+        threadWaitForExit(&thread_);
+        threadClose(&thread_);
+        thread_started_ = false;
+        UL_LOG_INFO("QdNspInstaller::Stop: worker joined");
+    }
+}
+
+}  // namespace ul::menu::qdesktop
+
+#endif  // QDESKTOP_MODE

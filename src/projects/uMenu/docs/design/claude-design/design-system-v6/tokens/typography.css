@@ -1,0 +1,49 @@
+/* ============================================================================
+   Q OS — Typography tokens
+   ----------------------------------------------------------------------------
+   The product runs on the Switch shared system font (proprietary, unshippable).
+   For the design system we pair:
+     • Display  — Newsreader (used italic): the elegant serif "Q OS" wordmark
+                  from the hero banner. Premium framing over homebrew content.
+     • Sans     — IBM Plex Sans: clean technical UI + body. Pairs natively with…
+     • Mono     — IBM Plex Mono: file paths, hex cheat codes, version strings,
+                  telnet commands — the texture of a CFW developer tool.
+
+   NOTE: these are tasteful substitutes (see README → font substitution flag).
+   ============================================================================ */
+
+:root {
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-sans:    "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* ── Type scale (1.25 major-third-ish, tuned) ──────────────────────────── */
+  --text-2xs:  11px;
+  --text-xs:   12px;
+  --text-sm:   14px;
+  --text-base: 16px;
+  --text-lg:   19px;
+  --text-xl:   24px;
+  --text-2xl:  32px;
+  --text-3xl:  42px;
+  --text-4xl:  56px;
+  --text-5xl:  76px;
+
+  /* ── Weights ───────────────────────────────────────────────────────────── */
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  /* ── Line heights ──────────────────────────────────────────────────────── */
+  --leading-tight:   1.1;
+  --leading-snug:    1.3;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.65;
+
+  /* ── Letter spacing ────────────────────────────────────────────────────── */
+  --tracking-tight:  -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide:   0.04em;
+  --tracking-caps:   0.12em;  /* mono micro-labels / eyebrows */
+}

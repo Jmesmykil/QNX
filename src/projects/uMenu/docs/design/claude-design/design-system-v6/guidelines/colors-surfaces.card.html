@@ -1,0 +1,26 @@
+<!-- @dsCard group="Colors" viewport="700x180" name="Glass surfaces" subtitle="Layered navy surfaces, deepest void → raised glass" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 22px; background: #060610; }
+  .row { display: flex; gap: 12px; }
+  .sw { flex: 1; border-radius: 10px; overflow: hidden; border: 1px solid rgba(125,211,252,.14); }
+  .chip { height: 72px; }
+  .meta { padding: 8px 9px; background: rgba(255,255,255,.02); }
+  .name { font-family: var(--font-sans); font-size: 11px; font-weight: 600; color: var(--text-primary); }
+  .hex { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="sw"><div class="chip" style="background:var(--desktop-bg)"></div><div class="meta"><div class="name">desktop-bg</div><div class="hex">#0A0A14</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--topbar-bg)"></div><div class="meta"><div class="name">topbar-bg</div><div class="hex">#0C0C20</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--dock-bg)"></div><div class="meta"><div class="name">dock-bg</div><div class="hex">#10102A</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--surface-glass)"></div><div class="meta"><div class="name">surface-glass</div><div class="hex">#12122A</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--titlebar-inactive)"></div><div class="meta"><div class="name">titlebar-inactive</div><div class="hex">#181830</div></div></div>
+  </div>
+</body>
+</html>

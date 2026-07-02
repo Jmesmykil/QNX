@@ -1,0 +1,82 @@
+<!-- @dsCard group="Overhaul" viewport="700x520" name="Theme-aware cursor" subtitle="Liquid-glass bubble — fill/outline/right-click from per-theme tokens, findable on any background" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 16px 22px; background: #0A0A14; font-family: var(--font-sans); }
+  .grid { display: grid; grid-template-columns: 88px 1fr 1fr 1.3fr; gap: 6px 16px; align-items: center; }
+  .head { font-family: var(--font-mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-secondary); text-align: center; padding-bottom: 2px; }
+  .name { display: flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: var(--text-primary); }
+  .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 6px -1px var(--accent); }
+  /* contrast-survival stage: half dark / half light */
+  .stage { height: 40px; border-radius: 8px; display: grid; place-items: center;
+           background: linear-gradient(90deg, #050509 0% 50%, #EDEFF5 50% 100%); }
+  /* the cursor bubble */
+  .cur { position: relative; width: 38px; height: 38px; border-radius: 999px;
+         background: radial-gradient(circle, color-mix(in srgb, var(--cursor-fill) 46%, transparent) 0%,
+                     color-mix(in srgb, var(--cursor-fill) 30%, transparent) 60%, transparent 73%);
+         box-shadow: 0 0 0 1px color-mix(in srgb, var(--cursor-outline) 55%, transparent),
+                     0 0 0 2.4px var(--cursor-outline); }
+  .cur::before { content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+                 width: 9px; height: 9px; border-radius: 999px; background: var(--cursor-outline); }
+  .cur::after  { content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
+                 width: 5px; height: 5px; border-radius: 999px; background: var(--accent);
+                 box-shadow: 0 0 5px color-mix(in srgb, var(--accent) 80%, transparent); }
+  /* right-click variant */
+  .rc { box-shadow: 0 0 0 1px color-mix(in srgb, var(--cursor-outline) 45%, transparent),
+                    0 0 0 2.6px var(--cursor-right-click); }
+  .badge { position: absolute; bottom: -1px; right: -1px; width: 12px; height: 12px; border-radius: 999px;
+           background: var(--cursor-right-click); box-shadow: 0 0 0 1.5px var(--cursor-outline); }
+  .hexes { font-family: var(--font-mono); font-size: 10px; color: var(--text-secondary); display: flex; gap: 10px; }
+  .sw { display: inline-flex; align-items: center; gap: 4px; }
+  .chip { width: 10px; height: 10px; border-radius: 3px; }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div></div><div class="head">Pointer</div><div class="head">Right-click</div><div class="head">fill · outline · right-click · secondary (accent core)</div>
+
+    <div style="display:contents" data-theme="glass"><div class="name"><span class="dot"></span>Glass</div>
+      <div class="stage"><div class="cur"></div></div><div class="stage"><div class="cur rc"><span class="badge"></span></div></div>
+      <div class="hexes"><span class="sw"><span class="chip" style="background:var(--cursor-fill)"></span>#F5F5FF</span><span class="sw"><span class="chip" style="background:var(--cursor-outline)"></span>#050510</span><span class="sw"><span class="chip" style="background:var(--cursor-right-click)"></span>#E54B4B</span></div></div>
+
+    <div style="display:contents" data-theme="neon"><div class="name"><span class="dot"></span>Neon</div>
+      <div class="stage"><div class="cur"></div></div><div class="stage"><div class="cur rc"><span class="badge"></span></div></div>
+      <div class="hexes"><span class="sw"><span class="chip" style="background:var(--cursor-fill)"></span>#FFF0FF</span><span class="sw"><span class="chip" style="background:var(--cursor-outline)"></span>#100018</span><span class="sw"><span class="chip" style="background:var(--cursor-right-click)"></span>#FF2AD0</span></div></div>
+
+    <div style="display:contents" data-theme="minimal"><div class="name"><span class="dot"></span>Minimal</div>
+      <div class="stage"><div class="cur"></div></div><div class="stage"><div class="cur rc"><span class="badge"></span></div></div>
+      <div class="hexes"><span class="sw"><span class="chip" style="background:var(--cursor-fill)"></span>#FAF6EE</span><span class="sw"><span class="chip" style="background:var(--cursor-outline)"></span>#1A1816</span><span class="sw"><span class="chip" style="background:var(--cursor-right-click)"></span>#E06060</span></div></div>
+
+    <div style="display:contents" data-theme="retro"><div class="name"><span class="dot"></span>Retro</div>
+      <div class="stage"><div class="cur"></div></div><div class="stage"><div class="cur rc"><span class="badge"></span></div></div>
+      <div class="hexes"><span class="sw"><span class="chip" style="background:var(--cursor-fill)"></span>#6AFF82</span><span class="sw"><span class="chip" style="background:var(--cursor-outline)"></span>#0A1420</span><span class="sw"><span class="chip" style="background:var(--cursor-right-click)"></span>#E85A4C</span></div></div>
+
+    <div style="display:contents" data-theme="cards"><div class="name"><span class="dot"></span>Cards</div>
+      <div class="stage"><div class="cur"></div></div><div class="stage"><div class="cur rc"><span class="badge"></span></div></div>
+      <div class="hexes"><span class="sw"><span class="chip" style="background:var(--cursor-fill)"></span>#FFF5E6</span><span class="sw"><span class="chip" style="background:var(--cursor-outline)"></span>#10141E</span><span class="sw"><span class="chip" style="background:var(--cursor-right-click)"></span>#FF7AD0</span></div></div>
+
+    <div style="display:contents" data-theme="pastel"><div class="name"><span class="dot"></span>Pastel</div>
+      <div class="stage"><div class="cur"></div></div><div class="stage"><div class="cur rc"><span class="badge"></span></div></div>
+      <div class="hexes"><span class="sw"><span class="chip" style="background:var(--cursor-fill)"></span>#FDF2F5</span><span class="sw"><span class="chip" style="background:var(--cursor-outline)"></span>#1E1828</span><span class="sw"><span class="chip" style="background:var(--cursor-right-click)"></span>#F5A8AE</span></div></div>
+
+    <div style="display:contents" data-theme="dark"><div class="name"><span class="dot"></span>Dark</div>
+      <div class="stage"><div class="cur"></div></div><div class="stage"><div class="cur rc"><span class="badge"></span></div></div>
+      <div class="hexes"><span class="sw"><span class="chip" style="background:var(--cursor-fill)"></span>#FFE6D8</span><span class="sw"><span class="chip" style="background:var(--cursor-outline)"></span>#000000</span><span class="sw"><span class="chip" style="background:var(--cursor-right-click)"></span>#E84040</span></div></div>
+
+    <div style="display:contents" data-theme="gradient"><div class="name"><span class="dot"></span>Gradient</div>
+      <div class="stage"><div class="cur"></div></div><div class="stage"><div class="cur rc"><span class="badge"></span></div></div>
+      <div class="hexes"><span class="sw"><span class="chip" style="background:var(--cursor-fill)"></span>#F5EFFF</span><span class="sw"><span class="chip" style="background:var(--cursor-outline)"></span>#0A0518</span><span class="sw"><span class="chip" style="background:var(--cursor-right-click)"></span>#F86A9A</span></div></div>
+
+    <div style="display:contents" data-theme="blueprint"><div class="name"><span class="dot"></span>Blueprint</div>
+      <div class="stage"><div class="cur"></div></div><div class="stage"><div class="cur rc"><span class="badge"></span></div></div>
+      <div class="hexes"><span class="sw"><span class="chip" style="background:var(--cursor-fill)"></span>#F0F8FF</span><span class="sw"><span class="chip" style="background:var(--cursor-outline)"></span>#051224</span><span class="sw"><span class="chip" style="background:var(--cursor-right-click)"></span>#E87A7A</span></div></div>
+
+    <div style="display:contents" data-theme="pixel"><div class="name"><span class="dot"></span>Pixel</div>
+      <div class="stage"><div class="cur"></div></div><div class="stage"><div class="cur rc"><span class="badge"></span></div></div>
+      <div class="hexes"><span class="sw"><span class="chip" style="background:var(--cursor-fill)"></span>#FFFFFF</span><span class="sw"><span class="chip" style="background:var(--cursor-outline)"></span>#000000</span><span class="sw"><span class="chip" style="background:var(--cursor-right-click)"></span>#E80000</span></div></div>
+  </div>
+</body>
+</html>

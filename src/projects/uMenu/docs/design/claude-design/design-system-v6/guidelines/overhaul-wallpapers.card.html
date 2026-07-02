@@ -1,0 +1,31 @@
+<!-- @dsCard group="Overhaul" viewport="760x420" name="Wallpapers" subtitle="Ten art-directed 1280×720 backgrounds — one per theme, drop into ui/Background.png" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 18px; background: #0A0A14; font-family: var(--font-sans); }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .wp { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.08); aspect-ratio: 16/9; }
+  .wp img { width: 100%; height: 100%; display: block; object-fit: cover; }
+  .tag { position: absolute; left: 10px; bottom: 9px; font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+         color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+  .idx { position: absolute; right: 10px; top: 8px; font-family: var(--font-mono); font-size: 10px; color: rgba(255,255,255,.7); }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="wp"><img src="../assets/wallpapers/q-os-0.svg" alt="Q OS"><span class="tag">Q OS — Cold Plasma</span><span class="idx">0</span></div>
+    <div class="wp"><img src="../assets/wallpapers/q-os-1.svg" alt="Neon"><span class="tag">Neon — bands</span><span class="idx">1</span></div>
+    <div class="wp"><img src="../assets/wallpapers/q-os-2.svg" alt="Minimal"><span class="tag">Minimal — quiet arc</span><span class="idx">2</span></div>
+    <div class="wp"><img src="../assets/wallpapers/q-os-3.svg" alt="Retro"><span class="tag">Retro — CRT scanlines</span><span class="idx">3</span></div>
+    <div class="wp"><img src="../assets/wallpapers/q-os-4.svg" alt="Cards"><span class="tag">Cards — layered</span><span class="idx">4</span></div>
+    <div class="wp"><img src="../assets/wallpapers/q-os-5.svg" alt="Pastel"><span class="tag">Pastel — soft circles</span><span class="idx">5</span></div>
+    <div class="wp"><img src="../assets/wallpapers/q-os-6.svg" alt="Dark"><span class="tag">Dark — embers</span><span class="idx">6</span></div>
+    <div class="wp"><img src="../assets/wallpapers/q-os-7.svg" alt="Gradient"><span class="tag">Gradient — 3-stop</span><span class="idx">7</span></div>
+    <div class="wp"><img src="../assets/wallpapers/q-os-8.svg" alt="Blueprint"><span class="tag">Blueprint — drafting grid</span><span class="idx">8</span></div>
+    <div class="wp"><img src="../assets/wallpapers/q-os-9.svg" alt="Pixel"><span class="tag">Pixel — checkerboard</span><span class="idx">9</span></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,78 @@
+/* ============================================================================
+   Q OS — Color tokens
+   ----------------------------------------------------------------------------
+   Q OS uMenu is a windowed desktop OS for Nintendo Switch homebrew. Its visual
+   identity is a deep navy void lit by an electric cyan accent, with magenta and
+   lavender pops. The product ships 10 swappable themes; the default "Glass /
+   Q OS Liquid Glass" palette is the canonical baseline encoded below.
+
+   Source of truth: src/projects/uMenu/include/ul/menu/qdesktop/qd_Theme.hpp
+   (QdTheme::Glass) and the README brand badge palette.
+   ============================================================================ */
+
+:root {
+  /* ── Brand palette (bold, hero/marketing) ────────────────────────────────
+     The README badges and hero wordmark use a punchier cyan than the in-app
+     chrome. Use --brand-cyan for hero/branding moments; --accent for product
+     chrome (it matches what actually renders on the Switch). */
+  --brand-cyan:     #00E5FF;   /* electric cyan — the Q OS signature */
+  --brand-magenta:  #D946EF;   /* version-badge magenta */
+  --brand-lavender: #A78BFA;   /* soft violet pop */
+  --brand-navy:     #0E1A33;   /* badge / panel navy */
+  --brand-white:    #FFFFFF;
+
+  /* ── Glass theme — base surfaces (deepest → lightest) ──────────────────── */
+  --desktop-bg:        #0A0A14;  /* the void — wallpaper base */
+  --surface-glass:     #12122A;  /* window bodies, dropdown panels */
+  --topbar-bg:         #0C0C20;  /* persistent top bar strip */
+  --dock-bg:           #10102A;  /* dock band backdrop */
+  --titlebar-inactive: #181830;  /* hover rows, inactive titlebars */
+  --grid-line:         #24244A;  /* desktop/window content border (retuned clear of titlebar) */
+
+  /* ── Accent + focus ─────────────────────────────────────────────────────── */
+  --accent:     #7DD3FC;  /* in-product cyan — chrome borders, active titlebar */
+  --focus-ring: #7CC5FF;  /* keyboard / cursor focus ring */
+
+  /* ── Text ───────────────────────────────────────────────────────────────── */
+  --text-primary:   #E0E0F0;  /* primary label — cool near-white */
+  --text-secondary: #8888AA;  /* secondary / muted slate */
+  --text-disabled:  #606060;  /* disabled rows (dropdown status lines) */
+  --text-on-accent: #07121C;  /* text sitting on a cyan fill */
+
+  /* ── Window corner buttons (each its own color + glyph) ─────────────────── */
+  --btn-close:    #F87171;  /* TL ×  — red   */
+  --btn-minimize: #FBBF24;  /* BL –  — amber */
+  --btn-maximize: #4ADE80;  /* TR □  — green */
+  --btn-restore:  #4ADE80;  /* TL ↗  — green (restore from maximized) */
+
+  /* ── Cursor (ZR pointer) ────────────────────────────────────────────────── */
+  --cursor-fill:        #F5F5FF;
+  --cursor-outline:     #050510;
+  --cursor-right-click: #E54B4B;
+
+  /* ── Auto-folder category colors ─────────────────────────────────────────
+     The six desktop folder tiles tint their glyph by content category. */
+  --cat-games:    #60A5FA;  /* NxGames  — blue   */
+  --cat-homebrew: #4ADE80;  /* Homebrew — green  */
+  --cat-system:   #C084FC;  /* System   — purple */
+  --cat-payloads: #E07840;  /* Payloads — orange */
+  --cat-builtin:  #A78BFA;  /* Builtin  — lavender */
+  --cat-custom:   #7DD3FC;  /* Custom   — cyan   */
+
+  /* ── Semantic status (HW/build badges in README) ────────────────────────── */
+  --status-ok:    #22C55E;  /* HW-verified green */
+  --status-warn:  #FBBF24;  /* caution amber     */
+  --status-error: #F87171;  /* security-gap red  */
+  --status-info:  #A78BFA;  /* supported lavender */
+
+  /* ── Alpha / overlay helpers (channel triplets for rgb()) ───────────────── */
+  --accent-rgb: 125 211 252;  /* @kind other */
+  --magenta-rgb: 217 70 239;  /* @kind other */
+  --void-rgb: 10 10 20;       /* @kind other */
+
+  /* Translucency levels used across chrome (matches SDL alpha bytes) */
+  --alpha-topbar:  0.75;  /* @kind other */
+  --alpha-dock:    0.63;  /* @kind other */
+  --alpha-panel:   0.92;  /* @kind other */
+  --alpha-glyph:   0.82;  /* @kind other */
+}

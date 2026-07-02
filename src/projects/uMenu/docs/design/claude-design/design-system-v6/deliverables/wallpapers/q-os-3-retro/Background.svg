@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice"><defs><pattern id="sc" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="2" fill="#6AFF82" opacity="0.05"></rect></pattern>
+   <filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="26"></feGaussianBlur></filter>
+   <radialGradient id="gv" cx="0.5" cy="0.5" r="0.7"><stop offset="0.6" stop-color="#6AFF82" stop-opacity="0"></stop><stop offset="1" stop-color="#000000" stop-opacity="0.5"></stop></radialGradient></defs>
+   <rect width="1280" height="720" fill="#0A1420"></rect><g filter="url(#b)" opacity="0.6"><rect x="-50" y="300" width="1380" height="120" fill="#FFA83A"></rect></g>
+   <rect x="-50" y="356" width="1380" height="6" fill="#FFC860"></rect><rect width="1280" height="720" fill="url(#sc)"></rect><rect width="1280" height="720" fill="url(#gv)"></rect></svg>

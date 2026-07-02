@@ -1,0 +1,187 @@
+#include <ul/menu/ui/ui_BackgroundScreenCapture.hpp>
+#include <ul/menu/ui/ui_MenuApplication.hpp>
+#include <memory>  // W15-C LEAK-1 FIX: std::unique_ptr
+
+extern ul::menu::ui::GlobalSettings g_GlobalSettings;
+extern ul::menu::ui::MenuApplication::Ref g_MenuApplication;
+
+namespace ul::menu::ui {
+
+    namespace {
+
+        constexpr size_t CaptureBufferWidth = pu::ui::render::BaseScreenWidth;
+        constexpr size_t CaptureBufferHeight = pu::ui::render::BaseScreenHeight;
+        constexpr size_t CaptureBufferBytesPerPixel = 4;
+
+        constexpr size_t CaptureBufferSize = CaptureBufferWidth * CaptureBufferHeight * CaptureBufferBytesPerPixel;
+        static_assert(CaptureBufferSize == 0x384000);
+
+        RawRgbaImage::Ref g_ScreenCaptureBackground;
+
+        constexpr u8 ScreenCaptureBackgroundAlphaIncrement = 14;
+
+        enum class SuspendedImageMode {
+            ShowingAfterStart = 0,
+            Focused = 1,
+            HidingForResume = 2,
+            NotFocused = 3,
+            ShowingGainedFocus = 4,
+            HidingLostFocus = 5
+        };
+
+        u8 g_ScreenCaptureBackgroundMinimumAlpha = 0xFF;
+        SuspendedImageMode g_ScreenCaptureBackgroundMode = SuspendedImageMode::ShowingAfterStart;
+        s32 g_ScreenCaptureBackgroundAlpha = 0xFF;
+
+    }
+    
+    void InitializeScreenCaptures(const smi::MenuStartMode start_mode) {
+#ifdef QDESKTOP_MODE
+        // In QDESKTOP_MODE the wallpaper is the Cold Plasma Cascade texture;
+        // the upstream appletGetLastForegroundCaptureImageEx path is unused and
+        // blocks ~7.8 s synchronously on cold boot.  Skip the entire capture
+        // path and leave g_ScreenCaptureBackground as an empty image.
+        UL_LOG_INFO("InitializeScreenCaptures: QDESKTOP_MODE — skipping applet capture (avoids ~7.8 s cold-boot stall)");
+        g_ScreenCaptureBackground = RawRgbaImage::New(0, 0);
+        g_ScreenCaptureBackgroundMinimumAlpha = (u8)GetRequiredUiValue<u32>("suspended_app_final_alpha");
+        (void)start_mode;
+#else
+        g_ScreenCaptureBackground = RawRgbaImage::New(0, 0);
+        if(start_mode != smi::MenuStartMode::StartupMenuPostBoot) {
+            // W15-C LEAK-1 FIX: previously `new u8[CaptureBufferSize]()` was
+            // leaked (~3.5 MB per boot) — LoadImage() copies internally, so the
+            // raw buffer must be deleted by the caller.  Use unique_ptr for
+            // exception-safe + early-return-safe cleanup.  This path is gated
+            // off in QDESKTOP_MODE (Q OS), so the leak never fired for us, but
+            // upstream uLaunch users hit it on every cold boot — fix kept here
+            // for future merge hygiene.
+            std::unique_ptr<u8[]> capture_buf(new u8[CaptureBufferSize]());
+            bool flag;
+            if(g_GlobalSettings.IsSuspended()) {
+                // Get last app capture image
+                appletGetLastApplicationCaptureImageEx(capture_buf.get(), CaptureBufferSize, &flag);
+            }
+            else {
+                // Get last applet capture image
+                appletGetLastForegroundCaptureImageEx(capture_buf.get(), CaptureBufferSize, &flag);
+            }
+            appletClearCaptureBuffer(true, AppletCaptureSharedBuffer_CallerApplet, 0xFF000000);
+
+            g_ScreenCaptureBackground->LoadImage(capture_buf.get(), CaptureBufferWidth, CaptureBufferHeight, CaptureBufferBytesPerPixel);
+
+            // Force-scale to 1080p
+            g_ScreenCaptureBackground->SetWidth(pu::ui::render::ScreenWidth);
+            g_ScreenCaptureBackground->SetHeight(pu::ui::render::ScreenHeight);
+            // capture_buf released here when unique_ptr goes out of scope.
+        }
+
+        g_ScreenCaptureBackgroundMinimumAlpha = (u8)GetRequiredUiValue<u32>("suspended_app_final_alpha");
+#endif
+    }
+
+    RawRgbaImage::Ref GetScreenCaptureBackground() {
+        return g_ScreenCaptureBackground;
+    }
+
+    bool HasScreenCaptureBackground() {
+        return g_ScreenCaptureBackground->HasImage();
+    }
+
+    void RequestResumeScreenCaptureBackground() {
+        g_ScreenCaptureBackgroundMode = SuspendedImageMode::HidingForResume;
+    }
+
+    void RequestHideScreenCaptureBackground() {
+        g_ScreenCaptureBackgroundMode = SuspendedImageMode::NotFocused;
+        g_ScreenCaptureBackground->SetAlpha(0);
+    }
+
+    void RequestHideLoseFocusScreenCaptureBackground() {
+        g_ScreenCaptureBackgroundMode = SuspendedImageMode::HidingLostFocus;
+    }
+
+    void RequestShowGainFocusScreenCaptureBackground() {
+        g_ScreenCaptureBackgroundMode = SuspendedImageMode::ShowingGainedFocus;
+    }
+
+    bool IsScreenCaptureBackgroundNotTransitioning() {
+        return (g_ScreenCaptureBackgroundMode == SuspendedImageMode::NotFocused) || (g_ScreenCaptureBackgroundMode == SuspendedImageMode::Focused);
+    }
+
+    bool IsScreenCaptureBackgroundFocused() {
+        return g_ScreenCaptureBackgroundMode == SuspendedImageMode::Focused;
+    }
+
+    void UpdateScreenCaptureBackground(const bool after_start_stay_at_min_alpha) {
+        switch(g_ScreenCaptureBackgroundMode) {
+            case SuspendedImageMode::ShowingAfterStart: {
+                if(after_start_stay_at_min_alpha && (g_ScreenCaptureBackgroundAlpha <= g_ScreenCaptureBackgroundMinimumAlpha)) {
+                    g_ScreenCaptureBackgroundAlpha = g_ScreenCaptureBackgroundMinimumAlpha;
+                    g_ScreenCaptureBackground->SetAlpha(g_ScreenCaptureBackgroundAlpha);
+                    g_ScreenCaptureBackgroundMode = SuspendedImageMode::Focused;
+                }
+                else if(!after_start_stay_at_min_alpha && (g_ScreenCaptureBackgroundAlpha == 0)) {
+                    g_ScreenCaptureBackground->SetAlpha(g_ScreenCaptureBackgroundAlpha);
+                    g_ScreenCaptureBackgroundMode = SuspendedImageMode::NotFocused;
+                }
+                else {
+                    g_ScreenCaptureBackground->SetAlpha(g_ScreenCaptureBackgroundAlpha);
+                    g_ScreenCaptureBackgroundAlpha -= ScreenCaptureBackgroundAlphaIncrement;
+                    if(g_ScreenCaptureBackgroundAlpha < 0) {
+                        g_ScreenCaptureBackgroundAlpha = 0;
+                    }
+                }
+                break;
+            }
+            case SuspendedImageMode::Focused: {
+                break;
+            }
+            case SuspendedImageMode::HidingForResume: {
+                if(g_ScreenCaptureBackgroundAlpha == 0xFF) {
+                    g_ScreenCaptureBackground->SetAlpha(g_ScreenCaptureBackgroundAlpha);
+                    UL_RC_ASSERT(smi::ResumeApplication());
+                }
+                else {
+                    g_ScreenCaptureBackground->SetAlpha(g_ScreenCaptureBackgroundAlpha);
+                    g_ScreenCaptureBackgroundAlpha += ScreenCaptureBackgroundAlphaIncrement;
+                    if(g_ScreenCaptureBackgroundAlpha > 0xFF) {
+                        g_ScreenCaptureBackgroundAlpha = 0xFF;
+                    }
+                }
+                break;
+            }
+            case SuspendedImageMode::NotFocused: {
+                break;
+            }
+            case SuspendedImageMode::ShowingGainedFocus: {
+                if(g_ScreenCaptureBackgroundAlpha == g_ScreenCaptureBackgroundMinimumAlpha) {
+                    g_ScreenCaptureBackground->SetAlpha(g_ScreenCaptureBackgroundAlpha);
+                    g_ScreenCaptureBackgroundMode = SuspendedImageMode::Focused;
+                }
+                else {
+                    g_ScreenCaptureBackground->SetAlpha(g_ScreenCaptureBackgroundAlpha);
+                    g_ScreenCaptureBackgroundAlpha += ScreenCaptureBackgroundAlphaIncrement;
+                    if(g_ScreenCaptureBackgroundAlpha > g_ScreenCaptureBackgroundMinimumAlpha) {
+                        g_ScreenCaptureBackgroundAlpha = g_ScreenCaptureBackgroundMinimumAlpha;
+                    }
+                }
+                break;
+            }
+            case SuspendedImageMode::HidingLostFocus: {
+                if(g_ScreenCaptureBackgroundAlpha == 0) {
+                    g_ScreenCaptureBackground->SetAlpha(g_ScreenCaptureBackgroundAlpha);
+                    g_ScreenCaptureBackgroundMode = SuspendedImageMode::NotFocused;
+                }
+                else {
+                    g_ScreenCaptureBackground->SetAlpha(g_ScreenCaptureBackgroundAlpha);
+                    g_ScreenCaptureBackgroundAlpha -= ScreenCaptureBackgroundAlphaIncrement;
+                    if(g_ScreenCaptureBackgroundAlpha < 0) {
+                        g_ScreenCaptureBackgroundAlpha = 0;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+}

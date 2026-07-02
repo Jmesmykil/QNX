@@ -1,0 +1,57 @@
+=== v0.2.0 BASELINE BUILD LOG ===
+Date: 2026-04-18T18:54:27Z
+devkitA64: aarch64-none-elf-gcc (devkitA64) 15.2.0
+libnx: libnx 4.12.0-1
+switch-sdl2: NOT_INSTALLED
+
+=== STEP 1: ARC CODE GENERATION ===
+Got module: namespace 'hbloader', module '347'
+Got module: namespace 'ulaunch', module '380'
+Done!
+
+./libs/uCommon/include/ul/ul_Results.gen.hpp is up to date!
+Done!
+
+=== STEP 2: LIBNX-EXT BUILD ===
+make: Nothing to be done for `all'.
+exit: 0
+
+=== STEP 3: LIBNX-IPCEXT BUILD (source-level API break) ===
+ns-ext.c
+/Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/libnx-ext/libnx-ipcext/source/ns-ext.c: In function 'nsGetApplicationControlData3':
+/Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/libnx-ext/libnx-ipcext/source/ns-ext.c:85:9: error: unused variable 'cmd_id' [-Werror=unused-variable]
+   85 |     u32 cmd_id = 6;
+      |         ^~~~~~
+cc1: all warnings being treated as errors
+make[1]: *** [ns-ext.o] Error 1
+make: *** [lib/libnx-ipcext.a] Error 2
+exit: 2
+
+=== STEP 4: PLUTONIUM BUILD (SDL2 blocker) ===
+audio_Audio.cpp
+In file included from /Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Plutonium/Plutonium/include/pu/audio/audio_Audio.hpp:10,
+                 from /Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Plutonium/Plutonium/source/pu/audio/audio_Audio.cpp:1:
+/Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Plutonium/Plutonium/include/pu/audio/audio_Music.hpp:10:10: fatal error: SDL2/SDL_mixer.h: No such file or directory
+   10 | #include <SDL2/SDL_mixer.h>
+      |          ^~~~~~~~~~~~~~~~~~
+compilation terminated.
+make[2]: *** [audio_Audio.o] Error 1
+make[1]: *** [build] Error 2
+make: *** [all] Error 2
+exit: 0
+
+=== STEP 5: USYSTEM BUILD (Atmosphere-libs ABI break) ===
+fatal: not a git repository: /Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Atmosphere-libs/../../.git/modules/Atmosphere-libs
+fatal: not a git repository: /Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Atmosphere-libs/../../.git/modules/Atmosphere-libs
+fatal: not a git repository: /Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Atmosphere-libs/../../.git/modules/Atmosphere-libs
+fatal: not a git repository: /Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Atmosphere-libs/../../.git/modules/Atmosphere-libs
+fatal: not a git repository: /Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Atmosphere-libs/../../.git/modules/Atmosphere-libs
+fatal: not a git repository: /Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Atmosphere-libs/../../.git/modules/Atmosphere-libs
+/Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Atmosphere-libs/libstratosphere/include/stratosphere/svc/svc_stratosphere_shims.hpp:391:74: error: cannot convert 'ams::svc::lp64::DebugEventInfo*' to 'DebugEventInfo*'
+make[3]: *** [/Users/nsa/Astral/QOS/tools/qos-ulaunch-fork/src/libs/Atmosphere-libs/libstratosphere/include/stratosphere.hpp.gch/nintendo_nx_arm64_armv8a_release] Error 1
+make[2]: *** [all] Error 2
+make[1]: *** [check_lib] Error 2
+make: *** [nx_release] Error 2
+exit: 0
+
+=== BUILD RESULT: FAIL - see blockers section ===

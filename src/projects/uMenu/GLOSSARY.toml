@@ -1,0 +1,3767 @@
+[meta]
+scope                = "system"
+name                 = "uMenu"
+version              = "0.2.0"
+generated            = "auto-seeded by scripts/glossary-seed.py; purposes need human enrichment"
+context_toml         = "none"
+total_items          = 375
+total_bytes          = 4779500
+total_est_tokens     = 1194727
+eager_context_tokens = 0
+tokens_l1_essential  = 0
+tokens_l2_warm       = 0
+tokens_l3_cold       = 0
+tokens_l4_ondemand   = 0
+tokens_none          = 0
+tokens_unknown       = 1194727
+
+[[items]]
+id         = "glossary-self"
+path       = "GLOSSARY.toml"
+kind       = "config"
+purpose    = "This scope glossary + budget ledger - self-tracked so the scope has no orphans."
+status     = "active"
+bytes      = 0
+est_tokens = 0
+load_tier  = "none"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-promotion-inventory-md"
+path       = "agent_quarantine_sp4.12/PROMOTION-INVENTORY.md"
+kind       = "doc"
+purpose    = "Promotion Inventory — agent_quarantine_sp4.12"
+status     = "active"
+bytes      = 2210
+est_tokens = 552
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-aboutlayout-cpp"
+path       = "agent_quarantine_sp4.12/qd_AboutLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 23336
+est_tokens = 5834
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-aboutlayout-hpp"
+path       = "agent_quarantine_sp4.12/qd_AboutLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6538
+est_tokens = 1634
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-launchpad-cpp"
+path       = "agent_quarantine_sp4.12/qd_Launchpad.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 34931
+est_tokens = 8732
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-launchpad-hpp"
+path       = "agent_quarantine_sp4.12/qd_Launchpad.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 14298
+est_tokens = 3574
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-lockscreenlayout-cpp"
+path       = "agent_quarantine_sp4.12/qd_LockscreenLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 16045
+est_tokens = 4011
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-lockscreenlayout-hpp"
+path       = "agent_quarantine_sp4.12/qd_LockscreenLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6801
+est_tokens = 1700
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-monitorlayout-cpp"
+path       = "agent_quarantine_sp4.12/qd_MonitorLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 20099
+est_tokens = 5024
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-monitorlayout-hpp"
+path       = "agent_quarantine_sp4.12/qd_MonitorLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6227
+est_tokens = 1556
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-settingslayout-cpp"
+path       = "agent_quarantine_sp4.12/qd_SettingsLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 42640
+est_tokens = 10660
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-settingslayout-hpp"
+path       = "agent_quarantine_sp4.12/qd_SettingsLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11817
+est_tokens = 2954
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-terminallayout-cpp"
+path       = "agent_quarantine_sp4.12/qd_TerminalLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 18864
+est_tokens = 4716
+load_tier  = "unknown"
+
+[[items]]
+id         = "agent-quarantine-sp4-12-qd-terminallayout-hpp"
+path       = "agent_quarantine_sp4.12/qd_TerminalLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5989
+est_tokens = 1497
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-nsp-installer-design-md"
+path       = "docs/NSP-INSTALLER-DESIGN.md"
+kind       = "doc"
+purpose    = "NSP / NSZ / XCI Local Installer — Design (Q OS uMenu, absorb wave 2)"
+status     = "active"
+bytes      = 20785
+est_tokens = 5196
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-00-brief-md"
+path       = "docs/design/claude-design/00-BRIEF.md"
+kind       = "doc"
+purpose    = "Q OS — Visual Overhaul Master Brief (for Claude Design)"
+status     = "active"
+bytes      = 17083
+est_tokens = 4270
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-01-current-state-md"
+path       = "docs/design/claude-design/01-CURRENT-STATE.md"
+kind       = "doc"
+purpose    = "Q OS — Current Visual System: Inventory + Honest Audit"
+status     = "active"
+bytes      = 27057
+est_tokens = 6764
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-02-overhaul-spec-md"
+path       = "docs/design/claude-design/02-OVERHAUL-SPEC.md"
+kind       = "doc"
+purpose    = "Q OS — Overhaul Spec: Target Design System + Per-Asset Specs"
+status     = "active"
+bytes      = 24177
+est_tokens = 6044
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-03-deliverables-and-pipeline-md"
+path       = "docs/design/claude-design/03-DELIVERABLES-AND-PIPELINE.md"
+kind       = "doc"
+purpose    = "Q OS — Deliverables Manifest + Repo Drop Pipeline"
+status     = "active"
+bytes      = 15258
+est_tokens = 3814
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-skill-md"
+path       = "docs/design/claude-design/design-system-v6/SKILL.md"
+kind       = "doc"
+purpose    = "name: q-os-design"
+status     = "active"
+bytes      = 1872
+est_tokens = 468
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-core-badge-d-ts"
+path       = "docs/design/claude-design/design-system-v6/components/core/Badge.d.ts"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 492
+est_tokens = 123
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-core-badge-jsx"
+path       = "docs/design/claude-design/design-system-v6/components/core/Badge.jsx"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1297
+est_tokens = 324
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-core-badge-prompt-md"
+path       = "docs/design/claude-design/design-system-v6/components/core/Badge.prompt.md"
+kind       = "doc"
+purpose    = "**Badge** — the small uppercase-mono pill used for versions, firmware, and HW/security state (mirrors the README shields"
+status     = "active"
+bytes      = 406
+est_tokens = 101
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-core-button-d-ts"
+path       = "docs/design/claude-design/design-system-v6/components/core/Button.d.ts"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 864
+est_tokens = 216
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-core-button-jsx"
+path       = "docs/design/claude-design/design-system-v6/components/core/Button.jsx"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2694
+est_tokens = 673
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-core-button-prompt-md"
+path       = "docs/design/claude-design/design-system-v6/components/core/Button.prompt.md"
+kind       = "doc"
+purpose    = "**Button** — the primary action control; use for any tap/click commitment in a Q OS surface (launch, apply theme, reboot"
+status     = "active"
+bytes      = 593
+est_tokens = 148
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-core-card-d-ts"
+path       = "docs/design/claude-design/design-system-v6/components/core/Card.d.ts"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 550
+est_tokens = 137
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-core-card-jsx"
+path       = "docs/design/claude-design/design-system-v6/components/core/Card.jsx"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1195
+est_tokens = 298
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-core-card-prompt-md"
+path       = "docs/design/claude-design/design-system-v6/components/core/Card.prompt.md"
+kind       = "doc"
+purpose    = "**Card** — the glass panel that backs About, Settings groups, and any content block on the void."
+status     = "active"
+bytes      = 349
+est_tokens = 87
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-core-core-card-html"
+path       = "docs/design/claude-design/design-system-v6/components/core/core.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2936
+est_tokens = 734
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-desktop-docktile-d-ts"
+path       = "docs/design/claude-design/design-system-v6/components/desktop/DockTile.d.ts"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 603
+est_tokens = 150
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-desktop-docktile-jsx"
+path       = "docs/design/claude-design/design-system-v6/components/desktop/DockTile.jsx"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1607
+est_tokens = 401
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-desktop-docktile-prompt-md"
+path       = "docs/design/claude-design/design-system-v6/components/desktop/DockTile.prompt.md"
+kind       = "doc"
+purpose    = "**DockTile** — a single tile in the bottom dock band. Acts as a taskbar entry: built-in app launcher or a live minimized"
+status     = "active"
+bytes      = 437
+est_tokens = 109
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-desktop-foldertile-d-ts"
+path       = "docs/design/claude-design/design-system-v6/components/desktop/FolderTile.d.ts"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 926
+est_tokens = 231
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-desktop-foldertile-jsx"
+path       = "docs/design/claude-design/design-system-v6/components/desktop/FolderTile.jsx"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2573
+est_tokens = 643
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-desktop-foldertile-prompt-md"
+path       = "docs/design/claude-design/design-system-v6/components/desktop/FolderTile.prompt.md"
+kind       = "doc"
+purpose    = "**FolderTile** — one of the six desktop folder tiles that auto-classify NROs (Games / Emulators / Tools / System / Q OS"
+status     = "active"
+bytes      = 484
+est_tokens = 121
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-desktop-desktop-card-html"
+path       = "docs/design/claude-design/design-system-v6/components/desktop/desktop.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5257
+est_tokens = 1314
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-menu-hotcornerwidget-d-ts"
+path       = "docs/design/claude-design/design-system-v6/components/menu/HotCornerWidget.d.ts"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 607
+est_tokens = 151
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-menu-hotcornerwidget-jsx"
+path       = "docs/design/claude-design/design-system-v6/components/menu/HotCornerWidget.jsx"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1589
+est_tokens = 397
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-menu-hotcornerwidget-prompt-md"
+path       = "docs/design/claude-design/design-system-v6/components/menu/HotCornerWidget.prompt.md"
+kind       = "doc"
+purpose    = "**HotCornerWidget** — the 96×72 corner hot-zone. Top-left holds the active theme's identity emblem (Q for Glass, ⚡ Neon,"
+status     = "active"
+bytes      = 347
+est_tokens = 86
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-menu-menupanel-d-ts"
+path       = "docs/design/claude-design/design-system-v6/components/menu/MenuPanel.d.ts"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 410
+est_tokens = 102
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-menu-menupanel-jsx"
+path       = "docs/design/claude-design/design-system-v6/components/menu/MenuPanel.jsx"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 997
+est_tokens = 249
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-menu-menupanel-prompt-md"
+path       = "docs/design/claude-design/design-system-v6/components/menu/MenuPanel.prompt.md"
+kind       = "doc"
+purpose    = "**MenuPanel** — the rounded, accent-bordered dropdown that drops from the hot corners (status + quick actions on the rig"
+status     = "active"
+bytes      = 409
+est_tokens = 102
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-menu-statusrow-d-ts"
+path       = "docs/design/claude-design/design-system-v6/components/menu/StatusRow.d.ts"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 646
+est_tokens = 161
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-menu-statusrow-jsx"
+path       = "docs/design/claude-design/design-system-v6/components/menu/StatusRow.jsx"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1597
+est_tokens = 399
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-menu-statusrow-prompt-md"
+path       = "docs/design/claude-design/design-system-v6/components/menu/StatusRow.prompt.md"
+kind       = "doc"
+purpose    = "**StatusRow** — a line in a `MenuPanel` dropdown. Read-only status rows show a label + mono value and render muted; `act"
+status     = "active"
+bytes      = 419
+est_tokens = 104
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-menu-menu-card-html"
+path       = "docs/design/claude-design/design-system-v6/components/menu/menu.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2327
+est_tokens = 581
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-window-windowframe-d-ts"
+path       = "docs/design/claude-design/design-system-v6/components/window/WindowFrame.d.ts"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1402
+est_tokens = 350
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-window-windowframe-jsx"
+path       = "docs/design/claude-design/design-system-v6/components/window/WindowFrame.jsx"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3960
+est_tokens = 990
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-window-windowframe-prompt-md"
+path       = "docs/design/claude-design/design-system-v6/components/window/WindowFrame.prompt.md"
+kind       = "doc"
+purpose    = "**WindowFrame** — the windowed-desktop chrome that defines Q OS. Use it to host any built-in app surface (Vault, Setting"
+status     = "active"
+bytes      = 560
+est_tokens = 140
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-components-window-window-card-html"
+path       = "docs/design/claude-design/design-system-v6/components/window/window.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3056
+est_tokens = 764
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-asset-formats-md"
+path       = "docs/design/claude-design/design-system-v6/deliverables/ASSET-FORMATS.md"
+kind       = "doc"
+purpose    = "Q OS — Asset Formats (SVG-first)"
+status     = "active"
+bytes      = 2879
+est_tokens = 719
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-readme-md"
+path       = "docs/design/claude-design/design-system-v6/deliverables/README.md"
+kind       = "doc"
+purpose    = "Q OS — Visual Overhaul Handback"
+status     = "active"
+bytes      = 3188
+est_tokens = 797
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-cursor-cursor-spec-md"
+path       = "docs/design/claude-design/design-system-v6/deliverables/cursor/CURSOR-SPEC.md"
+kind       = "doc"
+purpose    = "Q OS — Cursor Spec (overhaul priority 🔴2)"
+status     = "active"
+bytes      = 3870
+est_tokens = 967
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-design-system-palettes-json"
+path       = "docs/design/claude-design/design-system-v6/deliverables/design-system/palettes.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8598
+est_tokens = 2149
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-design-system-tokens-json"
+path       = "docs/design/claude-design/design-system-v6/deliverables/design-system/tokens.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3762
+est_tokens = 940
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-font-font-spec-md"
+path       = "docs/design/claude-design/design-system-v6/deliverables/font/FONT-SPEC.md"
+kind       = "doc"
+purpose    = "Q OS — Font Spec (overhaul 🟡, high leverage)"
+status     = "active"
+bytes      = 3650
+est_tokens = 912
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-glyphs-glyph-spec-md"
+path       = "docs/design/claude-design/design-system-v6/deliverables/glyphs/GLYPH-SPEC.md"
+kind       = "doc"
+purpose    = "Q OS — Glyph Spec (overhaul 🟡)"
+status     = "active"
+bytes      = 3333
+est_tokens = 833
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-icons-icon-pack-recipe-md"
+path       = "docs/design/claude-design/design-system-v6/deliverables/icons/ICON-PACK-RECIPE.md"
+kind       = "doc"
+purpose    = "Q OS — Icon-Pack Recipe"
+status     = "active"
+bytes      = 3611
+est_tokens = 902
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-icons-readme-md"
+path       = "docs/design/claude-design/design-system-v6/deliverables/icons/README.md"
+kind       = "doc"
+purpose    = "Q OS — Icon masters (exported, no drift)"
+status     = "active"
+bytes      = 2393
+est_tokens = 598
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-selection-selection-spec-md"
+path       = "docs/design/claude-design/design-system-v6/deliverables/selection/SELECTION-SPEC.md"
+kind       = "doc"
+purpose    = "Q OS — Selection Outline Spec (overhaul priority 🔴1)"
+status     = "active"
+bytes      = 4622
+est_tokens = 1155
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-wallpapers-wallpaper-pack-recipe-md"
+path       = "docs/design/claude-design/design-system-v6/deliverables/wallpapers/WALLPAPER-PACK-RECIPE.md"
+kind       = "doc"
+purpose    = "Q OS — Wallpaper-Pack Recipe"
+status     = "active"
+bytes      = 3408
+est_tokens = 852
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-deliverables-window-readme-md"
+path       = "docs/design/claude-design/design-system-v6/deliverables/window/README.md"
+kind       = "doc"
+purpose    = "Q OS — Window Frame (SVG masters)"
+status     = "active"
+bytes      = 1617
+est_tokens = 404
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-brand-hero-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/brand-hero.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4036
+est_tokens = 1009
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-brand-icons-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/brand-icons.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 23797
+est_tokens = 5949
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-brand-loading-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/brand-loading.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4344
+est_tokens = 1086
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-brand-void-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/brand-void.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1307
+est_tokens = 326
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-colors-brand-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/colors-brand.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1638
+est_tokens = 409
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-colors-categories-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/colors-categories.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1661
+est_tokens = 415
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-colors-surfaces-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/colors-surfaces.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1711
+est_tokens = 427
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-colors-text-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/colors-text.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1582
+est_tokens = 395
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-colors-themes-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/colors-themes.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3102
+est_tokens = 775
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-colors-window-buttons-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/colors-window-buttons.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2059
+est_tokens = 514
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-overhaul-cursor-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/overhaul-cursor.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8724
+est_tokens = 2181
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-overhaul-glyphs-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/overhaul-glyphs.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5533
+est_tokens = 1383
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-overhaul-selection-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/overhaul-selection.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8046
+est_tokens = 2011
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-overhaul-showcase-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/overhaul-showcase.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13758
+est_tokens = 3439
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-overhaul-splash-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/overhaul-splash.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2014
+est_tokens = 503
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-overhaul-wallpapers-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/overhaul-wallpapers.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2578
+est_tokens = 644
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-overhaul-window-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/overhaul-window.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1618
+est_tokens = 404
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-spacing-chrome-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/spacing-chrome.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5498
+est_tokens = 1374
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-spacing-radii-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/spacing-radii.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1393
+est_tokens = 348
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-spacing-scale-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/spacing-scale.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1946
+est_tokens = 486
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-spacing-shadows-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/spacing-shadows.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3293
+est_tokens = 823
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-type-display-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/type-display.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1191
+est_tokens = 297
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-type-mono-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/type-mono.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1335
+est_tokens = 333
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-type-os-font-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/type-os-font.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2939
+est_tokens = 734
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-guidelines-type-sans-card-html"
+path       = "docs/design/claude-design/design-system-v6/guidelines/type-sans.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1595
+est_tokens = 398
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-readme-md"
+path       = "docs/design/claude-design/design-system-v6/readme.md"
+kind       = "doc"
+purpose    = "Q OS Design System"
+status     = "active"
+bytes      = 11866
+est_tokens = 2966
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-styles-css"
+path       = "docs/design/claude-design/design-system-v6/styles.css"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1323
+est_tokens = 330
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-tokens-colors-css"
+path       = "docs/design/claude-design/design-system-v6/tokens/colors.css"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4815
+est_tokens = 1203
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-tokens-spacing-css"
+path       = "docs/design/claude-design/design-system-v6/tokens/spacing.css"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2999
+est_tokens = 749
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-tokens-themes-css"
+path       = "docs/design/claude-design/design-system-v6/tokens/themes.css"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5590
+est_tokens = 1397
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-design-system-v6-tokens-typography-css"
+path       = "docs/design/claude-design/design-system-v6/tokens/typography.css"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2426
+est_tokens = 606
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-window-handoff-colors-window-buttons-card-html"
+path       = "docs/design/claude-design/window-handoff/colors-window-buttons.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2059
+est_tokens = 514
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-window-handoff-component-windowframe-d-ts"
+path       = "docs/design/claude-design/window-handoff/component/WindowFrame.d.ts"
+kind       = "script"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1402
+est_tokens = 350
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-window-handoff-component-windowframe-jsx"
+path       = "docs/design/claude-design/window-handoff/component/WindowFrame.jsx"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3960
+est_tokens = 990
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-window-handoff-component-windowframe-prompt-md"
+path       = "docs/design/claude-design/window-handoff/component/WindowFrame.prompt.md"
+kind       = "doc"
+purpose    = "**WindowFrame** — the windowed-desktop chrome that defines Q OS. Use it to host any built-in app surface (Vault, Setting"
+status     = "active"
+bytes      = 560
+est_tokens = 140
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-window-handoff-component-window-card-html"
+path       = "docs/design/claude-design/window-handoff/component/window.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3056
+est_tokens = 764
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-window-handoff-overhaul-window-card-html"
+path       = "docs/design/claude-design/window-handoff/overhaul-window.card.html"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1618
+est_tokens = 404
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-claude-design-window-handoff-svg-masters-readme-md"
+path       = "docs/design/claude-design/window-handoff/svg-masters/README.md"
+kind       = "doc"
+purpose    = "Q OS — Window Frame (SVG masters)"
+status     = "active"
+bytes      = 1617
+est_tokens = 404
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-window-system-00-research-md"
+path       = "docs/design/window-system/00-RESEARCH.md"
+kind       = "doc"
+purpose    = "00 — Cross-OS Window-System Behavior Reference"
+status     = "active"
+bytes      = 27440
+est_tokens = 6860
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-window-system-01-qos-current-audit-md"
+path       = "docs/design/window-system/01-QOS-CURRENT-AUDIT.md"
+kind       = "doc"
+purpose    = "01 — Q OS Current-State Audit (window / input / selection / scroll)"
+status     = "active"
+bytes      = 22349
+est_tokens = 5587
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-window-system-02-architecture-md"
+path       = "docs/design/window-system/02-ARCHITECTURE.md"
+kind       = "doc"
+purpose    = "02 — Window System Architecture (from-scratch rebuild)"
+status     = "active"
+bytes      = 36616
+est_tokens = 9154
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-design-window-system-03-comparison-md"
+path       = "docs/design/window-system/03-COMPARISON.md"
+kind       = "doc"
+purpose    = "03 — Window System Comparison"
+status     = "active"
+bytes      = 9072
+est_tokens = 2268
+load_tier  = "unknown"
+
+[[items]]
+id         = "docs-save-editor-next-steps-md"
+path       = "docs/save-editor-next-steps.md"
+kind       = "doc"
+purpose    = "Save Editor — Next-PR Bring-Up Plan"
+status     = "active"
+bytes      = 5443
+est_tokens = 1360
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-audio-audio-systemvolume-hpp"
+path       = "include/ul/audio/audio_SystemVolume.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 713
+est_tokens = 178
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-am-am-libnxlibappletwrap-hpp"
+path       = "include/ul/menu/am/am_LibnxLibappletWrap.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 98
+est_tokens = 24
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-am-am-libraryappletutils-hpp"
+path       = "include/ul/menu/am/am_LibraryAppletUtils.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 214
+est_tokens = 53
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-bt-bt-manager-hpp"
+path       = "include/ul/menu/bt/bt_Manager.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1395
+est_tokens = 348
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-abilitynames-hpp"
+path       = "include/ul/menu/qdesktop/qd_AbilityNames.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 10841
+est_tokens = 2710
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-aboutlayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_AboutLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 10272
+est_tokens = 2568
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-anim-hpp"
+path       = "include/ul/menu/qdesktop/qd_Anim.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4743
+est_tokens = 1185
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-appletlifecycle-hpp"
+path       = "include/ul/menu/qdesktop/qd_AppletLifecycle.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3223
+est_tokens = 805
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-audio-hpp"
+path       = "include/ul/menu/qdesktop/qd_Audio.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8831
+est_tokens = 2207
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-autofolders-hpp"
+path       = "include/ul/menu/qdesktop/qd_AutoFolders.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5332
+est_tokens = 1333
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-bdspsaveparser-hpp"
+path       = "include/ul/menu/qdesktop/qd_BDSPSaveParser.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 21283
+est_tokens = 5320
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-cheattitleresolver-hpp"
+path       = "include/ul/menu/qdesktop/qd_CheatTitleResolver.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3527
+est_tokens = 881
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-cheatsinstaller-hpp"
+path       = "include/ul/menu/qdesktop/qd_CheatsInstaller.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7849
+est_tokens = 1962
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-cheatslayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_CheatsLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11266
+est_tokens = 2816
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-cheatsmanager-hpp"
+path       = "include/ul/menu/qdesktop/qd_CheatsManager.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7250
+est_tokens = 1812
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-contentelement-hpp"
+path       = "include/ul/menu/qdesktop/qd_ContentElement.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 9155
+est_tokens = 2288
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-contextmenu-hpp"
+path       = "include/ul/menu/qdesktop/qd_ContextMenu.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 12148
+est_tokens = 3037
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-cursor-hpp"
+path       = "include/ul/menu/qdesktop/qd_Cursor.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8015
+est_tokens = 2003
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-curve-hpp"
+path       = "include/ul/menu/qdesktop/qd_Curve.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5074
+est_tokens = 1268
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-customfolder-hpp"
+path       = "include/ul/menu/qdesktop/qd_CustomFolder.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4819
+est_tokens = 1204
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-debugcapsscreen-hpp"
+path       = "include/ul/menu/qdesktop/qd_DebugCapsScreen.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1242
+est_tokens = 310
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-debughdls-hpp"
+path       = "include/ul/menu/qdesktop/qd_DebugHdls.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2999
+est_tokens = 749
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-debugobserve-hpp"
+path       = "include/ul/menu/qdesktop/qd_DebugObserve.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 785
+est_tokens = 196
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-debugserver-hpp"
+path       = "include/ul/menu/qdesktop/qd_DebugServer.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2227
+est_tokens = 556
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-desktopicons-hpp"
+path       = "include/ul/menu/qdesktop/qd_DesktopIcons.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 57577
+est_tokens = 14394
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-devtools-hpp"
+path       = "include/ul/menu/qdesktop/qd_DevTools.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3774
+est_tokens = 943
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-esipc-hpp"
+path       = "include/ul/menu/qdesktop/qd_EsIpc.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3595
+est_tokens = 898
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-firstbootwelcome-hpp"
+path       = "include/ul/menu/qdesktop/qd_FirstBootWelcome.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7382
+est_tokens = 1845
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-folderclassifier-hpp"
+path       = "include/ul/menu/qdesktop/qd_FolderClassifier.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3259
+est_tokens = 814
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-folderlaunchpadelement-hpp"
+path       = "include/ul/menu/qdesktop/qd_FolderLaunchpadElement.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4840
+est_tokens = 1210
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-foldertheme-hpp"
+path       = "include/ul/menu/qdesktop/qd_FolderTheme.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3696
+est_tokens = 924
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-frame-hpp"
+path       = "include/ul/menu/qdesktop/qd_Frame.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11792
+est_tokens = 2948
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-globalchrome-hpp"
+path       = "include/ul/menu/qdesktop/qd_GlobalChrome.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3224
+est_tokens = 806
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-hekateini-hpp"
+path       = "include/ul/menu/qdesktop/qd_HekateIni.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2271
+est_tokens = 567
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-helpoverlay-hpp"
+path       = "include/ul/menu/qdesktop/qd_HelpOverlay.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 10306
+est_tokens = 2576
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-homeminimenu-hpp"
+path       = "include/ul/menu/qdesktop/qd_HomeMiniMenu.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2646
+est_tokens = 661
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-hotcornerdropdown-hpp"
+path       = "include/ul/menu/qdesktop/qd_HotCornerDropdown.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 9241
+est_tokens = 2310
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-hotcorneroverlay-hpp"
+path       = "include/ul/menu/qdesktop/qd_HotCornerOverlay.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2993
+est_tokens = 748
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-hotcornerrightdropdown-hpp"
+path       = "include/ul/menu/qdesktop/qd_HotCornerRightDropdown.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 9378
+est_tokens = 2344
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-hotcornerrightoverlay-hpp"
+path       = "include/ul/menu/qdesktop/qd_HotCornerRightOverlay.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2624
+est_tokens = 656
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-iconcache-hpp"
+path       = "include/ul/menu/qdesktop/qd_IconCache.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11813
+est_tokens = 2953
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-iconcategory-hpp"
+path       = "include/ul/menu/qdesktop/qd_IconCategory.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2513
+est_tokens = 628
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-imageviewer-hpp"
+path       = "include/ul/menu/qdesktop/qd_ImageViewer.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3444
+est_tokens = 861
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-imagewallpaperelement-hpp"
+path       = "include/ul/menu/qdesktop/qd_ImageWallpaperElement.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3245
+est_tokens = 811
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-input-hpp"
+path       = "include/ul/menu/qdesktop/qd_Input.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7266
+est_tokens = 1816
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-inputinjector-hpp"
+path       = "include/ul/menu/qdesktop/qd_InputInjector.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5994
+est_tokens = 1498
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-itemnames-hpp"
+path       = "include/ul/menu/qdesktop/qd_ItemNames.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 61094
+est_tokens = 15273
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-launchpad-hpp"
+path       = "include/ul/menu/qdesktop/qd_Launchpad.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 45676
+est_tokens = 11419
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-launchpadhostlayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_LaunchpadHostLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4948
+est_tokens = 1237
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-layoutconstants-hpp"
+path       = "include/ul/menu/qdesktop/qd_LayoutConstants.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11254
+est_tokens = 2813
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-lazyloader-hpp"
+path       = "include/ul/menu/qdesktop/qd_LazyLoader.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4396
+est_tokens = 1099
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-lockscreenlayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_LockscreenLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7580
+est_tokens = 1895
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-minimizeddockentry-hpp"
+path       = "include/ul/menu/qdesktop/qd_MinimizedDockEntry.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6336
+est_tokens = 1584
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-modslayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_ModsLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7562
+est_tokens = 1890
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-modsmanager-hpp"
+path       = "include/ul/menu/qdesktop/qd_ModsManager.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6290
+est_tokens = 1572
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-monitorhostlayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_MonitorHostLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3082
+est_tokens = 770
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-monitorlayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_MonitorLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 15166
+est_tokens = 3791
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-movenames-hpp"
+path       = "include/ul/menu/qdesktop/qd_MoveNames.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 21237
+est_tokens = 5309
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-multitouch-hpp"
+path       = "include/ul/menu/qdesktop/qd_Multitouch.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4223
+est_tokens = 1055
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-ninepatch-hpp"
+path       = "include/ul/menu/qdesktop/qd_NinePatch.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 955
+est_tokens = 238
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-nintendoapps-hpp"
+path       = "include/ul/menu/qdesktop/qd_NintendoApps.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3069
+est_tokens = 767
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-nintendoappslayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_NintendoAppsLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8806
+est_tokens = 2201
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-nroasset-hpp"
+path       = "include/ul/menu/qdesktop/qd_NroAsset.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5077
+est_tokens = 1269
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-nsamipc-hpp"
+path       = "include/ul/menu/qdesktop/qd_NsAmIpc.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5297
+est_tokens = 1324
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-nsiconcache-hpp"
+path       = "include/ul/menu/qdesktop/qd_NsIconCache.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3858
+est_tokens = 964
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-nspinstaller-hpp"
+path       = "include/ul/menu/qdesktop/qd_NspInstaller.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 16583
+est_tokens = 4145
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-nxlinkserver-hpp"
+path       = "include/ul/menu/qdesktop/qd_NxlinkServer.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5906
+est_tokens = 1476
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-perflogger-hpp"
+path       = "include/ul/menu/qdesktop/qd_PerfLogger.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6164
+est_tokens = 1541
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-pixelcanvas-hpp"
+path       = "include/ul/menu/qdesktop/qd_PixelCanvas.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2691
+est_tokens = 672
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-power-hpp"
+path       = "include/ul/menu/qdesktop/qd_Power.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2684
+est_tokens = 671
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-powerbutton-hpp"
+path       = "include/ul/menu/qdesktop/qd_PowerButton.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4665
+est_tokens = 1166
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-recordsbin-hpp"
+path       = "include/ul/menu/qdesktop/qd_RecordsBin.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2746
+est_tokens = 686
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-remoteshellserver-hpp"
+path       = "include/ul/menu/qdesktop/qd_RemoteShellServer.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2997
+est_tokens = 749
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-resourceledger-hpp"
+path       = "include/ul/menu/qdesktop/qd_ResourceLedger.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6947
+est_tokens = 1736
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-saveautoscan-hpp"
+path       = "include/ul/menu/qdesktop/qd_SaveAutoscan.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3563
+est_tokens = 890
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-savebackup-hpp"
+path       = "include/ul/menu/qdesktop/qd_SaveBackup.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6807
+est_tokens = 1701
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-saveeditorlayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_SaveEditorLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 19292
+est_tokens = 4823
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-settingslayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_SettingsLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 22170
+est_tokens = 5542
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-shellcommands-hpp"
+path       = "include/ul/menu/qdesktop/qd_ShellCommands.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1402
+est_tokens = 350
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-speciesnames-hpp"
+path       = "include/ul/menu/qdesktop/qd_SpeciesNames.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 22656
+est_tokens = 5664
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-suspendedappdockentry-hpp"
+path       = "include/ul/menu/qdesktop/qd_SuspendedAppDockEntry.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5798
+est_tokens = 1449
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-svgraster-hpp"
+path       = "include/ul/menu/qdesktop/qd_SvgRaster.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1142
+est_tokens = 285
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-swshsaveparser-hpp"
+path       = "include/ul/menu/qdesktop/qd_SwShSaveParser.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7846
+est_tokens = 1961
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-swishcrypto-hpp"
+path       = "include/ul/menu/qdesktop/qd_SwishCrypto.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5290
+est_tokens = 1322
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-taskmanager-hpp"
+path       = "include/ul/menu/qdesktop/qd_TaskManager.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 9116
+est_tokens = 2279
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-taskmanagerlayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_TaskManagerLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11651
+est_tokens = 2912
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-textviewer-hpp"
+path       = "include/ul/menu/qdesktop/qd_TextViewer.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3975
+est_tokens = 993
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-theme-hpp"
+path       = "include/ul/menu/qdesktop/qd_Theme.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 19586
+est_tokens = 4896
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-tooltip-hpp"
+path       = "include/ul/menu/qdesktop/qd_Tooltip.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4567
+est_tokens = 1141
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-transition-hpp"
+path       = "include/ul/menu/qdesktop/qd_Transition.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4320
+est_tokens = 1080
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-usercard-hpp"
+path       = "include/ul/menu/qdesktop/qd_UserCard.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5139
+est_tokens = 1284
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-vaulthostlayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_VaultHostLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3834
+est_tokens = 958
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-vaultlayout-hpp"
+path       = "include/ul/menu/qdesktop/qd_VaultLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 19223
+est_tokens = 4805
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-visibility-hpp"
+path       = "include/ul/menu/qdesktop/qd_Visibility.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2971
+est_tokens = 742
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-wallpaper-hpp"
+path       = "include/ul/menu/qdesktop/qd_Wallpaper.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 9582
+est_tokens = 2395
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-window-hpp"
+path       = "include/ul/menu/qdesktop/qd_Window.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 30185
+est_tokens = 7546
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-windowmanager-hpp"
+path       = "include/ul/menu/qdesktop/qd_WindowManager.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 20433
+est_tokens = 5108
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-windowoverlay-hpp"
+path       = "include/ul/menu/qdesktop/qd_WindowOverlay.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2463
+est_tokens = 615
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qdesktop-qd-wmconstants-hpp"
+path       = "include/ul/menu/qdesktop/qd_WmConstants.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11650
+est_tokens = 2912
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-qos-qos-curveengine-hpp"
+path       = "include/ul/menu/USER/PASS_CurveEngine.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5856
+est_tokens = 1464
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-smi-sf-sf-privateservice-hpp"
+path       = "include/ul/menu/smi/sf/sf_PrivateService.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 453
+est_tokens = 113
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-smi-smi-commands-hpp"
+path       = "include/ul/menu/smi/smi_Commands.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13258
+est_tokens = 3314
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-smi-smi-menuprotocol-hpp"
+path       = "include/ul/menu/smi/smi_MenuProtocol.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 714
+est_tokens = 178
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-backgroundscreencapture-hpp"
+path       = "include/ul/menu/ui/ui_BackgroundScreenCapture.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 694
+est_tokens = 173
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-clickableimage-hpp"
+path       = "include/ul/menu/ui/ui_ClickableImage.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2252
+est_tokens = 563
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-common-hpp"
+path       = "include/ul/menu/ui/ui_Common.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 18751
+est_tokens = 4687
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-entrymenu-hpp"
+path       = "include/ul/menu/ui/ui_EntryMenu.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11710
+est_tokens = 2927
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-imenulayout-hpp"
+path       = "include/ul/menu/ui/ui_IMenuLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2238
+est_tokens = 559
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-inputbar-hpp"
+path       = "include/ul/menu/ui/ui_InputBar.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3449
+est_tokens = 862
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-lockscreenmenulayout-hpp"
+path       = "include/ul/menu/ui/ui_LockscreenMenuLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 911
+est_tokens = 227
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-mainmenulayout-hpp"
+path       = "include/ul/menu/ui/ui_MainMenuLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13031
+est_tokens = 3257
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-menuapplication-hpp"
+path       = "include/ul/menu/ui/ui_MenuApplication.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 12464
+est_tokens = 3116
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-multitextblock-hpp"
+path       = "include/ul/menu/ui/ui_MultiTextBlock.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1805
+est_tokens = 451
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-quickmenu-hpp"
+path       = "include/ul/menu/ui/ui_QuickMenu.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2698
+est_tokens = 674
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-rawrgbaimage-hpp"
+path       = "include/ul/menu/ui/ui_RawRgbaImage.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1850
+est_tokens = 462
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-settingsmenulayout-hpp"
+path       = "include/ul/menu/ui/ui_SettingsMenuLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3104
+est_tokens = 776
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-startupmenulayout-hpp"
+path       = "include/ul/menu/ui/ui_StartupMenuLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3905
+est_tokens = 976
+load_tier  = "unknown"
+
+[[items]]
+id         = "include-ul-menu-ui-ui-themesmenulayout-hpp"
+path       = "include/ul/menu/ui/ui_ThemesMenuLayout.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1854
+est_tokens = 463
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-default-sound-bgm-json"
+path       = "romfs/default/sound/BGM.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 469
+est_tokens = 117
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-default-theme-manifest-json"
+path       = "romfs/default/theme/Manifest.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 150
+est_tokens = 37
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-default-ui-font-license-txt"
+path       = "romfs/default/ui/Font-LICENSE.txt"
+kind       = "doc"
+purpose    = "Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)"
+status     = "active"
+bytes      = 4495
+est_tokens = 1123
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-default-ui-ui-json"
+path       = "romfs/default/ui/UI.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3984
+est_tokens = 996
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-de-json"
+path       = "romfs/lang/de.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13273
+est_tokens = 3318
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-en-json"
+path       = "romfs/lang/en.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 12625
+est_tokens = 3156
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-es-json"
+path       = "romfs/lang/es.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13260
+est_tokens = 3315
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-fr-json"
+path       = "romfs/lang/fr.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13482
+est_tokens = 3370
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-it-json"
+path       = "romfs/lang/it.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13142
+est_tokens = 3285
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-ko-json"
+path       = "romfs/lang/ko.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13490
+est_tokens = 3372
+load_tier  = "unknown"
+
+[[items]]
+id         = "romfs-lang-pt-br-json"
+path       = "romfs/lang/pt-BR.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13744
+est_tokens = 3436
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-main-cpp"
+path       = "source/main.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 55724
+est_tokens = 13931
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-audio-audio-systemvolume-cpp"
+path       = "source/ul/audio/audio_SystemVolume.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2227
+est_tokens = 556
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-am-am-libnxlibappletwrap-cpp"
+path       = "source/ul/menu/am/am_LibnxLibappletWrap.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2794
+est_tokens = 698
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-am-am-libraryappletutils-cpp"
+path       = "source/ul/menu/am/am_LibraryAppletUtils.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 715
+est_tokens = 178
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-bt-bt-manager-cpp"
+path       = "source/ul/menu/bt/bt_Manager.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8179
+est_tokens = 2044
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-aboutlayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_AboutLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 33395
+est_tokens = 8348
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-anim-cpp"
+path       = "source/ul/menu/qdesktop/qd_Anim.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3910
+est_tokens = 977
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-appletlifecycle-cpp"
+path       = "source/ul/menu/qdesktop/qd_AppletLifecycle.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 14485
+est_tokens = 3621
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-audio-cpp"
+path       = "source/ul/menu/qdesktop/qd_Audio.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6769
+est_tokens = 1692
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-autofolders-cpp"
+path       = "source/ul/menu/qdesktop/qd_AutoFolders.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7959
+est_tokens = 1989
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-bdspsaveparser-cpp"
+path       = "source/ul/menu/qdesktop/qd_BDSPSaveParser.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 34272
+est_tokens = 8568
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-cheattitleresolver-cpp"
+path       = "source/ul/menu/qdesktop/qd_CheatTitleResolver.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11936
+est_tokens = 2984
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-cheatsinstaller-cpp"
+path       = "source/ul/menu/qdesktop/qd_CheatsInstaller.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 32207
+est_tokens = 8051
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-cheatslayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_CheatsLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 45351
+est_tokens = 11337
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-cheatsmanager-cpp"
+path       = "source/ul/menu/qdesktop/qd_CheatsManager.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 25513
+est_tokens = 6378
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-contextmenu-cpp"
+path       = "source/ul/menu/qdesktop/qd_ContextMenu.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 24376
+est_tokens = 6094
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-cursor-cpp"
+path       = "source/ul/menu/qdesktop/qd_Cursor.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 18921
+est_tokens = 4730
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-curve-cpp"
+path       = "source/ul/menu/qdesktop/qd_Curve.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 10728
+est_tokens = 2682
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-customfolder-cpp"
+path       = "source/ul/menu/qdesktop/qd_CustomFolder.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7308
+est_tokens = 1827
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-debugcapsscreen-cpp"
+path       = "source/ul/menu/qdesktop/qd_DebugCapsScreen.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3788
+est_tokens = 947
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-debughdls-cpp"
+path       = "source/ul/menu/qdesktop/qd_DebugHdls.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 9787
+est_tokens = 2446
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-debugobserve-cpp"
+path       = "source/ul/menu/qdesktop/qd_DebugObserve.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 14118
+est_tokens = 3529
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-debugserver-cpp"
+path       = "source/ul/menu/qdesktop/qd_DebugServer.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 38702
+est_tokens = 9675
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-desktopicons-cpp"
+path       = "source/ul/menu/qdesktop/qd_DesktopIcons.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 387189
+est_tokens = 96797
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-desktopicons-wmbridge-cpp"
+path       = "source/ul/menu/qdesktop/qd_DesktopIcons_WmBridge.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 24962
+est_tokens = 6240
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-devtools-cpp"
+path       = "source/ul/menu/qdesktop/qd_DevTools.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 16418
+est_tokens = 4104
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-firstbootwelcome-cpp"
+path       = "source/ul/menu/qdesktop/qd_FirstBootWelcome.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 17918
+est_tokens = 4479
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-folderclassifier-cpp"
+path       = "source/ul/menu/qdesktop/qd_FolderClassifier.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 17217
+est_tokens = 4304
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-folderlaunchpadelement-cpp"
+path       = "source/ul/menu/qdesktop/qd_FolderLaunchpadElement.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4825
+est_tokens = 1206
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-foldertheme-cpp"
+path       = "source/ul/menu/qdesktop/qd_FolderTheme.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 29490
+est_tokens = 7372
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-frame-cpp"
+path       = "source/ul/menu/qdesktop/qd_Frame.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 35854
+est_tokens = 8963
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-globalchrome-cpp"
+path       = "source/ul/menu/qdesktop/qd_GlobalChrome.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7615
+est_tokens = 1903
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-hekateini-cpp"
+path       = "source/ul/menu/qdesktop/qd_HekateIni.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5098
+est_tokens = 1274
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-helpoverlay-cpp"
+path       = "source/ul/menu/qdesktop/qd_HelpOverlay.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 20500
+est_tokens = 5125
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-homeminimenu-cpp"
+path       = "source/ul/menu/qdesktop/qd_HomeMiniMenu.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 25630
+est_tokens = 6407
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-hotcornerdropdown-cpp"
+path       = "source/ul/menu/qdesktop/qd_HotCornerDropdown.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 21314
+est_tokens = 5328
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-hotcorneroverlay-cpp"
+path       = "source/ul/menu/qdesktop/qd_HotCornerOverlay.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6246
+est_tokens = 1561
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-hotcornerrightdropdown-cpp"
+path       = "source/ul/menu/qdesktop/qd_HotCornerRightDropdown.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 42840
+est_tokens = 10710
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-hotcornerrightoverlay-cpp"
+path       = "source/ul/menu/qdesktop/qd_HotCornerRightOverlay.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2279
+est_tokens = 569
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-iconcache-cpp"
+path       = "source/ul/menu/qdesktop/qd_IconCache.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 41978
+est_tokens = 10494
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-iconcategory-cpp"
+path       = "source/ul/menu/qdesktop/qd_IconCategory.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 9887
+est_tokens = 2471
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-imageviewer-cpp"
+path       = "source/ul/menu/qdesktop/qd_ImageViewer.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 15482
+est_tokens = 3870
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-imagewallpaperelement-cpp"
+path       = "source/ul/menu/qdesktop/qd_ImageWallpaperElement.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6407
+est_tokens = 1601
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-input-cpp"
+path       = "source/ul/menu/qdesktop/qd_Input.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13128
+est_tokens = 3282
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-inputinjector-cpp"
+path       = "source/ul/menu/qdesktop/qd_InputInjector.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5584
+est_tokens = 1396
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-launchpad-cpp"
+path       = "source/ul/menu/qdesktop/qd_Launchpad.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 152012
+est_tokens = 38003
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-launchpadhostlayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_LaunchpadHostLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7128
+est_tokens = 1782
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-lazyloader-cpp"
+path       = "source/ul/menu/qdesktop/qd_LazyLoader.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3791
+est_tokens = 947
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-lockscreenlayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_LockscreenLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 19101
+est_tokens = 4775
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-minimizeddockentry-cpp"
+path       = "source/ul/menu/qdesktop/qd_MinimizedDockEntry.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 9383
+est_tokens = 2345
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-modslayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_ModsLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 26574
+est_tokens = 6643
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-modsmanager-cpp"
+path       = "source/ul/menu/qdesktop/qd_ModsManager.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 12558
+est_tokens = 3139
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-monitorhostlayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_MonitorHostLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1926
+est_tokens = 481
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-monitorlayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_MonitorLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 49736
+est_tokens = 12434
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-multitouch-cpp"
+path       = "source/ul/menu/qdesktop/qd_Multitouch.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4241
+est_tokens = 1060
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-ninepatch-cpp"
+path       = "source/ul/menu/qdesktop/qd_NinePatch.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2896
+est_tokens = 724
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-nintendoapps-cpp"
+path       = "source/ul/menu/qdesktop/qd_NintendoApps.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 10926
+est_tokens = 2731
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-nintendoappslayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_NintendoAppsLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 38326
+est_tokens = 9581
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-nroasset-cpp"
+path       = "source/ul/menu/qdesktop/qd_NroAsset.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 35407
+est_tokens = 8851
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-nsiconcache-cpp"
+path       = "source/ul/menu/qdesktop/qd_NsIconCache.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7715
+est_tokens = 1928
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-nxlinkserver-cpp"
+path       = "source/ul/menu/qdesktop/qd_NxlinkServer.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 32511
+est_tokens = 8127
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-perflogger-cpp"
+path       = "source/ul/menu/qdesktop/qd_PerfLogger.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 14361
+est_tokens = 3590
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-pixelcanvas-cpp"
+path       = "source/ul/menu/qdesktop/qd_PixelCanvas.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5665
+est_tokens = 1416
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-power-cpp"
+path       = "source/ul/menu/qdesktop/qd_Power.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 16290
+est_tokens = 4072
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-powerbutton-cpp"
+path       = "source/ul/menu/qdesktop/qd_PowerButton.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13456
+est_tokens = 3364
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-recordsbin-cpp"
+path       = "source/ul/menu/qdesktop/qd_RecordsBin.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11312
+est_tokens = 2828
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-remoteshellserver-cpp"
+path       = "source/ul/menu/qdesktop/qd_RemoteShellServer.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 27576
+est_tokens = 6894
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-resourceledger-cpp"
+path       = "source/ul/menu/qdesktop/qd_ResourceLedger.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 10408
+est_tokens = 2602
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-saveautoscan-cpp"
+path       = "source/ul/menu/qdesktop/qd_SaveAutoscan.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 21732
+est_tokens = 5433
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-savebackup-cpp"
+path       = "source/ul/menu/qdesktop/qd_SaveBackup.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 21630
+est_tokens = 5407
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-saveeditorlayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_SaveEditorLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 99364
+est_tokens = 24841
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-settingslayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_SettingsLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 100424
+est_tokens = 25106
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-shellcommands-cpp"
+path       = "source/ul/menu/qdesktop/qd_ShellCommands.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 21795
+est_tokens = 5448
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-suspendedappdockentry-cpp"
+path       = "source/ul/menu/qdesktop/qd_SuspendedAppDockEntry.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6809
+est_tokens = 1702
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-svgraster-cpp"
+path       = "source/ul/menu/qdesktop/qd_SvgRaster.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3470
+est_tokens = 867
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-swshsaveparser-cpp"
+path       = "source/ul/menu/qdesktop/qd_SwShSaveParser.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 24141
+est_tokens = 6035
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-swishcrypto-cpp"
+path       = "source/ul/menu/qdesktop/qd_SwishCrypto.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 12514
+est_tokens = 3128
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-taskmanager-cpp"
+path       = "source/ul/menu/qdesktop/qd_TaskManager.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 30339
+est_tokens = 7584
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-taskmanagerlayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_TaskManagerLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 33535
+est_tokens = 8383
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-textviewer-cpp"
+path       = "source/ul/menu/qdesktop/qd_TextViewer.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 15738
+est_tokens = 3934
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-theme-cpp"
+path       = "source/ul/menu/qdesktop/qd_Theme.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 17912
+est_tokens = 4478
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-tooltip-cpp"
+path       = "source/ul/menu/qdesktop/qd_Tooltip.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6126
+est_tokens = 1531
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-transition-cpp"
+path       = "source/ul/menu/qdesktop/qd_Transition.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 22853
+est_tokens = 5713
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-usercard-cpp"
+path       = "source/ul/menu/qdesktop/qd_UserCard.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 25284
+est_tokens = 6321
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-vaulthostlayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_VaultHostLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1931
+est_tokens = 482
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-vaultlayout-cpp"
+path       = "source/ul/menu/qdesktop/qd_VaultLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 98142
+est_tokens = 24535
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-visibility-cpp"
+path       = "source/ul/menu/qdesktop/qd_Visibility.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6081
+est_tokens = 1520
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-wallpaper-cpp"
+path       = "source/ul/menu/qdesktop/qd_Wallpaper.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 26551
+est_tokens = 6637
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-wallpaperpacks-cpp"
+path       = "source/ul/menu/qdesktop/qd_WallpaperPacks.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 25860
+est_tokens = 6465
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-window-cpp"
+path       = "source/ul/menu/qdesktop/qd_Window.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 75302
+est_tokens = 18825
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qdesktop-qd-windowmanager-cpp"
+path       = "source/ul/menu/qdesktop/qd_WindowManager.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 65002
+est_tokens = 16250
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-qos-qos-curveengine-cpp"
+path       = "source/ul/menu/USER/PASS_CurveEngine.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7679
+est_tokens = 1919
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-smi-sf-sf-privateservice-cpp"
+path       = "source/ul/menu/smi/sf/sf_PrivateService.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4430
+est_tokens = 1107
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-smi-smi-menuprotocol-cpp"
+path       = "source/ul/menu/smi/smi_MenuProtocol.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 422
+est_tokens = 105
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-backgroundscreencapture-cpp"
+path       = "source/ul/menu/ui/ui_BackgroundScreenCapture.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8621
+est_tokens = 2155
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-clickableimage-cpp"
+path       = "source/ul/menu/ui/ui_ClickableImage.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1698
+est_tokens = 424
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-common-cpp"
+path       = "source/ul/menu/ui/ui_Common.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 23171
+est_tokens = 5792
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-entrymenu-cpp"
+path       = "source/ul/menu/ui/ui_EntryMenu.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 38698
+est_tokens = 9674
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-imenulayout-cpp"
+path       = "source/ul/menu/ui/ui_IMenuLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 24790
+est_tokens = 6197
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-inputbar-cpp"
+path       = "source/ul/menu/ui/ui_InputBar.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1910
+est_tokens = 477
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-lockscreenmenulayout-cpp"
+path       = "source/ul/menu/ui/ui_LockscreenMenuLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3223
+est_tokens = 805
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-mainmenulayout-cpp"
+path       = "source/ul/menu/ui/ui_MainMenuLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 109282
+est_tokens = 27320
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-menuapplication-cpp"
+path       = "source/ul/menu/ui/ui_MenuApplication.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 37923
+est_tokens = 9480
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-multitextblock-cpp"
+path       = "source/ul/menu/ui/ui_MultiTextBlock.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 1033
+est_tokens = 258
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-quickmenu-cpp"
+path       = "source/ul/menu/ui/ui_QuickMenu.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7064
+est_tokens = 1766
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-rawrgbaimage-cpp"
+path       = "source/ul/menu/ui/ui_RawRgbaImage.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 975
+est_tokens = 243
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-settingsmenulayout-cpp"
+path       = "source/ul/menu/ui/ui_SettingsMenuLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 57662
+est_tokens = 14415
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-startupmenulayout-cpp"
+path       = "source/ul/menu/ui/ui_StartupMenuLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 26203
+est_tokens = 6550
+load_tier  = "unknown"
+
+[[items]]
+id         = "source-ul-menu-ui-ui-themesmenulayout-cpp"
+path       = "source/ul/menu/ui/ui_ThemesMenuLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 35585
+est_tokens = 8896
+load_tier  = "unknown"
+
+[[items]]
+id         = "test-qos-curveengine-test-cpp"
+path       = "test/qos_CurveEngine_test.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 12880
+est_tokens = 3220
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-pu-sdl2-sdl2-types-hpp"
+path       = "tests/pu/sdl2/sdl2_Types.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 324
+est_tokens = 81
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-pu-sdl2-sdl2-types-hpp"
+path       = "tests/qdesktop/pu/sdl2/sdl2_Types.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 324
+est_tokens = 81
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-loginchime-cpp"
+path       = "tests/qdesktop/test_LoginChime.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4930
+est_tokens = 1232
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdanim-cpp"
+path       = "tests/qdesktop/test_QdAnim.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6394
+est_tokens = 1598
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdcoyotetiming-cpp"
+path       = "tests/qdesktop/test_QdCoyoteTiming.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 4527
+est_tokens = 1131
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdcurve-cpp"
+path       = "tests/qdesktop/test_QdCurve.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 17466
+est_tokens = 4366
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qddesktopicons-hover-cpp"
+path       = "tests/qdesktop/test_QdDesktopIcons_Hover.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5218
+est_tokens = 1304
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qddockmagnify-cpp"
+path       = "tests/qdesktop/test_QdDockMagnify.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6661
+est_tokens = 1665
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qddpadzonecycle-cpp"
+path       = "tests/qdesktop/test_QdDpadZoneCycle.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 9680
+est_tokens = 2420
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdfavoriteslayout-cpp"
+path       = "tests/qdesktop/test_QdFavoritesLayout.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5684
+est_tokens = 1421
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdiconcache-cpp"
+path       = "tests/qdesktop/test_QdIconCache.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11206
+est_tokens = 2801
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdiconcategory-cpp"
+path       = "tests/qdesktop/test_QdIconCategory.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8412
+est_tokens = 2103
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdinput-cpp"
+path       = "tests/qdesktop/test_QdInput.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 17043
+est_tokens = 4260
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdlaunchpadbgthread-cpp"
+path       = "tests/qdesktop/test_QdLaunchpadBgThread.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 7864
+est_tokens = 1966
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdlaunchpad-hotcorner-cpp"
+path       = "tests/qdesktop/test_QdLaunchpad_HotCorner.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6238
+est_tokens = 1559
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdmultitouch-cpp"
+path       = "tests/qdesktop/test_QdMultitouch.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8426
+est_tokens = 2106
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdnroasset-cpp"
+path       = "tests/qdesktop/test_QdNroAsset.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13073
+est_tokens = 3268
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdosk-cpp"
+path       = "tests/qdesktop/test_QdOsk.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13145
+est_tokens = 3286
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdpixelcanvas-cpp"
+path       = "tests/qdesktop/test_QdPixelCanvas.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5733
+est_tokens = 1433
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdtheme-cpp"
+path       = "tests/qdesktop/test_QdTheme.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3405
+est_tokens = 851
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-qdwmconstants-cpp"
+path       = "tests/qdesktop/test_QdWmConstants.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8491
+est_tokens = 2122
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-structsize-pinning-cpp"
+path       = "tests/qdesktop/test_StructSize_Pinning.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6894
+est_tokens = 1723
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-qdesktop-test-host-stubs-hpp"
+path       = "tests/qdesktop/test_host_stubs.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2350
+est_tokens = 587
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-test-qdiconcache-cpp"
+path       = "tests/test_QdIconCache.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 11206
+est_tokens = 2801
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-test-qdiconcategory-cpp"
+path       = "tests/test_QdIconCategory.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 8412
+est_tokens = 2103
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-test-qdnroasset-cpp"
+path       = "tests/test_QdNroAsset.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 13851
+est_tokens = 3462
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-test-qdpixelcanvas-cpp"
+path       = "tests/test_QdPixelCanvas.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 5733
+est_tokens = 1433
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-test-qdtheme-cpp"
+path       = "tests/test_QdTheme.cpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 3405
+est_tokens = 851
+load_tier  = "unknown"
+
+[[items]]
+id         = "tests-test-host-stubs-hpp"
+path       = "tests/test_host_stubs.hpp"
+kind       = "data"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 2350
+est_tokens = 587
+load_tier  = "unknown"
+
+[[items]]
+id         = "umenu-json"
+path       = "uMenu.json"
+kind       = "config"
+purpose    = "(auto-seeded; needs purpose)"
+status     = "active"
+bytes      = 6256
+est_tokens = 1564
+load_tier  = "unknown"
+

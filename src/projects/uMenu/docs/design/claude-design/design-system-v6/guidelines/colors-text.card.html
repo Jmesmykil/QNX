@@ -1,0 +1,30 @@
+<!-- @dsCard group="Colors" viewport="700x150" name="Text & status" subtitle="Primary/secondary/disabled text + semantic status" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 22px; background: #0A0A14; display: flex; gap: 30px; align-items: center; }
+  .stack { display: flex; flex-direction: column; gap: 7px; }
+  .line { font-family: var(--font-sans); font-size: 15px; font-weight: 500; }
+  .tag { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+  .d { width: 12px; height: 12px; border-radius: 3px; }
+  .div { width: 1px; align-self: stretch; background: rgba(255,255,255,.08); }
+</style>
+</head>
+<body>
+  <div class="stack">
+    <div class="line" style="color:var(--text-primary)">Primary label text</div>
+    <div class="line" style="color:var(--text-secondary)">Secondary / muted slate</div>
+    <div class="line" style="color:var(--text-disabled)">Disabled status row</div>
+  </div>
+  <div class="div"></div>
+  <div class="stack">
+    <div class="tag"><span class="d" style="background:var(--status-ok)"></span>HW-verified · #22C55E</div>
+    <div class="tag"><span class="d" style="background:var(--status-warn)"></span>Caution · #FBBF24</div>
+    <div class="tag"><span class="d" style="background:var(--status-error)"></span>Security gap · #F87171</div>
+    <div class="tag"><span class="d" style="background:var(--status-info)"></span>Supported · #A78BFA</div>
+  </div>
+</body>
+</html>

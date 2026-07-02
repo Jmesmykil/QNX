@@ -1,0 +1,77 @@
+<!-- @dsCard group="Overhaul" viewport="700x320" name="Glyph family" subtitle="Window buttons · brand Q · favorites · badges — one coherent monochrome set" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 22px 24px; background: #0A0A14; font-family: var(--font-sans); }
+  .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-secondary); margin: 0 0 12px; }
+  .sec { margin-bottom: 22px; }
+  .row { display: flex; gap: 16px; align-items: center; }
+  .item { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+  .cap { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-secondary); }
+  /* window buttons: dark glyph on colored disc */
+  .disc { width: 40px; height: 40px; border-radius: 999px; display: grid; place-items: center; }
+  .disc svg { width: 20px; height: 20px; fill: none; stroke: #101018; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  /* brand Q at sizes */
+  .q { color: var(--accent); }
+  .q svg { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 50%, transparent)); }
+  /* star + badges */
+  .star svg { width: 26px; height: 26px; fill: var(--accent); }
+  .badge { height: 24px; padding: 0 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px;
+           font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+  .bcount { background: var(--accent); color: #0A0A14; }
+  .bupd { color: var(--btn-minimize); border: 1px solid color-mix(in srgb, var(--btn-minimize) 55%, transparent); }
+  .bsus { color: var(--text-secondary); border: 1px solid color-mix(in srgb, var(--text-secondary) 45%, transparent); }
+  .bcor { color: var(--btn-close); border: 1px solid color-mix(in srgb, var(--btn-close) 55%, transparent); }
+  .gly { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <symbol id="close" viewBox="0 0 24 24"><path d="M6 6 L18 18 M18 6 L6 18"/></symbol>
+    <symbol id="max" viewBox="0 0 24 24"><rect x="5.5" y="5.5" width="13" height="13" rx="2"/></symbol>
+    <symbol id="min" viewBox="0 0 24 24"><path d="M6 12 H18"/></symbol>
+    <symbol id="restore" viewBox="0 0 24 24"><rect x="8" y="6" width="10" height="10" rx="1.5"/><rect x="6" y="8" width="10" height="10" rx="1.5"/></symbol>
+    <symbol id="resize" viewBox="0 0 24 24"><path d="M7 7 L17 17 M17 17 L17 12.5 M17 17 L12.5 17 M7 7 L7 11.5 M7 7 L11.5 7"/></symbol>
+    <symbol id="q" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M15 15 L19.5 19.5"/></symbol>
+    <symbol id="star" viewBox="0 0 24 24"><path d="M12 3.5 L14.35 9.1 L20.5 9.55 L15.85 13.55 L17.35 19.5 L12 16.2 L6.65 19.5 L8.15 13.55 L3.5 9.55 L9.65 9.1 Z"/></symbol>
+    <symbol id="dl" viewBox="0 0 24 24"><path d="M12 4 v9 M8 11 l4 4 4-4 M6 19 h12"/></symbol>
+    <symbol id="pause" viewBox="0 0 24 24"><path d="M9 6 v12 M15 6 v12"/></symbol>
+    <symbol id="slash" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M6.5 6.5 L17.5 17.5"/></symbol>
+  </defs></svg>
+
+  <div class="sec">
+    <div class="lbl">Window buttons — dark glyph on the theme-colored disc</div>
+    <div class="row">
+      <div class="item"><div class="disc" style="background:var(--btn-close)"><svg><use href="#close"/></svg></div><div class="cap">Close</div></div>
+      <div class="item"><div class="disc" style="background:var(--btn-maximize)"><svg><use href="#max"/></svg></div><div class="cap">Maximize</div></div>
+      <div class="item"><div class="disc" style="background:var(--btn-minimize)"><svg><use href="#min"/></svg></div><div class="cap">Minimize</div></div>
+      <div class="item"><div class="disc" style="background:var(--btn-restore)"><svg><use href="#restore"/></svg></div><div class="cap">Restore</div></div>
+      <div class="item"><div class="disc" style="background:var(--accent)"><svg><use href="#resize"/></svg></div><div class="cap">Resize</div></div>
+    </div>
+  </div>
+
+  <div class="row" style="gap:40px; align-items:flex-end">
+    <div class="sec" style="margin:0">
+      <div class="lbl">Brand Q — 36 / 96 / 256</div>
+      <div class="row" style="align-items:flex-end">
+        <div class="q" style="width:36px;height:36px"><svg viewBox="0 0 24 24" width="36" height="36"><use href="#q"/></svg></div>
+        <div class="q" style="width:60px;height:60px"><svg viewBox="0 0 24 24" width="60" height="60"><use href="#q"/></svg></div>
+        <div class="q" style="width:88px;height:88px"><svg viewBox="0 0 24 24" width="88" height="88"><use href="#q"/></svg></div>
+      </div>
+    </div>
+    <div class="sec" style="margin:0">
+      <div class="lbl">Favorites + badges</div>
+      <div class="row">
+        <div class="item"><span class="star"><svg viewBox="0 0 24 24"><use href="#star"/></svg></span><div class="cap">Favorite</div></div>
+        <span class="badge bcount">42</span>
+        <span class="badge bupd"><svg class="gly"><use href="#dl"/></svg>Update</span>
+        <span class="badge bsus"><svg class="gly"><use href="#pause"/></svg>Suspended</span>
+        <span class="badge bcor"><svg class="gly"><use href="#slash"/></svg>Corrupt</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

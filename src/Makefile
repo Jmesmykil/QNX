@@ -1,0 +1,130 @@
+VERSION_MAJOR	:=	3
+VERSION_MINOR	:=	7
+VERSION_MICRO	:=	62
+export VERSION	:=	$(VERSION_MAJOR).$(VERSION_MINOR).$(VERSION_MICRO)
+
+export UL_DEFS	:=	-DUL_MAJOR=$(VERSION_MAJOR) -DUL_MINOR=$(VERSION_MINOR) -DUL_MICRO=$(VERSION_MICRO) -DUL_VERSION=\"$(VERSION)\"
+
+OUT_DIR				:=	SdOut
+OUT_DIR_ZIP			:=	qos-umenu-v$(VERSION)
+
+OUT_THEME_MUSIC		:=	default-theme-music-v$(VERSION).ultheme
+THEME_MUSIC_TEMP	:=	default-theme-music-tmp
+
+.PHONY: all fresh clean libs arc usystem uloader umenu umanager uscreen udesigner default-theme-music package
+
+all: package
+
+fresh: clean all
+
+clean:
+	@$(MAKE) clean -C projects/uSystem
+	@$(MAKE) clean -C projects/uLoader
+	@$(MAKE) clean -C projects/uMenu
+	@$(MAKE) clean -C projects/uManager
+	@$(MAKE) clean -C projects/uDesigner
+	@cd projects/uScreen && mvn clean
+	@rm -rf $(OUT_DIR)
+	@rm -rf $(OUT_DIR_ZIP).7z $(OUT_DIR_ZIP).zip
+
+libs:
+	@$(MAKE) -C libs/Plutonium/
+	@$(MAKE) -C libs/libnx-ext/libnx-ext/
+	@$(MAKE) -C libs/libnx-ext/libnx-ipcext/
+
+# Result-code codegen: ul_Results.gen.hpp is generated from ul_Results.rc.hpp.
+# Edit the .rc.hpp; this rule regenerates the .gen.hpp when the source is newer.
+# Per cross-cutting audit BUILD-08 (2026-05-19): previously the `arc:` PHONY
+# target didn't have a file-level dependency on the .rc.hpp, so the generator
+# only ran on explicit `make arc` invocation — silent staleness was possible.
+libs/uCommon/include/ul/ul_Results.gen.hpp: libs/uCommon/include/ul/ul_Results.rc.hpp
+	@python3 arc/arc.py gen_db default+./libs/uCommon/include/ul/ul_Results.rc.hpp
+	@python3 arc/arc.py gen_cpp rc UL ./libs/uCommon/include/ul/ul_Results.gen.hpp
+
+arc: libs/uCommon/include/ul/ul_Results.gen.hpp
+
+usystem: arc libs
+	@$(MAKE) -C projects/uSystem
+	@mkdir -p $(OUT_DIR)/atmosphere/contents/0100000000001000
+	@cp projects/uSystem/out/nintendo_nx_arm64_armv8a/release/uSystem.nsp $(OUT_DIR)/atmosphere/contents/0100000000001000/exefs.nsp
+	@mkdir -p $(OUT_DIR)/ulaunch/bin/uSystem
+	@cp projects/uSystem/out/nintendo_nx_arm64_armv8a/release/uSystem.nsp $(OUT_DIR)/ulaunch/bin/uSystem/exefs.nsp
+
+uloader: arc libs
+	@$(MAKE) -C projects/uLoader
+	@mkdir -p $(OUT_DIR)/ulaunch/bin/uLoader
+	@mkdir -p $(OUT_DIR)/ulaunch/bin/uLoader/applet
+	@cp projects/uLoader/uLoader.nso $(OUT_DIR)/ulaunch/bin/uLoader/applet/main
+	@cp projects/uLoader/uLoader_applet.npdm $(OUT_DIR)/ulaunch/bin/uLoader/applet/main.npdm
+	@mkdir -p $(OUT_DIR)/ulaunch/bin/uLoader/application
+	@cp projects/uLoader/uLoader.nso $(OUT_DIR)/ulaunch/bin/uLoader/application/main
+	@cp projects/uLoader/uLoader_application.npdm $(OUT_DIR)/ulaunch/bin/uLoader/application/main.npdm
+
+umenu: arc libs
+	@$(MAKE) -C projects/uMenu
+	@mkdir -p $(OUT_DIR)/ulaunch/bin/uMenu
+	@mkdir -p $(OUT_DIR)/ulaunch/lang/uMenu
+	@mkdir -p $(OUT_DIR)/ulaunch/themes
+	@cp projects/uMenu/uMenu.nso $(OUT_DIR)/ulaunch/bin/uMenu/main
+	@cp projects/uMenu/uMenu.npdm $(OUT_DIR)/ulaunch/bin/uMenu/main.npdm
+	@cp assets/Logo.png projects/uMenu/romfs/Logo.png
+	@rm -rf projects/uMenu/romfs/default
+	@cp -r default-theme/ projects/uMenu/romfs/default/
+	@build_romfs projects/uMenu/romfs $(OUT_DIR)/ulaunch/bin/uMenu/romfs.bin
+
+umanager: arc libs
+	@$(MAKE) -C projects/uManager
+	@mkdir -p $(OUT_DIR)/ulaunch/lang/uManager
+	@mkdir -p $(OUT_DIR)/switch
+	@cp projects/uManager/uManager.nro $(OUT_DIR)/switch/uManager.nro
+
+uscreen:
+	@cd projects/uScreen && mvn package
+
+udesigner:
+	@cd default-theme && rm -rf default-theme.ultheme && zip -r default-theme.ultheme theme ui sound
+	@mv default-theme/default-theme.ultheme projects/uDesigner/assets/default-theme.ultheme
+	@cp assets/Logo.png projects/uDesigner/assets/Logo.png
+	@$(MAKE) -C projects/uDesigner
+
+default-theme-music:
+	@echo "Creating default-theme-music..."
+	@rm -rf $(THEME_MUSIC_TEMP)
+	@rm -rf $(OUT_THEME_MUSIC)
+	@mkdir -p $(THEME_MUSIC_TEMP)
+	@cp -r default-theme/ui $(THEME_MUSIC_TEMP)/ui
+	@cp -r default-theme-music/theme $(THEME_MUSIC_TEMP)/theme
+	@cp -r default-theme-music/sound $(THEME_MUSIC_TEMP)/sound
+	@cd $(THEME_MUSIC_TEMP) && zip -r ../$(OUT_THEME_MUSIC) sound theme ui
+	@rm -rf $(THEME_MUSIC_TEMP)
+	@echo "Created default-theme-music: $(OUT_THEME_MUSIC)!"
+
+# Note: `uscreen` (upstream Java/JavaFX desktop screen-mirror app) was removed
+# from the `package:` target on 2026-04-25 per creator directive. Reason:
+# pom.xml hardcodes `<classifier>linux</classifier>` for JavaFX 12 — won't run
+# on creator's macOS without classifier patches. Was shipping in the zip but
+# never actually invoked. Source preserved on disk as the behavioral spec for
+# the future native Swift `QOS Mirror.app` (post-1.0; see ROADMAP.md +
+# docs/UPSTREAM-COMPANION-APPS-STRATEGY.md). To re-enable Java uScreen for
+# Linux users, re-add `uscreen` to the deps below and run `make uscreen`.
+#
+# Note: `umanager` (homebrew settings NRO) removed from `package:` target on
+# 2026-05-19 per cross-cutting audit BUILD-01. Reason: uManager links
+# `-lcurl` which devkitPro on creator's macOS env does not ship in portlibs;
+# the build cannot complete without `pacman -S switch-curl` (or equivalent).
+# Existing on-SD uManager.nro continues to work; rebuild only requires running
+# `make umanager` explicitly after installing the dep. To re-enable in the
+# default package once curl is in portlibs, re-add `umanager` to the deps below.
+package: arc usystem uloader umenu default-theme-music
+	@rm -rf $(OUT_DIR_ZIP).7z $(OUT_DIR_ZIP).zip
+	@cd $(OUT_DIR) && 7z a ../$(OUT_DIR_ZIP).7z atmosphere ulaunch switch
+	@cd $(OUT_DIR) && zip -r ../$(OUT_DIR_ZIP).zip atmosphere ulaunch switch
+	@echo "Packaged $(OUT_DIR) into $(OUT_DIR_ZIP).7z & $(OUT_DIR_ZIP).zip!"
+
+# Legacy companion-app source archives. Run on demand to snapshot the upstream
+# Java sources for the future Swift rebuilds. Outputs go to ../archive/.
+legacy-companion-archive:
+	@mkdir -p ../archive/legacy-companion-apps
+	@cd projects && zip -qr ../../archive/legacy-companion-apps/uScreen-source-$(VERSION).zip uScreen
+	@cd projects && zip -qr ../../archive/legacy-companion-apps/uDesigner-source-$(VERSION).zip uDesigner
+	@echo "Legacy companion sources archived to archive/legacy-companion-apps/"

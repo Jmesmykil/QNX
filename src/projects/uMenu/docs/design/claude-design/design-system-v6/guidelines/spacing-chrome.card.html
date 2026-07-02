@@ -1,0 +1,101 @@
+<!-- @dsCard group="Spacing" viewport="700x440" name="Desktop chrome geometry" subtitle="The populated bars — top bar, window titlebar + hint bar, dock, toast" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 20px 22px; background: #0A0A14; font-family: var(--font-sans); }
+  .stack { display: grid; grid-template-columns: 1fr 78px; gap: 11px 12px; align-items: center; }
+  .cap { font-family: var(--font-mono); font-size: 10px; color: var(--accent); letter-spacing: .04em; }
+  .cap small { color: var(--text-secondary); display: block; font-size: 9px; }
+
+  .bar { display: flex; align-items: center; height: 100%; padding: 0 16px; border-radius: 8px; }
+  .topbar { height: 38px; background: var(--topbar-bg); border: 1px solid rgba(125,211,252,.10);
+            border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  .titlebar { height: 40px; background: var(--surface-glass);
+              border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-bottom: none;
+              border-radius: 10px 10px 0 0; }
+  .hintbar { height: 40px; background: rgba(10,10,20,.55);
+             border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); border-top: 1px dashed rgba(125,211,252,.2);
+             border-radius: 0 0 10px 10px; }
+  .dock { height: 64px; background: var(--dock-bg); border: 1px solid rgba(125,211,252,.10);
+          border-top: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); justify-content: center; gap: 12px; }
+
+  .spacer { flex: 1; }
+  .q { font-family: var(--font-display); font-style: italic; font-weight: 600; font-size: 22px; color: var(--accent);
+       text-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent); }
+  .status { display: flex; align-items: center; gap: 14px; font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+  .status b { color: var(--text-primary); font-weight: 500; }
+  .ok { color: var(--btn-maximize); }
+
+  /* glyph-only corner controls — no disc */
+  .cx { font-size: 19px; font-weight: 700; line-height: 1; }
+  .close { color: var(--btn-close); }
+  .max { color: var(--btn-maximize); }
+  .min { color: var(--btn-minimize); }
+  .title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-left: 12px; }
+
+  .hints { display: flex; align-items: center; gap: 14px; margin-left: 12px; font-size: 12.5px; color: var(--text-secondary); }
+  .prompt { display: inline-flex; align-items: center; gap: 6px; }
+  .key { width: 18px; height: 18px; border-radius: 999px; display: grid; place-items: center;
+         font-family: var(--font-sans); font-size: 11px; font-weight: 700; color: #0A0A14; }
+  .kA { background: var(--btn-maximize); } .kB { background: var(--btn-close); } .kY { background: var(--btn-minimize); }
+  .grip { color: var(--accent); font-size: 15px; }
+
+  .tile { width: 40px; height: 40px; border-radius: 11px; background: rgba(125,211,252,.10);
+          border: 1px solid rgba(125,211,252,.18); display: grid; place-items: center; color: var(--accent); font-size: 19px; }
+  .tile.active { background: rgba(125,211,252,.20); border-color: var(--accent); }
+
+  /* toast */
+  .toastrow { grid-column: 1 / 2; display: flex; justify-content: center; }
+  .toast { display: inline-flex; align-items: center; gap: 9px; padding: 8px 15px; border-radius: 999px;
+           background: rgba(18,18,42,.92); border: 1px solid var(--accent); box-shadow: var(--shadow-panel);
+           font-size: 12.5px; color: var(--text-primary); backdrop-filter: blur(10px); }
+  .toast .d { width: 8px; height: 8px; border-radius: 999px; background: var(--btn-maximize); box-shadow: 0 0 8px var(--btn-maximize); }
+</style>
+</head>
+<body>
+  <div class="stack">
+    <!-- TOP BAR -->
+    <div class="bar topbar">
+      <span class="q">Q</span>
+      <span class="spacer"></span>
+      <span class="status"><span>❖</span><span>Wi-Fi</span><span>🔊 40%</span><span class="ok">▰ 87%</span><b>14:22</b></span>
+    </div>
+    <div class="cap">Top bar<small>48 px · the Bridge</small></div>
+
+    <!-- TOAST -->
+    <div class="toastrow"><div class="toast"><span class="d"></span>Theme applied — Neon</div></div>
+    <div class="cap">Toast<small>floats over</small></div>
+
+    <!-- WINDOW TITLEBAR -->
+    <div class="bar titlebar">
+      <span class="cx close">×</span>
+      <span class="title">Vault</span>
+      <span class="spacer"></span>
+      <span class="cx max">□</span>
+    </div>
+    <div class="cap">Titlebar<small>42 px · word + corner glyphs</small></div>
+
+    <!-- WINDOW BOTTOM / HINT BAR -->
+    <div class="bar hintbar">
+      <span class="cx min">–</span>
+      <span class="hints">
+        <span class="prompt"><span class="key kA">A</span>Launch</span>
+        <span class="prompt"><span class="key kY">Y</span>Edit save</span>
+        <span class="prompt"><span class="key kB">B</span>Close</span>
+      </span>
+      <span class="spacer"></span>
+      <span class="grip">⤡</span>
+    </div>
+    <div class="cap">Hint bar<small>42 px · hints + buttons</small></div>
+
+    <!-- DOCK -->
+    <div class="bar dock">
+      <span class="tile active">▤</span><span class="tile">◷</span><span class="tile">⚙</span><span class="tile">◳</span><span class="tile">⌗</span><span class="tile">ⓘ</span>
+    </div>
+    <div class="cap">Dock<small>148 px · the Deck</small></div>
+  </div>
+</body>
+</html>

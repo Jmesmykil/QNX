@@ -1,0 +1,40 @@
+/* styles.css — aggregate stylesheet for the design-system-v6 cards.
+   Reconstructed from tokens/*.css so the .card.html specimens render
+   standalone (brand vars + fonts + the qos-void backdrop). */
+
+:root {
+  /* brand */
+  --brand-cyan:     #00E5FF;
+  --brand-magenta:  #D946EF;
+  --brand-lavender: #A78BFA;
+  --brand-navy:     #0E1A33;
+  --brand-white:    #FFFFFF;
+  /* glass surfaces */
+  --desktop-bg:        #0A0A14;
+  --surface-glass:     #12122A;
+  --topbar-bg:         #0C0C20;
+  --dock-bg:           #10102A;
+  --titlebar-inactive: #181830;
+  --grid-line:         #24244A;
+  /* accent + focus */
+  --accent:     #7DD3FC;
+  --focus-ring: #7CC5FF;
+  /* text */
+  --text-primary:   #E0E0F0;
+  --text-secondary: #8888AA;
+  --text-disabled:  #606060;
+  --text-on-accent: #07121C;
+  /* window corner buttons */
+  --btn-close:    #F87171;
+  --btn-minimize: #FBBF24;
+  --btn-maximize: #4ADE80;
+  --btn-restore:  #4ADE80;
+  /* fonts (designed substitutes; system fallbacks render fine) */
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-sans:    "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+body.qos-void {
+  background: radial-gradient(130% 150% at 16% 28%, #0E1A33 0%, #0A0A14 62%);
+}

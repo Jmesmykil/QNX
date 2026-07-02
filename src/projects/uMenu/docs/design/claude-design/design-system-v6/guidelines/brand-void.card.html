@@ -1,0 +1,25 @@
+<!-- @dsCard group="Brand" viewport="700x220" name="The void" subtitle="Navy → violet gradient, lit cyan top-left + magenta bottom-right" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; height: 100vh; }
+  .void { position: relative; width: 100%; height: 100%; }
+  .orbs { position: absolute; left: 34px; bottom: 30px; display: flex; gap: 14px; align-items: flex-end; }
+  .orb { border-radius: 999px; filter: blur(.5px); }
+  .o1 { width: 30px; height: 30px; background: var(--brand-magenta); box-shadow: 0 0 30px 4px rgba(217,70,239,.7); }
+  .o2 { width: 20px; height: 20px; background: var(--brand-lavender); box-shadow: 0 0 22px 3px rgba(167,139,250,.7); }
+  .o3 { width: 26px; height: 26px; background: var(--brand-cyan); box-shadow: 0 0 26px 4px rgba(0,229,255,.7); }
+  .label { position: absolute; right: 30px; top: 26px; font-family: var(--font-mono); font-size: 11px;
+           letter-spacing: .1em; color: var(--accent); text-transform: uppercase; }
+</style>
+</head>
+<body class="qos-void">
+  <div class="void">
+    <div class="label">linear-gradient · radial light</div>
+    <div class="orbs"><div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Desktop — FolderTile · DockTile" subtitle="The tile components & their states (full themed glyph set lives in Icon-pack system)" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body { margin: 0; padding: 22px; background: #0A0A14; font-family: var(--font-sans); }
+  .qos-void { position: fixed; inset: 0; z-index: 0; }
+  #root { position: relative; z-index: 1; }
+  .lbl { font-family: var(--font-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 10px; }
+  .dockstrip { display: inline-flex; gap: 14px; align-items: center; padding: 12px 16px; margin-bottom: 22px;
+    background: rgba(16,16,42,.6); border-top: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 12px; }
+  .folders { display: flex; gap: 18px; }
+  .g { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+</style>
+</head>
+<body class="qos-void">
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <symbol id="lock" viewBox="0 0 24 24"><rect x="6" y="10.5" width="12" height="8" rx="1.5"/><path d="M9 10.5 V8.5 a3 3 0 0 1 6 0 V10.5"/></symbol>
+    <symbol id="display" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="11" rx="1.5"/><path d="M9 19.5 h6 M12 16.5 v3"/></symbol>
+    <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 4 v2 M12 18 v2 M4 12 h2 M18 12 h2 M6.3 6.3 l1.4 1.4 M16.3 16.3 l1.4 1.4 M17.7 6.3 l-1.4 1.4 M7.7 16.3 l-1.4 1.4"/></symbol>
+    <symbol id="tasks" viewBox="0 0 24 24"><rect x="4.5" y="7" width="3.5" height="3.5" rx=".5"/><rect x="4.5" y="13.5" width="3.5" height="3.5" rx=".5"/><path d="M11 8.7 h8.5 M11 15.2 h8.5"/></symbol>
+    <symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="8.2" r="0.4"/><path d="M12 11 v6"/></symbol>
+    <symbol id="grid" viewBox="0 0 24 24"><rect x="5" y="5" width="5.5" height="5.5" rx=".5"/><rect x="13.5" y="5" width="5.5" height="5.5" rx=".5"/><rect x="5" y="13.5" width="5.5" height="5.5" rx=".5"/><rect x="13.5" y="13.5" width="5.5" height="5.5" rx=".5"/></symbol>
+    <symbol id="pad-ergo" viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="4"/><circle cx="8" cy="13" r="1.1"/><circle cx="16" cy="13" r="1.1"/></symbol>
+    <symbol id="floppy" viewBox="0 0 24 24"><path d="M5 5 H17 L19 7 V19 H5 Z"/><rect x="8" y="5" width="6" height="4"/><rect x="8" y="13" width="8" height="6"/></symbol>
+    <symbol id="wrench" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3.5"/><line x1="11.4" y1="11.4" x2="18" y2="18"/></symbol>
+    <symbol id="q-ring" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M15 15 L19.5 19.5"/></symbol>
+    <symbol id="qmark" viewBox="0 0 24 24"><path d="M9 9.2 a3 3 0 1 1 4.2 2.8 c-1 0.5 -1.2 1.2 -1.2 2.5"/><circle cx="12" cy="17.6" r="0.6"/></symbol>
+  </defs></svg>
+
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="../../_ds_bundle.js"></script>
+  <script type="text/babel">
+    const { DockTile, FolderTile } = window.QOSDesignSystem_d41fd9;
+    const G = ({ s }) => <svg className="g"><use href={"#" + s}/></svg>;
+    function App() {
+      return (
+        <div>
+          <div className="lbl">DockTile — default · active · running</div>
+          <div className="dockstrip">
+            <DockTile size={48} label="Vault" glyph={<G s="lock"/>} running />
+            <DockTile size={48} label="Monitor" glyph={<G s="display"/>} active />
+            <DockTile size={48} label="Settings" glyph={<G s="gear"/>} />
+            <DockTile size={48} label="Tasks" glyph={<G s="tasks"/>} />
+            <DockTile size={48} label="About" glyph={<G s="info"/>} />
+            <DockTile size={48} label="Programs" glyph={<G s="grid"/>} />
+          </div>
+
+          <div className="lbl">FolderTile — category ring + count + selected</div>
+          <div className="folders">
+            <FolderTile category="games" label="Games" count={42} glyph={<G s="pad-ergo"/>} selected />
+            <FolderTile category="homebrew" label="Emulators" count={9} glyph={<G s="floppy"/>} />
+            <FolderTile category="custom" label="Tools" count={6} glyph={<G s="wrench"/>} />
+            <FolderTile category="builtin" label="Q OS" count={8} glyph={<G s="q-ring"/>} />
+            <FolderTile category="payloads" label="Other" count={4} glyph={<G s="qmark"/>} />
+          </div>
+        </div>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
